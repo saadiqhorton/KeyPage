@@ -7,13 +7,13 @@ import { StepIndicator } from "@/components/StepIndicator";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import {
-  isPasswordStrongEnough,
   PasswordStrengthHint,
 } from "@/components/ui/PasswordStrengthHint";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
 import { buildRecoveryCodesFileText } from "@/crypto/recovery.js";
 import { ApiError } from "@/lib/api.js";
+import { copyTextWithAutoClear } from "@/lib/clipboard.js";
 import { downloadTextFile } from "@/lib/download.js";
 import { formatRecoveryCode } from "@keypage/shared";
 import { useVault } from "@/vault/useVault";
@@ -76,10 +76,6 @@ export function SetupScreen() {
       setError(`Master Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
-    if (!isPasswordStrongEnough(password)) {
-      setError("Choose a stronger Master Password before continuing.");
-      return;
-    }
     if (password !== confirm) {
       setError("Passwords do not match.");
       return;
@@ -98,7 +94,7 @@ export function SetupScreen() {
     if (!codes) return;
     const text = codes.map((code) => formatRecoveryCode(code)).join("\n");
     try {
-      await navigator.clipboard.writeText(text);
+      await copyTextWithAutoClear(text, 30_000);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {

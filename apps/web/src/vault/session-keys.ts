@@ -13,6 +13,12 @@ import { zeroize, type AesKey } from "@/crypto/provider.js";
 
 const LOCK_CHANNEL = "keypage-lock";
 
+const TAB_ID_BYTES = new Uint8Array(8);
+crypto.getRandomValues(TAB_ID_BYTES);
+const TAB_ID = Array.from(TAB_ID_BYTES, (byte) =>
+  byte.toString(16).padStart(2, "0"),
+).join("");
+
 let encryptionKey: AesKey | null = null;
 let recoveredMasterKey: Uint8Array | null = null;
 
@@ -58,24 +64,24 @@ export function clearRecoveredMasterKey(): void {
   }
 }
 
-export function broadcastLock(): void {
+export function broadcastLock(reason?: string): void {
   try {
     const channel = new BroadcastChannel(LOCK_CHANNEL);
-    channel.postMessage({ type: "lock" });
+    channel.postMessage({ type: "lock", reason, tabId: TAB_ID });
     channel.close();
   } catch {
     // BroadcastChannel unavailable — single-tab lock still works.
   }
 }
 
-export function subscribeLockBroadcast(onLock: () => void): () => void {
+export function subscribeLockBroadcast(onLock: (reason: string) => void): () => void {
   try {
     const channel = new BroadcastChannel(LOCK_CHANNEL);
     channel.onmessage = (event: MessageEvent) => {
-      if (event.data?.type === "lock") {
-        clearEncryptionKey();
-        onLock();
-      }
+      if (event.data?.type !== "lock") return;
+      if (event.data.tabId === TAB_ID) return;
+      clearEncryptionKey();
+      onLock(event.data.reason ?? "manual");
     };
     return () => channel.close();
   } catch {

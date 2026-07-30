@@ -8,8 +8,12 @@ import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api.js";
-import { DEFAULT_SESSION_IDLE_MINUTES } from "@keypage/shared";
 import { useVault } from "@/vault/useVault";
+
+function formatIdleLockMinutes(idleTimeoutSeconds: number): string {
+  const minutes = Math.round(idleTimeoutSeconds / 60);
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
 
 function formatUnlockError(error: ApiError): string {
   if (
@@ -54,7 +58,7 @@ export function UnlockScreen() {
 
   const reasonBanner =
     locked && state.reason === "idle"
-      ? `Locked after ${DEFAULT_SESSION_IDLE_MINUTES} minutes of inactivity.`
+      ? `Locked after ${formatIdleLockMinutes(state.idleTimeoutSeconds)} of inactivity.`
       : locked && state.reason === "session_expired"
         ? "Your session expired."
         : null;

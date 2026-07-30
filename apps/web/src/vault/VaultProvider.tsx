@@ -88,6 +88,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
     setState({
       phase: "locked",
       reason: lockReasonRef.current,
+      idleTimeoutSeconds: status.session.idleTimeoutSeconds,
       kdf: status.kdf,
       lockout: status.lockout,
       recoveryCodesRemaining: status.recoveryCodesRemaining,
@@ -132,8 +133,8 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
     void refreshStatus();
 
-    const unsubscribe = subscribeLockBroadcast(() => {
-      lockReasonRef.current = "manual";
+    const unsubscribe = subscribeLockBroadcast((reason) => {
+      lockReasonRef.current = reason as LockReason;
       void refreshStatus();
     });
 
@@ -214,7 +215,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
     clearRecoveredMasterKey();
     clearRecoveryTicket();
     lockReasonRef.current = reason;
-    broadcastLock();
+    broadcastLock(reason);
     void postVaultLock().catch(() => {});
     await refreshStatus();
   }, [refreshStatus]);

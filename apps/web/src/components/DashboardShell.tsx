@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 
 type DashboardShellProps = {
-  /** Optional slot for Phase G idle warning toast — rendered near the top bar. */
+  /** Optional slot for idle warning banner — rendered near the top bar. */
   children?: ReactNode;
   content: ReactNode;
   idleCountdown?: string | null;

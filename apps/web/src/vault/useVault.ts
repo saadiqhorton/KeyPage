@@ -11,6 +11,7 @@ export type VaultState =
   | {
       phase: "locked";
       reason: LockReason;
+      idleTimeoutSeconds: number;
       kdf: KdfParams;
       lockout: LockoutState;
       recoveryCodesRemaining: number;

@@ -64,6 +64,3 @@ export function PasswordStrengthHint({ password, className }: PasswordStrengthHi
   );
 }
 
-export function isPasswordStrongEnough(password: string): boolean {
-  return getChecks(password).every((check) => check.met);
-}
