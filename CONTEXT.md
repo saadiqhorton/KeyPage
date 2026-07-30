@@ -1,13 +1,16 @@
-# API Key Manager — Context
+# KeyPage — Context
+
+Self-hosted, single-user API key vault: store and retrieve third-party API keys from a private dashboard you run yourself.
 
 ## Scope
-A self-hosted, single-user dashboard for securely storing and retrieving API keys.
+**KeyPage** is a self-hosted, single-user dashboard for securely storing and retrieving API keys.
 Open source project — each deployment is single-user, but the code is public for others to self-host.
 
 ## Glossary
 
 | Term | Definition |
 |------|-----------|
+| KeyPage | The product: a self-hosted, single-user API key vault and dashboard. |
 | API Key | A secret token issued by a third-party service (e.g. OpenAI, AWS, Stripe) used to authenticate API requests. |
 | Dashboard | The web-based UI the user interacts with to manage their keys. |
 | Master Password | The single password the user enters on login, used to derive the encryption key. |
@@ -17,6 +20,16 @@ Open source project — each deployment is single-user, but the code is public f
 | Key Entry | A stored record containing an encrypted API key plus its metadata (label, service, description, tags, timestamps). |
 | Provider Integration | A future capability where the system communicates with a Service to automatically refresh, rotate, or update stored API keys. |
 | Activity Event | A recorded action on a Key Entry (created, edited, deleted, revealed, copied) with a timestamp. Contains no plaintext secrets. |
+
+**Terminology — avoid:** Do not call KeyPage a "password manager" or "secrets manager" when describing the product. Use **Master Password**, **Key Entry**, **API Key**, and **Service Catalog** consistently (not "credential", "secret", or "password entry" unless the context is encryption).
+
+## Repository Layout
+
+| Path | Role |
+|------|------|
+| `apps/web` | React + Vite + Tailwind — browser UI |
+| `apps/api` | Fastify — serves the API and static web build |
+| `packages/shared` | Shared types, Service Catalog, and constants |
 
 ## Security Model
 - General security best practices for API key storage and management
@@ -36,6 +49,17 @@ Open source project — each deployment is single-user, but the code is public f
 - Server never sees plaintext API keys or the master password
 - Future provider integrations may need a separate server-held credential model
 
+## Theme
+- **Dark-only for v1** — no light theme
+- Visual direction: obsidian backgrounds with brass accents (design tokens are guidance, not a frozen palette)
+- Self-hosted fonts via fontsource (no external font CDN)
+
+## Settings (v1)
+Planned settings surface (features ship in later tickets; intent documented here):
+- Change Master Password (re-encrypt all Key Entries client-side)
+- View and regenerate recovery codes
+- Encrypted backup import/export
+- Session inactivity timeout
 
 ## Dashboard Layout
 - User-toggleable views: Card Grid, Table, List
@@ -83,18 +107,23 @@ Open source project — each deployment is single-user, but the code is public f
 - Verification hash updated; recovery codes regenerated and re-downloaded
 
 ## Technology Stack
-- **Frontend:** React + TypeScript, shadcn/ui, Tailwind CSS
+- **Monorepo:** pnpm workspaces + Turborepo
+- **Frontend:** React + TypeScript, Vite, Tailwind CSS v4, shadcn/ui
+- **Fonts:** Self-hosted via fontsource (no CDN)
 - **Backend:** Node.js + Fastify (TypeScript)
-- **Database:** SQLite (file-based, no separate server needed)
-- **Deployment:** Docker (single container, SQLite volume mount); remote access via Cloudflare Tunnel
+- **Database:** SQLite file on a Docker volume mount at `./data` (driver choice deferred to later tickets)
+- **Deployment:** Docker (single container); remote access via Cloudflare Tunnel
 
 ## Deployment & Access
-- Docker single container with SQLite volume mount
-- Local LAN: plain HTTP to the container port is fine
-- Remote access: Cloudflare Tunnel (user's existing pattern) — Tunnel handles HTTPS at Cloudflare's edge
-- App itself does not manage TLS certificates
+- Docker single container; bind-mount `./data` for SQLite and persistent state
+- Listens on port **8080** (`PORT` env var)
+- Local LAN: plain HTTP to `http://localhost:8080` or `http://<LAN-IP>:8080`
+- Remote access: Cloudflare Tunnel (user's existing pattern) — Tunnel terminates HTTPS at Cloudflare's edge
+- **KeyPage does not terminate TLS** — no in-app certificate management
 - Reverse proxy optional; not required for v1
 
+## Verification Preference
+For v1, prefer manual verification (run the app, click through flows) over large automated test suites. Add a small automated check only when a pure-function unit test is clearly cheaper than repeating the same manual step (e.g. a crypto helper with fixed vectors).
 
 ## Import/Export
 - Encrypted backup file (encrypted with master password)
