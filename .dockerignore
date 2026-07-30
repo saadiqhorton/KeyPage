@@ -1,0 +1,8 @@
+node_modules
+dist
+.turbo
+data
+.git
+docs
+.agents
+*.md

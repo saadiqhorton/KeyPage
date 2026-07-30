@@ -1,0 +1,22 @@
+{
+  "name": "@keypage/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@fastify/static": "10.1.2",
+    "@keypage/shared": "workspace:*",
+    "fastify": "5.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,99 @@
+@import "tailwindcss";
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
+
+@theme {
+  --color-obsidian: #07080a;
+  --color-surface: #0e1014;
+  --color-hairline: rgba(255, 255, 255, 0.08);
+  --color-text: #e8eaed;
+  --color-muted: #8a9099;
+  --color-brass: #c8a24a;
+  --font-display: "Space Grotesk Variable", sans-serif;
+  --font-mono: "JetBrains Mono Variable", monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-obsidian);
+    color: var(--color-text);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-image:
+      radial-gradient(
+        ellipse 80% 50% at 50% -20%,
+        rgba(200, 162, 74, 0.09),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 55% 35% at 100% 100%,
+        rgba(200, 162, 74, 0.04),
+        transparent
+      );
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@keyframes entrance-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.entrance-stagger > * {
+  animation: entrance-rise 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.entrance-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.entrance-stagger > *:nth-child(2) {
+  animation-delay: 90ms;
+}
+
+.entrance-stagger > *:nth-child(3) {
+  animation-delay: 180ms;
+}
+
+.entrance-stagger > *:nth-child(4) {
+  animation-delay: 270ms;
+}
+
+.entrance-delayed {
+  animation: entrance-rise 700ms cubic-bezier(0.32, 0.72, 0, 1) 360ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entrance-stagger > *,
+  .entrance-delayed {
+    animation: none;
+  }
+}
