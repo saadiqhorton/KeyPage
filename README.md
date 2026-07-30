@@ -56,7 +56,7 @@ sudo chown -R 1000:1000 ./data
 | `KEYPAGE_SESSION_ABSOLUTE_HOURS` | `12` | Maximum session lifetime regardless of activity |
 | `KEYPAGE_LOGIN_MAX_ATTEMPTS` | `5` | Failed login or recovery attempts before a temporary lockout |
 | `KEYPAGE_LOGIN_LOCKOUT_MINUTES` | `5` | Duration of login/recovery lockout after max failed attempts |
-| `KEYPAGE_TRUST_PROXY` | `false` | Set to `true` when behind a reverse proxy or Cloudflare Tunnel so `X-Forwarded-Proto` is honoured for secure cookies |
+| `KEYPAGE_TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy or Cloudflare Tunnel (`X-Forwarded-Proto` for secure cookies) and for `pnpm dev` (Vite on :5173 proxies to the API and sends `X-Forwarded-Host` for CSRF origin checks) |
 
 ## Local development
 
@@ -65,7 +65,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` runs Turbo in parallel: Vite on the web app, `tsx watch` on the API.
+`pnpm dev` runs Turbo in parallel: Vite on the web app, `tsx watch` on the API. Set `KEYPAGE_TRUST_PROXY=true` so the API honours Vite's `X-Forwarded-Host` header during origin checks.
 
 ## Production without Docker
 

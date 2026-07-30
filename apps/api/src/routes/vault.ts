@@ -41,6 +41,7 @@ import {
   resetVaultFromRecovery,
   vaultAuthToKdfParams,
 } from "../auth/vault-repo.js";
+import { config } from "../config.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
 import type { RecoveryCodeRow } from "../db/rows.js";
 import {
@@ -48,6 +49,7 @@ import {
   HttpInvalidRecoveryCode,
   HttpInvalidRequest,
   HttpSetupRequired,
+  HttpVaultAlreadyInitialized,
 } from "../errors.js";
 import { createRequireSession } from "../plugins/require-session.js";
 import { resolveIdleTimeoutSeconds } from "../settings.js";
@@ -199,11 +201,12 @@ function buildSessionResponse(
 }
 
 function requestHostForOriginCheck(request: FastifyRequest): string | undefined {
-  // Prefer X-Forwarded-Host when a reverse proxy / Vite dev proxy rewrites Host.
-  // Vite sets this to the browser Host so Origin (e.g. :5173) still matches.
-  const forwarded = request.headers["x-forwarded-host"];
-  if (typeof forwarded === "string" && forwarded.length > 0) {
-    return forwarded.split(",")[0]?.trim();
+  if (config.trustProxy) {
+    // Reverse proxy / Vite dev proxy rewrites Host; X-Forwarded-Host carries the browser host.
+    const forwarded = request.headers["x-forwarded-host"];
+    if (typeof forwarded === "string" && forwarded.length > 0) {
+      return forwarded.split(",")[0]?.trim();
+    }
   }
   return request.headers.host;
 }
@@ -265,6 +268,7 @@ function claimRecoveryCode(
     now.getTime() + RECOVERY_TICKET_TTL_SECONDS * 1000,
   ).toISOString();
 
+  let raced = false;
   const apply = db.transaction(() => {
     const update = db
       .prepare(
@@ -273,11 +277,8 @@ function claimRecoveryCode(
       .run(nowIso, code.id);
 
     if (update.changes === 0) {
-      const attemptsRemaining = recordFailure(db, "recovery");
-      throw new HttpInvalidRecoveryCode(
-        "That recovery code isn't valid",
-        attemptsRemaining,
-      );
+      raced = true;
+      return;
     }
 
     db.prepare(
@@ -288,6 +289,14 @@ function claimRecoveryCode(
   });
 
   apply();
+
+  if (raced) {
+    const attemptsRemaining = recordFailure(db, "recovery");
+    throw new HttpInvalidRecoveryCode(
+      "That recovery code isn't valid",
+      attemptsRemaining,
+    );
+  }
 
   const codesRemaining = countUnusedRecoveryCodes(db);
 
@@ -372,6 +381,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       validateKdfParams(body.kdf);
       validateAuthKeyB64(body.authKeyB64);
       validateRecoveryEnvelopes(body.recoveryCodes);
+
+      if (isVaultInitialized(db)) {
+        throw new HttpVaultAlreadyInitialized();
+      }
 
       const authVerifier = await hashAuthKey(body.authKeyB64);
 
