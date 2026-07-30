@@ -31,7 +31,7 @@ export function StatusPanel({ health }: StatusPanelProps) {
       ? "bg-muted"
       : health.status === "ok"
         ? "bg-brass"
-        : "bg-[#B85C5C]";
+        : "bg-danger";
 
   return (
     <aside className="entrance-delayed w-full max-w-md">

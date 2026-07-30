@@ -1,20 +1,39 @@
-import { FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import { ApiError } from "@/lib/api.js";
+import { AuthShell } from "@/components/AuthShell";
+import { RecoveryCodeGrid } from "@/components/RecoveryCodeGrid";
+import { StepIndicator } from "@/components/StepIndicator";
+import { Button } from "@/components/ui/Button";
+import { Callout } from "@/components/ui/Callout";
+import {
+  isPasswordStrongEnough,
+  PasswordStrengthHint,
+} from "@/components/ui/PasswordStrengthHint";
+import { PasswordField } from "@/components/ui/PasswordField";
+import { Spinner } from "@/components/ui/Spinner";
 import { buildRecoveryCodesFileText } from "@/crypto/recovery.js";
+import { ApiError } from "@/lib/api.js";
 import { downloadTextFile } from "@/lib/download.js";
 import { formatRecoveryCode } from "@keypage/shared";
 import { useVault } from "@/vault/useVault";
 
 const MIN_PASSWORD_LENGTH = 12;
 
+const SETUP_STEPS = [
+  "Create Master Password",
+  "Save recovery codes",
+  "Vault ready",
+];
+
 export function SetupScreen() {
+  const navigate = useNavigate();
   const { state, wizard, actions } = useVault();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (state.phase === "setup_required" && wizard.kind === "none") {
@@ -28,12 +47,37 @@ export function SetupScreen() {
   const step = wizardStep >= 2 && codesConfirmed ? 3 : wizardStep;
   const codes = wizard.kind === "setup" ? wizard.codes : null;
 
+  const downloadCodes = useCallback(() => {
+    if (!codes) return;
+    const date = new Date().toISOString().slice(0, 10);
+    downloadTextFile(
+      `keypage-recovery-codes-${date}.txt`,
+      buildRecoveryCodesFileText(codes),
+    );
+  }, [codes]);
+
+  useEffect(() => {
+    if (step !== 2 || !codes) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [step, codes]);
+
   async function handlePasswordSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
 
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`Master Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (!isPasswordStrongEnough(password)) {
+      setError("Choose a stronger Master Password before continuing.");
       return;
     }
     if (password !== confirm) {
@@ -50,91 +94,123 @@ export function SetupScreen() {
     }
   }
 
-  function handleDownloadAgain() {
+  async function handleCopyAll() {
     if (!codes) return;
-    const date = new Date().toISOString().slice(0, 10);
-    downloadTextFile(
-      `keypage-recovery-codes-${date}.txt`,
-      buildRecoveryCodesFileText(codes),
-    );
+    const text = codes.map((code) => formatRecoveryCode(code)).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
   }
 
   if (step === 1) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-6 py-12">
-        <h1 className="text-2xl">Setup — Master Password</h1>
-        <form className="flex flex-col gap-3" onSubmit={handlePasswordSubmit}>
-          <label className="flex flex-col gap-1">
-            <span>Master Password</span>
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={working}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span>Confirm Master Password</span>
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              disabled={working}
-            />
-          </label>
-          {error ? <p className="text-danger">{error}</p> : null}
-          {working ? <p>{state.phase === "working" ? state.label : "Working…"}</p> : null}
-          <button type="submit" disabled={working}>
+      <AuthShell chip="FIRST-RUN SETUP" title="Create your vault with a Master Password.">
+        <StepIndicator steps={SETUP_STEPS} currentStep={1} />
+        <form className="flex flex-col gap-4" onSubmit={handlePasswordSubmit}>
+          <PasswordField
+            label="Master Password"
+            autoComplete="new-password"
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={working}
+          />
+          <PasswordStrengthHint password={password} />
+          <PasswordField
+            label="Confirm Master Password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            disabled={working}
+            error={
+              confirm && password !== confirm ? "Passwords do not match." : undefined
+            }
+          />
+          <Callout tone="warning">
+            KeyPage cannot reset this for you. If you lose it, only a recovery
+            code can get you back in.
+          </Callout>
+          {error ? (
+            <p className="text-sm text-danger" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {working ? (
+            <div className="flex items-center gap-2 text-sm text-muted">
+              <Spinner size="sm" />
+              <span>{state.phase === "working" ? state.label : "Working…"}</span>
+            </div>
+          ) : null}
+          <Button type="submit" loading={working} className="w-full">
             Create vault
-          </button>
+          </Button>
         </form>
-      </main>
+      </AuthShell>
     );
   }
 
   if (step === 2) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-6 py-12">
-        <h1 className="text-2xl">Setup — Save recovery codes</h1>
-        <p>Save these recovery codes offline. Any one code can recover your vault.</p>
-        <ul className="font-mono text-sm">
-          {codes?.map((code, index) => (
-            <li key={code}>
-              {index + 1}. {formatRecoveryCode(code)}
-            </li>
-          ))}
-        </ul>
-        <button type="button" onClick={handleDownloadAgain}>
-          Download again
-        </button>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={saved}
-            onChange={(e) => setSaved(e.target.checked)}
-          />
-          <span>I&apos;ve saved my recovery codes somewhere safe.</span>
-        </label>
-        <button
-          type="button"
-          disabled={!saved}
-          onClick={() => setCodesConfirmed(true)}
-        >
-          Continue
-        </button>
-      </main>
+      <AuthShell
+        chip="FIRST-RUN SETUP"
+        title="Save these recovery codes offline. Any one code can recover your vault."
+      >
+        <StepIndicator steps={SETUP_STEPS} currentStep={2} />
+        <div className="flex flex-col gap-4">
+          <RecoveryCodeGrid codes={codes ?? []} />
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={downloadCodes}>
+              Download again
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => void handleCopyAll()}>
+              {copied ? "Copied" : "Copy all"}
+            </Button>
+          </div>
+          <label className="flex items-start gap-3 text-sm leading-relaxed text-muted">
+            <input
+              type="checkbox"
+              className="mt-1 accent-brass"
+              checked={saved}
+              onChange={(e) => setSaved(e.target.checked)}
+            />
+            <span>I&apos;ve saved my recovery codes somewhere safe.</span>
+          </label>
+          <Button
+            type="button"
+            disabled={!saved}
+            className="w-full"
+            onClick={() => setCodesConfirmed(true)}
+          >
+            Continue
+          </Button>
+        </div>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-6 py-12">
-      <h1 className="text-2xl">Vault ready</h1>
-      <p>Your vault is set up. Open the Dashboard to continue.</p>
-      <Link to="/" onClick={() => actions.finishWizard()}>
-        Open Dashboard
-      </Link>
-    </main>
+    <AuthShell chip="FIRST-RUN SETUP" title="Your vault is ready.">
+      <StepIndicator steps={SETUP_STEPS} currentStep={3} />
+      <div className="flex flex-col gap-4">
+        <Callout tone="info">
+          Your Master Password and recovery codes are set. Open the Dashboard to
+          continue — you can add API keys in a future release.
+        </Callout>
+        <Button
+          type="button"
+          className="w-full"
+          onClick={() => {
+            actions.finishWizard();
+            navigate("/");
+          }}
+        >
+          Open Dashboard
+        </Button>
+      </div>
+    </AuthShell>
   );
 }

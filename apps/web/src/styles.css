@@ -9,6 +9,8 @@
   --color-text: #e8eaed;
   --color-muted: #8a9099;
   --color-brass: #c8a24a;
+  --color-danger: #b85c5c;
+  --color-success: #6f9f7f;
   --font-display: "Space Grotesk Variable", sans-serif;
   --font-mono: "JetBrains Mono Variable", monospace;
 }
