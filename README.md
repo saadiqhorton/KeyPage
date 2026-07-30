@@ -68,6 +68,6 @@ v0.1 is a visual shell only. Not implemented:
 - Authentication and vault unlock
 - Key Entry CRUD (create, edit, delete)
 - Client-side encryption UI
-- Settings (master password, recovery codes, backup import/export, session timeout)
+- Settings (Master Password, recovery codes, backup import/export, session timeout)
 - SQLite persistence and API routes
 - Service Catalog picker in the UI
