@@ -1,7 +1,8 @@
 /**
  * Copies text to the clipboard and schedules a best-effort clear after `clearAfterMs`.
- * Clearing is best-effort: if read access is available we only clear when the
- * clipboard still holds the same text; otherwise we attempt `writeText("")`.
+ * Clearing is best-effort: we only clear when read access succeeds and the clipboard
+ * still holds the same text. On read failure we skip clearing to avoid wiping unrelated
+ * clipboard contents.
  */
 export async function copyTextWithAutoClear(
   text: string,
@@ -17,11 +18,7 @@ export async function copyTextWithAutoClear(
           await navigator.clipboard.writeText("");
         }
       } catch {
-        try {
-          await navigator.clipboard.writeText("");
-        } catch {
-          // Clipboard clear is best-effort only.
-        }
+        // Read failed — skip clear rather than risk wiping unrelated clipboard data.
       }
     })();
   }, clearAfterMs);
