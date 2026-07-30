@@ -1,20 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+
+import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
-import {
-  APP_NAME,
-  APP_VERSION,
-  SERVICE_CATALOG,
-  type HealthResponse,
-} from "@keypage/shared";
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
+import type Database from "better-sqlite3";
+
+import { config } from "./config.js";
 import type { InstanceRecord } from "./data-dir.js";
+import { HttpError, toApiErrorBody } from "./errors.js";
+import { healthRoutes } from "./routes/health.js";
+import { vaultRoutes } from "./routes/vault.js";
 
 type BuildServerOptions = {
   dataDir: string;
   webDir: string;
   logLevel: string;
   instance: InstanceRecord;
+  db: Database.Database;
 };
 
 async function webDirExists(webDir: string): Promise<boolean> {
@@ -28,17 +31,50 @@ async function webDirExists(webDir: string): Promise<boolean> {
 
 export async function buildServer(options: BuildServerOptions) {
   const app = Fastify({
-    logger: { level: options.logLevel },
+    logger: {
+      level: options.logLevel,
+      redact: [
+        "req.headers.cookie",
+        "res.headers['set-cookie']",
+        "req.headers.authorization",
+      ],
+    },
+    trustProxy: config.trustProxy,
   });
 
-  app.get("/api/health", async (): Promise<HealthResponse> => ({
-    status: "ok",
-    app: APP_NAME,
-    version: APP_VERSION,
+  await app.register(fastifyCookie);
+
+  app.setErrorHandler((error: FastifyError, _request, reply) => {
+    if (error.validation) {
+      return reply.status(400).send({
+        error: "invalid_request",
+        message: "Invalid request body",
+        details: error.validation.map((issue) => ({
+          field: issue.instancePath || "body",
+          message: issue.message ?? "invalid",
+        })),
+      });
+    }
+
+    const statusCode = error instanceof HttpError ? error.statusCode : 500;
+    const body = toApiErrorBody(error);
+
+    if (error instanceof HttpError && error.retryAfterSeconds !== undefined) {
+      void reply.header("Retry-After", String(error.retryAfterSeconds));
+    }
+
+    return reply.status(statusCode).send(body);
+  });
+
+  await app.register(healthRoutes, {
     dataDir: options.dataDir,
-    firstBootAt: options.instance.firstBootAt,
-    serviceCatalogSize: SERVICE_CATALOG.length,
-  }));
+    instance: options.instance,
+  });
+
+  await app.register(vaultRoutes, {
+    prefix: "/api/vault",
+    db: options.db,
+  });
 
   const hasWebDir = await webDirExists(options.webDir);
 
