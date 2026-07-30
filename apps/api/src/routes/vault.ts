@@ -198,6 +198,16 @@ function buildSessionResponse(
   };
 }
 
+function requestHostForOriginCheck(request: FastifyRequest): string | undefined {
+  // Prefer X-Forwarded-Host when a reverse proxy / Vite dev proxy rewrites Host.
+  // Vite sets this to the browser Host so Origin (e.g. :5173) still matches.
+  const forwarded = request.headers["x-forwarded-host"];
+  if (typeof forwarded === "string" && forwarded.length > 0) {
+    return forwarded.split(",")[0]?.trim();
+  }
+  return request.headers.host;
+}
+
 async function checkOrigin(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -207,7 +217,7 @@ async function checkOrigin(
     return;
   }
 
-  const host = request.headers.host;
+  const host = requestHostForOriginCheck(request);
   if (!host) {
     return;
   }
@@ -218,12 +228,14 @@ async function checkOrigin(
         error: "invalid_request",
         message: "Forbidden",
       });
+      return;
     }
   } catch {
     await reply.status(403).send({
       error: "invalid_request",
       message: "Forbidden",
     });
+    return;
   }
 }
 
