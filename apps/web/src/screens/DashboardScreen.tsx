@@ -1,13 +1,21 @@
+import { IdleWarningToast } from "@/components/IdleWarningToast";
 import { StatusPanel } from "@/components/StatusPanel";
 import { useHealth } from "@/hooks/useHealth";
+import { useIdleLock } from "@/vault/useIdleLock";
 import { useVault } from "@/vault/useVault";
 
 export function DashboardScreen() {
   const health = useHealth();
   const { actions } = useVault();
+  const { warningVisible, secondsRemaining, stayUnlocked } = useIdleLock();
 
   return (
     <main className="flex min-h-dvh flex-col justify-between gap-16 px-6 py-12 md:px-12 md:py-16 lg:px-20">
+      <IdleWarningToast
+        visible={warningVisible}
+        secondsRemaining={secondsRemaining}
+        onStayUnlocked={stayUnlocked}
+      />
       <div className="flex flex-col gap-8">
         <header className="flex items-center justify-between gap-4">
           <h1 className="text-2xl">KeyPage Dashboard</h1>
