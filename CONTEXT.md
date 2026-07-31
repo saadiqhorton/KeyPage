@@ -63,10 +63,12 @@ Planned settings surface (features ship in later tickets; intent documented here
 - Session inactivity timeout
 
 ## Dashboard Layout
-- User-toggleable views: Card Grid, Table, List
-- Default view on first login: Card Grid
-- View preference persisted (localStorage or server)
-- Search bar and tag filter chips shared across all views
+- User-toggleable views: Card Grid (default), Table, List
+- View preference persisted in `localStorage` (`keypage:v1:dashboard-view`)
+- Search bar (label, Service, description; case-insensitive substring, all tokens must match) and tag filter chips (AND semantics) shared across all views
+- Tag chips show counts for the search-filtered set; facet list covers all entries
+- Empty vault: `EmptyVaultState` with no toolbar
+- Filters match nothing: `NoFilterMatchesState` with Clear filters (toolbar stays visible)
 - Empty state: guided center message ("Add your first API key") with primary CTA — no suggested-provider cards in v1
 
 ## Add Key Flow

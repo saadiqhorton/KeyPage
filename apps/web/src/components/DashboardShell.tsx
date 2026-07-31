@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 
 type DashboardShellProps = {
-  /** Optional slot for idle warning banner — rendered near the top bar. */
+  /** Optional toolbar slot below the header (search, filters, view toggle). */
   children?: ReactNode;
   /** Optional header actions rendered next to the Lock vault button. */
   actions?: ReactNode;
