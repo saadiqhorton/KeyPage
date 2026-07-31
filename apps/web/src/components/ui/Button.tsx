@@ -42,7 +42,7 @@ export function Button({
       type={type}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-sm font-medium tracking-wide transition-colors",
+        "pressable inline-flex items-center justify-center gap-2 rounded-sm font-medium tracking-wide",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/70",
         "disabled:cursor-not-allowed disabled:opacity-50",
         variantClasses[variant],

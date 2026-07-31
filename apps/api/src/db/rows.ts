@@ -64,3 +64,26 @@ export type AppSettingRow = {
   value: string;
   updated_at: string;
 };
+
+export type KeyEntryRow = {
+  id: string;
+  label: string;
+  service_id: string;
+  custom_service_name: string | null;
+  description: string | null;
+  tags_json: string;
+  cipher_algorithm: "aes-256-gcm";
+  cipher_iv: string;
+  cipher_text: string;
+  key_version: number;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+};
+
+export type ActivityEventRow = {
+  id: string;
+  key_entry_id: string | null;
+  action: "created" | "edited" | "deleted" | "revealed" | "copied";
+  occurred_at: string;
+};

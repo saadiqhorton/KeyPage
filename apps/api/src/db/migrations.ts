@@ -79,6 +79,34 @@ CREATE TABLE app_settings (
 );
 `;
 
+const MIGRATION_2_SQL = `
+CREATE TABLE key_entries (
+  id                  TEXT PRIMARY KEY,
+  label               TEXT NOT NULL,
+  service_id          TEXT NOT NULL,
+  custom_service_name TEXT,
+  description         TEXT,
+  tags_json           TEXT NOT NULL DEFAULT '[]',
+  cipher_algorithm    TEXT NOT NULL CHECK (cipher_algorithm = 'aes-256-gcm'),
+  cipher_iv           TEXT NOT NULL,
+  cipher_text         TEXT NOT NULL,
+  key_version         INTEGER NOT NULL,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL,
+  last_used_at        TEXT
+);
+
+CREATE TABLE activity_events (
+  id           TEXT PRIMARY KEY,
+  key_entry_id TEXT REFERENCES key_entries(id) ON DELETE SET NULL,
+  action       TEXT NOT NULL CHECK (action IN ('created','edited','deleted','revealed','copied')),
+  occurred_at  TEXT NOT NULL
+);
+
+CREATE INDEX idx_key_entries_created_at ON key_entries (created_at DESC);
+CREATE INDEX idx_activity_events_occurred_at ON activity_events (occurred_at DESC);
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -88,6 +116,12 @@ export const MIGRATIONS: Migration[] = [
       db.prepare(
         `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)`,
       ).run("session_idle_minutes", "20", now);
+    },
+  },
+  {
+    version: 2,
+    up(db) {
+      db.exec(MIGRATION_2_SQL);
     },
   },
 ];

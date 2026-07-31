@@ -1,5 +1,15 @@
 import { RECOVERY_CODE_GROUP_LENGTH, RECOVERY_CODE_GROUPS } from "@keypage/shared";
 
+export function formatEntryDate(iso: string): string {
+  const date = new Date(iso);
+  const formatted = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+  return `Added ${formatted}`;
+}
+
 export function formatCountdown(seconds: number): string {
   const total = Math.max(0, Math.ceil(seconds));
   const minutes = Math.floor(total / 60);

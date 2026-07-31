@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import type { InstanceRecord } from "./data-dir.js";
 import { HttpError, toApiErrorBody } from "./errors.js";
 import { healthRoutes } from "./routes/health.js";
+import { keyEntryRoutes } from "./routes/key-entries.js";
 import { vaultRoutes } from "./routes/vault.js";
 
 type BuildServerOptions = {
@@ -73,6 +74,11 @@ export async function buildServer(options: BuildServerOptions) {
 
   await app.register(vaultRoutes, {
     prefix: "/api/vault",
+    db: options.db,
+  });
+
+  await app.register(keyEntryRoutes, {
+    prefix: "/api/keys",
     db: options.db,
   });
 

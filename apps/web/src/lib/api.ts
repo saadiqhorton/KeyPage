@@ -1,6 +1,9 @@
 import type {
   ApiErrorBody,
   ApiErrorCode,
+  KeyEntryCreateRequest,
+  KeyEntryCreateResponse,
+  KeyEntryListResponse,
   RecoveryClaimRequest,
   RecoveryClaimResponse,
   RecoveryResetRequest,
@@ -123,6 +126,19 @@ export function postRecoveryReset(
   body: RecoveryResetRequest,
 ): Promise<RecoveryResetResponse> {
   return apiFetch<RecoveryResetResponse>("/api/vault/recovery/reset", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getKeyEntries(): Promise<KeyEntryListResponse> {
+  return apiFetch<KeyEntryListResponse>("/api/keys");
+}
+
+export function postKeyEntry(
+  body: KeyEntryCreateRequest,
+): Promise<KeyEntryCreateResponse> {
+  return apiFetch<KeyEntryCreateResponse>("/api/keys", {
     method: "POST",
     body: JSON.stringify(body),
   });
