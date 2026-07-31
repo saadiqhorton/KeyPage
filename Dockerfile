@@ -24,12 +24,12 @@ COPY --from=deploy /out/api /app
 COPY --from=build /app/apps/web/dist /app/web
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN mkdir -p /app/data && chown -R node:node /app
-EXPOSE 8080
+EXPOSE 9090
 ENV KEYPAGE_DATA_DIR=/app/data \
     KEYPAGE_WEB_DIR=/app/web \
-    PORT=8080 \
+    PORT=9090 \
     HOST=0.0.0.0
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:9090/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]

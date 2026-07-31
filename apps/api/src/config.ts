@@ -37,7 +37,7 @@ function readPositiveIntEnv(name: string, fallback: number): number {
 }
 
 export const config = {
-  port: Number(process.env.PORT ?? 8080),
+  port: Number(process.env.PORT ?? 9090),
   host: process.env.HOST ?? "0.0.0.0",
   dataDir: path.resolve(process.env.KEYPAGE_DATA_DIR ?? "./data"),
   webDir: path.resolve(

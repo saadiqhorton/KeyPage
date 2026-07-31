@@ -1,8 +1,12 @@
+name: keypage
+
 services:
   keypage:
+    image: keypage
     build: .
+    container_name: keypage
     ports:
-      - "8080:8080"
+      - "9090:9090"
     volumes:
       - ./data:/app/data
     restart: unless-stopped

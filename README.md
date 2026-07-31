@@ -10,7 +10,7 @@ Self-hosted, single-user API key vault.
 docker compose up -d --build
 ```
 
-Open [http://localhost:8080](http://localhost:8080) or `http://<LAN-IP>:8080` from another device on your network.
+Open [http://localhost:9090](http://localhost:9090) or `http://<LAN-IP>:9090` from another device on your network.
 
 On first launch you are guided through vault setup: create a Master Password, save your recovery codes, then unlock to reach the Dashboard. See [First run](#first-run) below.
 
@@ -30,9 +30,9 @@ For local development without Docker, delete `data/keypage.db`, `data/keypage.db
 
 ## Secure context (Web Crypto vs fallback)
 
-`crypto.subtle` (Web Crypto) is only available in a **secure context**. Use `http://localhost:8080` on the same machine, or HTTPS via a Cloudflare Tunnel (or another reverse proxy) for remote access.
+`crypto.subtle` (Web Crypto) is only available in a **secure context**. Use `http://localhost:9090` on the same machine, or HTTPS via a Cloudflare Tunnel (or another reverse proxy) for remote access.
 
-Plain HTTP to a LAN IP (e.g. `http://192.168.1.x:8080`) is **not** a secure context. KeyPage automatically falls back to a JavaScript crypto backend (`@noble/*`) so setup and login still work; vaults created in either mode remain compatible.
+Plain HTTP to a LAN IP (e.g. `http://192.168.1.x:9090`) is **not** a secure context. KeyPage automatically falls back to a JavaScript crypto backend (`@noble/*`) so setup and login still work; vaults created in either mode remain compatible.
 
 ## Data persistence
 
@@ -48,7 +48,7 @@ sudo chown -R 1000:1000 ./data
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8080` | HTTP listen port |
+| `PORT` | `9090` | HTTP listen port |
 | `HOST` | `0.0.0.0` | Bind address |
 | `KEYPAGE_DATA_DIR` | `./data` | Persistent data directory (SQLite, etc.) |
 | `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package) | Path to the built web UI served as static files |
@@ -76,7 +76,7 @@ KEYPAGE_WEB_DIR=apps/web/dist pnpm start
 
 ## Remote access (Cloudflare Tunnel)
 
-For HTTPS beyond your LAN, point a Cloudflare Tunnel at `http://localhost:8080`. KeyPage serves plain HTTP; the tunnel terminates TLS at Cloudflare's edge. Set `KEYPAGE_TRUST_PROXY=true` so session cookies get the `Secure` flag over HTTPS. Use your existing tunnel hostname and ingress rule pattern — no tunnel config ships in this repo.
+For HTTPS beyond your LAN, point a Cloudflare Tunnel at `http://localhost:9090`. KeyPage serves plain HTTP; the tunnel terminates TLS at Cloudflare's edge. Set `KEYPAGE_TRUST_PROXY=true` so session cookies get the `Secure` flag over HTTPS. Use your existing tunnel hostname and ingress rule pattern — no tunnel config ships in this repo.
 
 ## Project layout
 

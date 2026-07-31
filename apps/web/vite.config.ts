@@ -14,9 +14,9 @@ export default defineConfig({
     host: true,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8080",
+        target: "http://127.0.0.1:9090",
         // Keep the browser Host (:5173) so Origin.host === Host and CSRF passes
-        // with trustProxy=false. changeOrigin:true would rewrite Host to :8080.
+        // with trustProxy=false. changeOrigin:true would rewrite Host to :9090.
         changeOrigin: false,
       },
     },
