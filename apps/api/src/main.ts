@@ -1,14 +1,28 @@
 import { config } from "./config.js";
 import { ensureDataDir } from "./data-dir.js";
+import { closeDatabase, openDatabase } from "./db/index.js";
+import { runHousekeeping } from "./db/housekeeping.js";
 import { buildServer } from "./server.js";
+import { resolveIdleTimeoutSeconds } from "./settings.js";
 
 async function main() {
   const instance = await ensureDataDir(config.dataDir);
+  const db = openDatabase(config.dataDir);
+  runHousekeeping(db);
+
+  const idleMinutes = resolveIdleTimeoutSeconds(db) / 60;
+  if (idleMinutes < 15 || idleMinutes > 30) {
+    console.warn(
+      `Session idle timeout ${idleMinutes} minutes is outside the recommended 15-30 minute band`,
+    );
+  }
+
   const app = await buildServer({
     dataDir: config.dataDir,
     webDir: config.webDir,
     logLevel: config.logLevel,
     instance,
+    db,
   });
 
   await app.listen({ port: config.port, host: config.host });
@@ -17,6 +31,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     app.log.info(`received ${signal}, shutting down`);
     await app.close();
+    closeDatabase(db);
     process.exit(0);
   };
 

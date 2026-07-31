@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+export const DATA_DIR_SCHEMA_VERSION = 1;
+
 export type InstanceRecord = {
   firstBootAt: string;
-  schemaVersion: 0;
+  schemaVersion: number;
 };
 
 function isPermissionError(error: unknown): boolean {
@@ -31,14 +33,38 @@ export async function ensureDataDir(dir: string): Promise<InstanceRecord> {
 
   try {
     const raw = await fs.readFile(instancePath, "utf8");
-    return JSON.parse(raw) as InstanceRecord;
+    const record = JSON.parse(raw) as InstanceRecord;
+
+    if (record.schemaVersion < DATA_DIR_SCHEMA_VERSION) {
+      const upgraded: InstanceRecord = {
+        ...record,
+        schemaVersion: DATA_DIR_SCHEMA_VERSION,
+      };
+
+      try {
+        await fs.writeFile(
+          instancePath,
+          `${JSON.stringify(upgraded, null, 2)}\n`,
+          "utf8",
+        );
+      } catch (writeError) {
+        if (isPermissionError(writeError)) {
+          throw permissionErrorMessage(dir, "write to");
+        }
+        throw writeError;
+      }
+
+      return upgraded;
+    }
+
+    return record;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
 
     if (code === "ENOENT") {
       const record: InstanceRecord = {
         firstBootAt: new Date().toISOString(),
-        schemaVersion: 0,
+        schemaVersion: DATA_DIR_SCHEMA_VERSION,
       };
 
       try {
