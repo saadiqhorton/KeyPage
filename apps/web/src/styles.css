@@ -60,6 +60,18 @@
     position: relative;
     z-index: 1;
   }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
 }
 
 @keyframes entrance-rise {
@@ -225,10 +237,15 @@
   animation-delay: 260ms;
 }
 
+.view-enter {
+  animation: entrance-rise 420ms var(--ease-out-soft) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .entrance-stagger > *,
   .entrance-delayed,
   .card-grid-enter > *,
+  .view-enter,
   .modal-backdrop-in,
   .modal-backdrop-out,
   .modal-panel-in,

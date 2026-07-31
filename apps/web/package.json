@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "clean": "rm -rf dist"
