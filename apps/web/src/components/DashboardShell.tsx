@@ -6,6 +6,8 @@ import { cn } from "@/lib/cn";
 type DashboardShellProps = {
   /** Optional slot for idle warning banner — rendered near the top bar. */
   children?: ReactNode;
+  /** Optional header actions rendered next to the Lock vault button. */
+  actions?: ReactNode;
   content: ReactNode;
   idleCountdown?: string | null;
   onLock: () => void;
@@ -15,6 +17,7 @@ type DashboardShellProps = {
 
 export function DashboardShell({
   children,
+  actions,
   content,
   idleCountdown,
   onLock,
@@ -33,6 +36,7 @@ export function DashboardShell({
           </div>
 
           <div className="flex items-center gap-3">
+            {actions}
             {idleCountdown ? (
               <span
                 className="rounded-sm border border-hairline bg-obsidian/60 px-2.5 py-1 font-mono text-xs tabular-nums text-muted"

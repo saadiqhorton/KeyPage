@@ -41,7 +41,6 @@ import {
   resetVaultFromRecovery,
   vaultAuthToKdfParams,
 } from "../auth/vault-repo.js";
-import { config } from "../config.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
 import type { RecoveryCodeRow } from "../db/rows.js";
 import {
@@ -51,6 +50,7 @@ import {
   HttpSetupRequired,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
+import { checkOrigin } from "../plugins/check-origin.js";
 import { createRequireSession } from "../plugins/require-session.js";
 import { resolveIdleTimeoutSeconds } from "../settings.js";
 
@@ -198,48 +198,6 @@ function buildSessionResponse(
     idleSecondsRemaining,
     absoluteExpiresAt: resolution.session.absoluteExpiresAt,
   };
-}
-
-function requestHostForOriginCheck(request: FastifyRequest): string | undefined {
-  if (config.trustProxy) {
-    // Reverse proxy / Vite dev proxy rewrites Host; X-Forwarded-Host carries the browser host.
-    const forwarded = request.headers["x-forwarded-host"];
-    if (typeof forwarded === "string" && forwarded.length > 0) {
-      return forwarded.split(",")[0]?.trim();
-    }
-  }
-  return request.headers.host;
-}
-
-async function checkOrigin(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
-  const origin = request.headers.origin;
-  if (!origin) {
-    return;
-  }
-
-  const host = requestHostForOriginCheck(request);
-  if (!host) {
-    return;
-  }
-
-  try {
-    if (new URL(origin).host !== host) {
-      await reply.status(403).send({
-        error: "invalid_request",
-        message: "Forbidden",
-      });
-      return;
-    }
-  } catch {
-    await reply.status(403).send({
-      error: "invalid_request",
-      message: "Forbidden",
-    });
-    return;
-  }
 }
 
 function claimRecoveryCode(
