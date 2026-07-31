@@ -5,7 +5,7 @@ import {
   KEY_ENTRY_VIEW_STORAGE_KEY,
   parseKeyEntryView,
   type KeyEntryView,
-} from "../lib/view-mode";
+} from "@/lib/view-mode";
 
 function readStoredView(): KeyEntryView {
   try {
