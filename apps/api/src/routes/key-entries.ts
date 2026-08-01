@@ -5,19 +5,25 @@ import type { FastifyPluginAsync } from "fastify";
 import type {
   KeyEntryCreateRequest,
   KeyEntryCreateResponse,
+  KeyEntryImportItem,
+  KeyEntryImportRequest,
+  KeyEntryImportResponse,
   KeyEntryListResponse,
   KeyEntryUseRequest,
   KeyEntryUseResponse,
 } from "@keypage/shared";
+import { KEY_ENTRY_IMPORT_MAX } from "@keypage/shared";
 
 import { recordActivityEvent } from "../keys/activity-repo.js";
 import {
   insertKeyEntry,
   listKeyEntries,
+  listKeyEntryIds,
   markKeyEntryUsed,
 } from "../keys/key-entry-repo.js";
 import {
   normalizeDescription,
+  normalizeImportTimestamp,
   normalizeLabel,
   normalizeTags,
   validateCipherInput,
@@ -30,6 +36,7 @@ import { resolveClipboardClearSeconds, resolveIdleTimeoutSeconds } from "../sett
 import { HttpInvalidRequest } from "../errors.js";
 
 const BODY_LIMIT = 65536;
+const IMPORT_BODY_LIMIT = 4_194_304;
 
 export type KeyEntryRouteOptions = {
   db: Database.Database;
@@ -50,6 +57,70 @@ function isDuplicateIdError(error: unknown): boolean {
     error instanceof DatabaseLib.SqliteError &&
     error.code === "SQLITE_CONSTRAINT_PRIMARYKEY"
   );
+}
+
+function withEntryFieldPrefix<T>(index: number, fn: () => T): T {
+  try {
+    return fn();
+  } catch (error) {
+    if (error instanceof HttpInvalidRequest && error.details) {
+      throw new HttpInvalidRequest(
+        error.message,
+        error.details.map((detail) => ({
+          field: `entries[${index}].${detail.field}`,
+          message: detail.message,
+        })),
+      );
+    }
+    throw error;
+  }
+}
+
+type ValidatedImportEntry = {
+  id: string;
+  label: string;
+  customServiceName: string | null;
+  description: string | null;
+  tags: string[];
+  serviceId: string;
+  cipher: KeyEntryCreateRequest["cipher"];
+  createdAt?: string;
+  updatedAt?: string;
+  lastUsedAt?: string | null;
+};
+
+function validateImportEntry(
+  entry: KeyEntryImportItem,
+  index: number,
+): ValidatedImportEntry {
+  return withEntryFieldPrefix(index, () => {
+    validateKeyEntryId(entry.id);
+    const label = normalizeLabel(entry.label);
+    const description = normalizeDescription(entry.description);
+    const tags = normalizeTags(entry.tags);
+    const { customServiceName } = validateService(
+      entry.serviceId,
+      entry.customServiceName,
+    );
+    validateCipherInput(entry.cipher);
+
+    const createdAt = normalizeImportTimestamp(entry.createdAt, "createdAt");
+    const updatedAt = normalizeImportTimestamp(entry.updatedAt, "updatedAt");
+    const lastUsedAt = normalizeImportTimestamp(entry.lastUsedAt, "lastUsedAt");
+
+    return {
+      id: entry.id,
+      label,
+      customServiceName,
+      description,
+      tags,
+      serviceId: entry.serviceId,
+      cipher: entry.cipher,
+      ...(createdAt !== null ? { createdAt } : {}),
+      ...(updatedAt !== null ? { updatedAt } : {}),
+      ...(lastUsedAt !== null ? { lastUsedAt } : {}),
+    };
+  });
 }
 
 export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
@@ -151,6 +222,96 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       }
 
       return reply.status(201).send({ entry });
+    },
+  );
+
+  app.post(
+    "/import",
+    {
+      bodyLimit: IMPORT_BODY_LIMIT,
+      preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: ["entries"],
+          properties: {
+            entries: {
+              type: "array",
+              minItems: 1,
+              maxItems: KEY_ENTRY_IMPORT_MAX,
+              items: {
+                type: "object",
+                required: [
+                  "id",
+                  "label",
+                  "serviceId",
+                  "tags",
+                  "cipher",
+                ],
+                properties: {
+                  id: { type: "string" },
+                  label: { type: "string" },
+                  serviceId: { type: "string" },
+                  customServiceName: { type: "string" },
+                  description: { type: "string" },
+                  tags: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  cipher: cipherSchema,
+                  createdAt: { type: "string" },
+                  updatedAt: { type: "string" },
+                  lastUsedAt: { type: ["string", "null"] },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request): Promise<KeyEntryImportResponse> => {
+      const body = request.body as KeyEntryImportRequest;
+
+      const validatedEntries = body.entries.map((entry, index) =>
+        validateImportEntry(entry, index),
+      );
+
+      const occurredAt = new Date().toISOString();
+
+      return db.transaction(() => {
+        const existingIds = listKeyEntryIds(db);
+        const skippedIds: string[] = [];
+        let imported = 0;
+
+        for (const entry of validatedEntries) {
+          if (existingIds.has(entry.id)) {
+            skippedIds.push(entry.id);
+            continue;
+          }
+
+          const created = insertKeyEntry(db, {
+            id: entry.id,
+            label: entry.label,
+            serviceId: entry.serviceId,
+            customServiceName: entry.customServiceName,
+            description: entry.description,
+            tags: entry.tags,
+            cipher: entry.cipher,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+            lastUsedAt: entry.lastUsedAt,
+          });
+          recordActivityEvent(db, {
+            keyEntryId: created.id,
+            action: "created",
+            occurredAt,
+          });
+          existingIds.add(created.id);
+          imported += 1;
+        }
+
+        return { imported, skippedIds };
+      })();
     },
   );
 
