@@ -35,6 +35,16 @@ export type KeyEntry = {
   lastUsedAt: string | null;
 };
 
+export const KEY_ENTRY_IMPORT_MAX = 500;
+
+export type KeyEntryImportItem = KeyEntryCreateRequest & {
+  createdAt?: string;
+  updatedAt?: string;
+  lastUsedAt?: string | null;
+};
+export type KeyEntryImportRequest = { entries: KeyEntryImportItem[] };
+export type KeyEntryImportResponse = { imported: number; skippedIds: string[] };
+
 export type KeyEntryCreateRequest = {
   id: string;
   label: string;

@@ -210,3 +210,27 @@ export function validateKeyEntryId(id: string): void {
     ]);
   }
 }
+
+export function normalizeImportTimestamp(
+  value: string | null | undefined,
+  field: string,
+): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value !== "string" || value.length > 40) {
+    throw new HttpInvalidRequest("Invalid import timestamp", [
+      { field, message: "must be a string of at most 40 characters" },
+    ]);
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new HttpInvalidRequest("Invalid import timestamp", [
+      { field, message: "must be a valid ISO timestamp" },
+    ]);
+  }
+
+  return value;
+}

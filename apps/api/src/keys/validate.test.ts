@@ -10,6 +10,7 @@ import {
 import { HttpInvalidRequest } from "../errors.js";
 import {
   normalizeTags,
+  normalizeImportTimestamp,
   validateCipherInput,
   validateService,
 } from "./validate.js";
@@ -97,5 +98,35 @@ describe("key entry validate", () => {
 
     assert.equal(tags.length, KEY_ENTRY_TAGS_MAX);
     assert.deepEqual(tags.slice(0, 3), ["alpha", "beta", "gamma"]);
+  });
+});
+
+describe("normalizeImportTimestamp", () => {
+  it("maps undefined and null to null", () => {
+    assert.equal(normalizeImportTimestamp(undefined, "createdAt"), null);
+    assert.equal(normalizeImportTimestamp(null, "lastUsedAt"), null);
+  });
+
+  it("accepts a valid ISO timestamp", () => {
+    const value = "2026-01-01T00:00:00.000Z";
+    assert.equal(normalizeImportTimestamp(value, "createdAt"), value);
+  });
+
+  it("rejects timestamps longer than 40 characters", () => {
+    assertInvalidRequest(
+      () =>
+        normalizeImportTimestamp(
+          "2026-01-01T00:00:00.000000000000000000000Z",
+          "createdAt",
+        ),
+      "createdAt",
+    );
+  });
+
+  it("rejects invalid timestamps", () => {
+    assertInvalidRequest(
+      () => normalizeImportTimestamp("not-a-date", "updatedAt"),
+      "updatedAt",
+    );
   });
 });
