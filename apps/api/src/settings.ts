@@ -1,6 +1,9 @@
 import type Database from "better-sqlite3";
 
 import {
+  CLIPBOARD_CLEAR_SECONDS_MAX,
+  CLIPBOARD_CLEAR_SECONDS_MIN,
+  DEFAULT_CLIPBOARD_CLEAR_SECONDS,
   DEFAULT_SESSION_IDLE_MINUTES,
   LOGIN_FAILURE_WINDOW_SECONDS,
   LOGIN_LOCKOUT_SECONDS,
@@ -34,6 +37,36 @@ export function resolveIdleTimeoutSeconds(db: Database.Database): number {
   }
 
   return DEFAULT_SESSION_IDLE_MINUTES * 60;
+}
+
+export function clampClipboardClearSeconds(seconds: number): number {
+  return Math.min(
+    CLIPBOARD_CLEAR_SECONDS_MAX,
+    Math.max(CLIPBOARD_CLEAR_SECONDS_MIN, Math.round(seconds)),
+  );
+}
+
+export function resolveClipboardClearSeconds(db: Database.Database): number {
+  const envValue = process.env.KEYPAGE_CLIPBOARD_CLEAR_SECONDS;
+  if (envValue !== undefined && envValue !== "") {
+    const parsed = Number(envValue);
+    if (Number.isFinite(parsed)) {
+      return clampClipboardClearSeconds(parsed);
+    }
+  }
+
+  const row = db
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get("clipboard_clear_seconds") as { value: string } | undefined;
+
+  if (row) {
+    const parsed = Number(row.value);
+    if (Number.isFinite(parsed)) {
+      return clampClipboardClearSeconds(parsed);
+    }
+  }
+
+  return DEFAULT_CLIPBOARD_CLEAR_SECONDS;
 }
 
 function clampIdleMinutes(minutes: number): number {

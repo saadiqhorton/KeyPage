@@ -51,6 +51,41 @@ export function listKeyEntries(db: Database.Database): KeyEntry[] {
   return rows.map(rowToKeyEntry);
 }
 
+export function getKeyEntry(
+  db: Database.Database,
+  id: string,
+): KeyEntry | null {
+  const row = db
+    .prepare(`SELECT * FROM key_entries WHERE id = ?`)
+    .get(id) as KeyEntryRow | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  return rowToKeyEntry(row);
+}
+
+export function markKeyEntryUsed(
+  db: Database.Database,
+  id: string,
+  usedAt: string,
+): KeyEntry | null {
+  const result = db
+    .prepare(`UPDATE key_entries SET last_used_at = ? WHERE id = ?`)
+    .run(usedAt, id);
+
+  if (result.changes === 0) {
+    return null;
+  }
+
+  const row = db
+    .prepare(`SELECT * FROM key_entries WHERE id = ?`)
+    .get(id) as KeyEntryRow;
+
+  return rowToKeyEntry(row);
+}
+
 export type InsertKeyEntryInput = Omit<
   KeyEntryCreateRequest,
   "customServiceName" | "description" | "label" | "tags"

@@ -1,5 +1,5 @@
 /**
- * Workstream C integration contract (SAA-116):
+ * Workstream C/D integration contract (SAA-118):
  *
  * ```ts
  * export type NewKeyEntryInput = {
@@ -15,17 +15,25 @@
  *   status: "loading" | "ready" | "error";
  *   entries: KeyEntry[];
  *   error: string | null;
+ *   clipboardClearMs: number;
  *   reload(): Promise<void>;
  *   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
+ *   markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
  * };
  * ```
  */
 
-import type { KeyEntry } from "@keypage/shared";
+import type { KeyEntry, KeyEntryUseAction } from "@keypage/shared";
 import { useCallback, useEffect, useState } from "react";
 
 import { encryptKeyValue, newKeyEntryId } from "@/crypto/key-entry.js";
-import { ApiError, getKeyEntries, postKeyEntry } from "@/lib/api.js";
+import {
+  ApiError,
+  getKeyEntries,
+  postKeyEntry,
+  postKeyEntryUse,
+} from "@/lib/api.js";
+import { resolveClipboardClearMs } from "@/lib/clipboard-timeout.js";
 import { onKeyCleared } from "@/vault/session-keys.js";
 
 export type NewKeyEntryInput = {
@@ -37,12 +45,14 @@ export type NewKeyEntryInput = {
   keyValue: string;
 };
 
-type UseKeyEntriesResult = {
+export type UseKeyEntriesResult = {
   status: "loading" | "ready" | "error";
   entries: KeyEntry[];
   error: string | null;
+  clipboardClearMs: number;
   reload(): Promise<void>;
   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
+  markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
 };
 
 export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
@@ -51,6 +61,9 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
   );
   const [entries, setEntries] = useState<KeyEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [clipboardClearMs, setClipboardClearMs] = useState(() =>
+    resolveClipboardClearMs(undefined),
+  );
 
   const reload = useCallback(async () => {
     if (!enabled) {
@@ -61,6 +74,9 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     try {
       const response = await getKeyEntries();
       setEntries(response.entries);
+      setClipboardClearMs(
+        resolveClipboardClearMs(response.clipboardClearSeconds),
+      );
       setStatus("ready");
     } catch (err) {
       const message =
@@ -77,6 +93,7 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
       setStatus("loading");
       setEntries([]);
       setError(null);
+      setClipboardClearMs(resolveClipboardClearMs(undefined));
       return;
     }
     void reload();
@@ -90,6 +107,7 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
       setEntries([]);
       setStatus("loading");
       setError(null);
+      setClipboardClearMs(resolveClipboardClearMs(undefined));
     });
   }, [enabled]);
 
@@ -119,5 +137,27 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     [],
   );
 
-  return { status, entries, error, reload, createKeyEntry };
+  const markUsed = useCallback(
+    async (id: string, action: KeyEntryUseAction): Promise<void> => {
+      const response = await postKeyEntryUse(id, action);
+      setEntries((previous) =>
+        previous.map((entry) =>
+          entry.id === id
+            ? { ...entry, lastUsedAt: response.entry.lastUsedAt }
+            : entry,
+        ),
+      );
+    },
+    [],
+  );
+
+  return {
+    status,
+    entries,
+    error,
+    clipboardClearMs,
+    reload,
+    createKeyEntry,
+    markUsed,
+  };
 }
