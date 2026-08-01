@@ -1,15 +1,24 @@
-import { KEY_ENTRY_MASK, type KeyEntry } from "@keypage/shared";
+import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
+import type { KeyEntryRevealProps } from "@/components/keys/KeyEntryCardGrid";
+import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatShortDate } from "@/lib/format";
 import { serviceDisplayName } from "@/lib/key-entry-filter";
 
 type KeyEntryTableProps = {
   entries: KeyEntry[];
-};
+} & KeyEntryRevealProps;
 
-export function KeyEntryTable({ entries }: KeyEntryTableProps) {
+export function KeyEntryTable({
+  entries,
+  revealedId,
+  revealedValue,
+  busyId,
+  onToggleReveal,
+  onCopy,
+}: KeyEntryTableProps) {
   return (
     <div className="view-enter bezel-shell">
       <div className="bezel-core overflow-x-auto">
@@ -35,43 +44,48 @@ export function KeyEntryTable({ entries }: KeyEntryTableProps) {
             </tr>
           </thead>
           <tbody>
-            {entries.map((entry) => (
-              <tr
-                key={entry.id}
-                className="border-b border-hairline last:border-b-0 hover:bg-brass/5"
-              >
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2.5">
-                    <ServiceIcon serviceId={entry.serviceId} size="sm" />
-                    <span className="text-text">{serviceDisplayName(entry)}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <p className="font-medium text-text">{entry.label}</p>
-                  {entry.description ? (
-                    <p className="mt-0.5 line-clamp-1 text-xs text-muted">
-                      {entry.description}
-                    </p>
-                  ) : null}
-                </td>
-                <td className="px-4 py-3">
-                  <KeyEntryTags tags={entry.tags} max={3} />
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap tabular-nums text-muted">
-                  {formatShortDate(entry.createdAt)}
-                </td>
-                <td className="px-4 py-3">
-                  <div aria-label="API Key hidden">
-                    <span
-                      className="font-mono text-xs tracking-[0.28em] text-muted/80"
-                      aria-hidden
-                    >
-                      {KEY_ENTRY_MASK}
-                    </span>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {entries.map((entry) => {
+              const revealed = revealedId === entry.id;
+
+              return (
+                <tr
+                  key={entry.id}
+                  className="border-b border-hairline last:border-b-0 hover:bg-brass/5"
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <ServiceIcon serviceId={entry.serviceId} size="sm" />
+                      <span className="text-text">{serviceDisplayName(entry)}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-text">{entry.label}</p>
+                    {entry.description ? (
+                      <p className="mt-0.5 line-clamp-1 text-xs text-muted">
+                        {entry.description}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    <KeyEntryTags tags={entry.tags} max={3} />
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap tabular-nums text-muted">
+                    {formatShortDate(entry.createdAt)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <KeyValueField
+                      entryLabel={entry.label}
+                      value={revealed ? revealedValue : null}
+                      revealed={revealed}
+                      busy={busyId === entry.id}
+                      density="row"
+                      onToggleReveal={() => onToggleReveal(entry)}
+                      onCopy={() => onCopy(entry)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

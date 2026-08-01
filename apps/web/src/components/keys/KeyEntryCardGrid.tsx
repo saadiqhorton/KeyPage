@@ -2,16 +2,43 @@ import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryCard } from "@/components/keys/KeyEntryCard";
 
-type KeyEntryCardGridProps = {
-  entries: KeyEntry[];
+export type KeyEntryRevealProps = {
+  revealedId: string | null;
+  revealedValue: string | null;
+  busyId: string | null;
+  onToggleReveal(entry: KeyEntry): void;
+  onCopy(entry: KeyEntry): void;
 };
 
-export function KeyEntryCardGrid({ entries }: KeyEntryCardGridProps) {
+type KeyEntryCardGridProps = {
+  entries: KeyEntry[];
+} & KeyEntryRevealProps;
+
+export function KeyEntryCardGrid({
+  entries,
+  revealedId,
+  revealedValue,
+  busyId,
+  onToggleReveal,
+  onCopy,
+}: KeyEntryCardGridProps) {
   return (
     <div className="card-grid-enter grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 lg:gap-6">
-      {entries.map((entry) => (
-        <KeyEntryCard key={entry.id} entry={entry} />
-      ))}
+      {entries.map((entry) => {
+        const revealed = revealedId === entry.id;
+
+        return (
+          <KeyEntryCard
+            key={entry.id}
+            entry={entry}
+            revealed={revealed}
+            revealedValue={revealed ? revealedValue : null}
+            busy={busyId === entry.id}
+            onToggleReveal={() => onToggleReveal(entry)}
+            onCopy={() => onCopy(entry)}
+          />
+        );
+      })}
     </div>
   );
 }

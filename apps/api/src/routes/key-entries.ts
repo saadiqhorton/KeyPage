@@ -6,12 +6,15 @@ import type {
   KeyEntryCreateRequest,
   KeyEntryCreateResponse,
   KeyEntryListResponse,
+  KeyEntryUseRequest,
+  KeyEntryUseResponse,
 } from "@keypage/shared";
 
 import { recordActivityEvent } from "../keys/activity-repo.js";
 import {
   insertKeyEntry,
   listKeyEntries,
+  markKeyEntryUsed,
 } from "../keys/key-entry-repo.js";
 import {
   normalizeDescription,
@@ -23,7 +26,7 @@ import {
 } from "../keys/validate.js";
 import { checkOrigin } from "../plugins/check-origin.js";
 import { createRequireSession } from "../plugins/require-session.js";
-import { resolveIdleTimeoutSeconds } from "../settings.js";
+import { resolveClipboardClearSeconds, resolveIdleTimeoutSeconds } from "../settings.js";
 import { HttpInvalidRequest } from "../errors.js";
 
 const BODY_LIMIT = 65536;
@@ -69,6 +72,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
     },
     async (): Promise<KeyEntryListResponse> => ({
       entries: listKeyEntries(db),
+      clipboardClearSeconds: resolveClipboardClearSeconds(db),
     }),
   );
 
@@ -147,6 +151,47 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       }
 
       return reply.status(201).send({ entry });
+    },
+  );
+
+  app.post(
+    "/:id/use",
+    {
+      bodyLimit: BODY_LIMIT,
+      preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: ["action"],
+          properties: {
+            action: { type: "string", enum: ["revealed", "copied"] },
+          },
+        },
+      },
+    },
+    async (request): Promise<KeyEntryUseResponse> => {
+      const { id } = request.params as { id: string };
+      validateKeyEntryId(id);
+
+      const body = request.body as KeyEntryUseRequest;
+      const occurredAt = new Date().toISOString();
+
+      const entry = db.transaction(() => {
+        const updated = markKeyEntryUsed(db, id, occurredAt);
+        if (!updated) {
+          throw new HttpInvalidRequest("Unknown key entry", [
+            { field: "id", message: "not found" },
+          ]);
+        }
+        recordActivityEvent(db, {
+          keyEntryId: id,
+          action: body.action,
+          occurredAt,
+        });
+        return updated;
+      })();
+
+      return { entry };
     },
   );
 };

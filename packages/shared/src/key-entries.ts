@@ -8,6 +8,10 @@ export const KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX = 60;
 export const KEY_ENTRY_CIPHERTEXT_B64_MAX = 8192;
 export const KEY_ENTRY_MASK = "••••••••••••";
 
+export const DEFAULT_CLIPBOARD_CLEAR_SECONDS = 30;
+export const CLIPBOARD_CLEAR_SECONDS_MIN = 5;
+export const CLIPBOARD_CLEAR_SECONDS_MAX = 300;
+
 export type KeyEntryCipherInput = {
   algorithm: "aes-256-gcm";
   ivB64: string;
@@ -45,13 +49,27 @@ export type KeyEntryCreateResponse = {
   entry: KeyEntry;
 };
 
-export type KeyEntryListResponse = {
-  entries: KeyEntry[];
-};
-
 export type ActivityEventAction =
   | "created"
   | "edited"
   | "deleted"
   | "revealed"
   | "copied";
+
+export type KeyEntryListResponse = {
+  entries: KeyEntry[];
+  clipboardClearSeconds: number;
+};
+
+export type KeyEntryUseAction = Extract<
+  ActivityEventAction,
+  "revealed" | "copied"
+>;
+
+export type KeyEntryUseRequest = {
+  action: KeyEntryUseAction;
+};
+
+export type KeyEntryUseResponse = {
+  entry: KeyEntry;
+};

@@ -4,6 +4,8 @@ import type {
   KeyEntryCreateRequest,
   KeyEntryCreateResponse,
   KeyEntryListResponse,
+  KeyEntryUseAction,
+  KeyEntryUseResponse,
   RecoveryClaimRequest,
   RecoveryClaimResponse,
   RecoveryResetRequest,
@@ -142,4 +144,17 @@ export function postKeyEntry(
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export function postKeyEntryUse(
+  id: string,
+  action: KeyEntryUseAction,
+): Promise<KeyEntryUseResponse> {
+  return apiFetch<KeyEntryUseResponse>(
+    `/api/keys/${encodeURIComponent(id)}/use`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    },
+  );
 }

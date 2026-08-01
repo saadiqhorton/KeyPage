@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { AddKeyModal } from "@/components/keys/AddKeyModal";
 import { KeyEntryCardGrid } from "@/components/keys/KeyEntryCardGrid";
@@ -13,8 +13,10 @@ import { StatusPanel } from "@/components/StatusPanel";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { Spinner } from "@/components/ui/Spinner";
+import { Toast } from "@/components/ui/Toast";
 import { useKeyEntryView } from "@/hooks/useKeyEntryView";
 import { useHealth } from "@/hooks/useHealth";
+import { useToast } from "@/hooks/useToast";
 import { formatCountdown } from "@/lib/format";
 import {
   collectTagFacets,
@@ -24,6 +26,7 @@ import {
 } from "@/lib/key-entry-filter";
 import { useIdleLock } from "@/vault/useIdleLock";
 import { useKeyEntries } from "@/vault/useKeyEntries.js";
+import { useKeyEntrySecret } from "@/vault/useKeyEntrySecret.js";
 import { useVault } from "@/vault/useVault";
 
 export function DashboardScreen() {
@@ -31,11 +34,55 @@ export function DashboardScreen() {
   const { state, actions } = useVault();
   const { warningVisible, secondsRemaining, stayUnlocked } = useIdleLock();
   const vaultUnlocked = state.phase === "unlocked";
-  const { status, entries, error, createKeyEntry } = useKeyEntries(vaultUnlocked);
+  const { status, entries, error, createKeyEntry, clipboardClearMs, markUsed } =
+    useKeyEntries(vaultUnlocked);
+  const { toast, showToast } = useToast();
+  const {
+    revealedId,
+    revealedValue,
+    busyId,
+    toggleReveal,
+    copy,
+    hideAll,
+  } = useKeyEntrySecret({
+    clipboardClearMs,
+    markUsed,
+    onCopied: (message) => {
+      showToast(message, "default", 4500);
+    },
+    onError: (message) => {
+      showToast(message, "danger", 4500);
+    },
+  });
   const [addKeyOpen, setAddKeyOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
   const { view, setView } = useKeyEntryView();
+
+  const revealProps = useMemo(
+    () => ({
+      revealedId,
+      revealedValue,
+      busyId,
+      onToggleReveal: toggleReveal,
+      onCopy: copy,
+    }),
+    [revealedId, revealedValue, busyId, toggleReveal, copy],
+  );
+
+  useEffect(() => {
+    if (!vaultUnlocked) {
+      hideAll();
+    }
+  }, [vaultUnlocked, hideAll]);
+
+  useEffect(() => {
+    hideAll();
+  }, [view, hideAll]);
+
+  useEffect(() => {
+    hideAll();
+  }, [query, selectedTagKeys, hideAll]);
 
   const facets = useMemo(() => collectTagFacets(entries), [entries]);
   const facetKeys = useMemo(() => new Set(facets.map((facet) => facet.key)), [facets]);
@@ -85,11 +132,11 @@ export function DashboardScreen() {
   } else if (visible.length === 0) {
     content = <NoFilterMatchesState onClearFilters={clearFilters} />;
   } else if (view === "table") {
-    content = <KeyEntryTable entries={visible} />;
+    content = <KeyEntryTable entries={visible} {...revealProps} />;
   } else if (view === "list") {
-    content = <KeyEntryList entries={visible} />;
+    content = <KeyEntryList entries={visible} {...revealProps} />;
   } else {
-    content = <KeyEntryCardGrid entries={visible} />;
+    content = <KeyEntryCardGrid entries={visible} {...revealProps} />;
   }
 
   const headerActions =
@@ -132,6 +179,7 @@ export function DashboardScreen() {
         secondsRemaining={secondsRemaining}
         onStayUnlocked={stayUnlocked}
       />
+      <Toast message={toast?.message ?? null} tone={toast?.tone} />
       <AddKeyModal
         open={addKeyOpen}
         onClose={() => setAddKeyOpen(false)}
