@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { AddKeyModal } from "@/components/keys/AddKeyModal";
 import { KeyEntryCardGrid } from "@/components/keys/KeyEntryCardGrid";
@@ -30,6 +31,7 @@ import { useKeyEntrySecret } from "@/vault/useKeyEntrySecret.js";
 import { useVault } from "@/vault/useVault";
 
 export function DashboardScreen() {
+  const navigate = useNavigate();
   const health = useHealth();
   const { state, actions } = useVault();
   const { warningVisible, secondsRemaining, stayUnlocked } = useIdleLock();
@@ -140,10 +142,21 @@ export function DashboardScreen() {
   }
 
   const headerActions =
-    vaultUnlocked && status === "ready" && entries.length > 0 ? (
-      <Button size="sm" onClick={openAddKey}>
-        Add Key
-      </Button>
+    vaultUnlocked && status === "ready" ? (
+      <>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => navigate("/settings")}
+        >
+          Settings
+        </Button>
+        {entries.length > 0 ? (
+          <Button size="sm" onClick={openAddKey}>
+            Add Key
+          </Button>
+        ) : null}
+      </>
     ) : null;
 
   const toolbar = showToolbar ? (

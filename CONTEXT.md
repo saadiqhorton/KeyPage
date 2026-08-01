@@ -129,9 +129,10 @@ Planned settings surface (features ship in later tickets; intent documented here
 For v1, prefer manual verification (run the app, click through flows) over large automated test suites. Add a small automated check only when a pure-function unit test is clearly cheaper than repeating the same manual step (e.g. a crypto helper with fixed vectors).
 
 ## Import/Export
-- Encrypted backup file (encrypted with master password)
-- Export all keys + metadata to single encrypted file
-- Import requires master password to decrypt
+- Encrypted backup file: **keypage-backup v1** JSON with a cleartext header (magic, format version, `createdAt`, KDF params) and a single AES-GCM ciphertext blob
+- Backup encryption uses an independent KDF from the vault encryption key, with HKDF info `keypage:v1:backup-key` and AAD `keypage:v1:backup:1`
+- Export requires the Master Password; plaintext key material exists only inside the encrypted envelope in the browser
+- Import merges by entry ID — duplicates in the target vault are skipped
 - Plain text export can be added later if needed
 
 ## Key Entry Metadata
