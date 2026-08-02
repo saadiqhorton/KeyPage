@@ -3,6 +3,8 @@ import type {
   ApiErrorCode,
   KeyEntryCreateRequest,
   KeyEntryCreateResponse,
+  KeyEntryUpdateRequest,
+  KeyEntryUpdateResponse,
   KeyEntryImportRequest,
   KeyEntryImportResponse,
   KeyEntryListResponse,
@@ -159,6 +161,25 @@ export function postKeyEntryUse(
       body: JSON.stringify({ action }),
     },
   );
+}
+
+export function patchKeyEntry(
+  id: string,
+  body: KeyEntryUpdateRequest,
+): Promise<KeyEntryUpdateResponse> {
+  return apiFetch<KeyEntryUpdateResponse>(
+    `/api/keys/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function deleteKeyEntry(id: string): Promise<void> {
+  return apiFetch<void>(`/api/keys/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 export function postKeyEntryImport(

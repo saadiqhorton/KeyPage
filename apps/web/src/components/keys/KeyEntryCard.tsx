@@ -1,6 +1,7 @@
 import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
+import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatEntryDate } from "@/lib/format";
@@ -15,6 +16,8 @@ type KeyEntryCardProps = {
   busy: boolean;
   onToggleReveal(): void;
   onCopy(): void;
+  onEdit(entry: KeyEntry): void;
+  onDelete(entry: KeyEntry): void;
 };
 
 export function KeyEntryCard({
@@ -25,6 +28,8 @@ export function KeyEntryCard({
   busy,
   onToggleReveal,
   onCopy,
+  onEdit,
+  onDelete,
 }: KeyEntryCardProps) {
   const displayName = serviceDisplayName(entry);
 
@@ -41,6 +46,12 @@ export function KeyEntryCard({
               {entry.label}
             </h3>
           </div>
+          <KeyEntryRowActions
+            entry={entry}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            className="-mr-1 -mt-1 shrink-0"
+          />
         </header>
 
         {entry.description ? (

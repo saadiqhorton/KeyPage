@@ -241,6 +241,22 @@
   animation: entrance-rise 420ms var(--ease-out-soft) both;
 }
 
+@keyframes menu-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.menu-pop-in {
+  animation: menu-pop-in 120ms var(--ease-out-soft) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .entrance-stagger > *,
   .entrance-delayed,
@@ -249,7 +265,8 @@
   .modal-backdrop-in,
   .modal-backdrop-out,
   .modal-panel-in,
-  .modal-panel-out {
+  .modal-panel-out,
+  .menu-pop-in {
     animation: none;
   }
 

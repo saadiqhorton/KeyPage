@@ -1,7 +1,8 @@
 import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
-import type { KeyEntryRevealProps } from "@/components/keys/KeyEntryCardGrid";
+import type { KeyEntryRevealProps, KeyEntryActionProps } from "@/components/keys/KeyEntryCardGrid";
+import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatShortDate } from "@/lib/format";
@@ -9,7 +10,8 @@ import { serviceDisplayName } from "@/lib/key-entry-filter";
 
 type KeyEntryTableProps = {
   entries: KeyEntry[];
-} & KeyEntryRevealProps;
+} & KeyEntryRevealProps &
+  KeyEntryActionProps;
 
 export function KeyEntryTable({
   entries,
@@ -18,6 +20,8 @@ export function KeyEntryTable({
   busyId,
   onToggleReveal,
   onCopy,
+  onEdit,
+  onDelete,
 }: KeyEntryTableProps) {
   return (
     <div className="view-enter bezel-shell">
@@ -40,6 +44,9 @@ export function KeyEntryTable({
               </th>
               <th scope="col" className="px-4 py-3 font-medium">
                 Key
+              </th>
+              <th scope="col" className="px-4 py-3 font-medium">
+                <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
@@ -81,6 +88,13 @@ export function KeyEntryTable({
                       density="row"
                       onToggleReveal={() => onToggleReveal(entry)}
                       onCopy={() => onCopy(entry)}
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <KeyEntryRowActions
+                      entry={entry}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
                     />
                   </td>
                 </tr>

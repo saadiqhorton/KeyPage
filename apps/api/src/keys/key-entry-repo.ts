@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 
 import type {
   KeyEntry,
+  KeyEntryCipherInput,
   KeyEntryCreateRequest,
 } from "@keypage/shared";
 
@@ -145,4 +146,83 @@ export function insertKeyEntry(
     .get(input.id) as KeyEntryRow;
 
   return rowToKeyEntry(row);
+}
+
+export type UpdateKeyEntryInput = {
+  id: string;
+  label: string;
+  serviceId: string;
+  customServiceName: string | null;
+  description: string | null;
+  tags: string[];
+  cipher?: KeyEntryCipherInput;
+  updatedAt: string;
+};
+
+export function updateKeyEntry(
+  db: Database.Database,
+  input: UpdateKeyEntryInput,
+): KeyEntry | null {
+  let result;
+
+  if (input.cipher !== undefined) {
+    const vault = getVaultAuth(db);
+    if (!vault) {
+      throw new HttpSetupRequired();
+    }
+
+    result = db
+      .prepare(
+        `UPDATE key_entries SET
+           label = ?, service_id = ?, custom_service_name = ?, description = ?, tags_json = ?,
+           cipher_algorithm = ?, cipher_iv = ?, cipher_text = ?, key_version = ?,
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        input.label,
+        input.serviceId,
+        input.customServiceName,
+        input.description,
+        JSON.stringify(input.tags),
+        input.cipher.algorithm,
+        input.cipher.ivB64,
+        input.cipher.ciphertextB64,
+        vault.key_version,
+        input.updatedAt,
+        input.id,
+      );
+  } else {
+    result = db
+      .prepare(
+        `UPDATE key_entries SET
+           label = ?, service_id = ?, custom_service_name = ?, description = ?, tags_json = ?,
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        input.label,
+        input.serviceId,
+        input.customServiceName,
+        input.description,
+        JSON.stringify(input.tags),
+        input.updatedAt,
+        input.id,
+      );
+  }
+
+  if (result.changes === 0) {
+    return null;
+  }
+
+  const row = db
+    .prepare(`SELECT * FROM key_entries WHERE id = ?`)
+    .get(input.id) as KeyEntryRow;
+
+  return rowToKeyEntry(row);
+}
+
+export function deleteKeyEntry(db: Database.Database, id: string): boolean {
+  const result = db.prepare(`DELETE FROM key_entries WHERE id = ?`).run(id);
+  return result.changes > 0;
 }

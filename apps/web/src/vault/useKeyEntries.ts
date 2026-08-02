@@ -1,5 +1,5 @@
 /**
- * Workstream C/D integration contract (SAA-118):
+ * Workstream C/D integration contract (SAA-118 / SAA-120):
  *
  * ```ts
  * export type NewKeyEntryInput = {
@@ -11,6 +11,15 @@
  *   keyValue: string;
  * };
  *
+ * export type EditKeyEntryInput = {
+ *   label: string;
+ *   serviceId: string;
+ *   customServiceName?: string;
+ *   description?: string;
+ *   tags: string[];
+ *   keyValue?: string; // non-empty ⇒ replace
+ * };
+ *
  * export function useKeyEntries(enabled: boolean): {
  *   status: "loading" | "ready" | "error";
  *   entries: KeyEntry[];
@@ -18,6 +27,8 @@
  *   clipboardClearMs: number;
  *   reload(): Promise<void>;
  *   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
+ *   updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
+ *   deleteKeyEntry(id: string): Promise<void>;
  *   markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
  * };
  * ```
@@ -29,7 +40,9 @@ import { useCallback, useEffect, useState } from "react";
 import { encryptKeyValue, newKeyEntryId } from "@/crypto/key-entry.js";
 import {
   ApiError,
+  deleteKeyEntry as apiDeleteKeyEntry,
   getKeyEntries,
+  patchKeyEntry,
   postKeyEntry,
   postKeyEntryUse,
 } from "@/lib/api.js";
@@ -45,6 +58,15 @@ export type NewKeyEntryInput = {
   keyValue: string;
 };
 
+export type EditKeyEntryInput = {
+  label: string;
+  serviceId: string;
+  customServiceName?: string;
+  description?: string;
+  tags: string[];
+  keyValue?: string;
+};
+
 export type UseKeyEntriesResult = {
   status: "loading" | "ready" | "error";
   entries: KeyEntry[];
@@ -52,6 +74,8 @@ export type UseKeyEntriesResult = {
   clipboardClearMs: number;
   reload(): Promise<void>;
   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
+  updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
+  deleteKeyEntry(id: string): Promise<void>;
   markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
 };
 
@@ -137,6 +161,36 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     [],
   );
 
+  const updateKeyEntry = useCallback(
+    async (id: string, input: EditKeyEntryInput): Promise<KeyEntry> => {
+      const body: Parameters<typeof patchKeyEntry>[1] = {
+        label: input.label,
+        serviceId: input.serviceId,
+        customServiceName: input.customServiceName,
+        description: input.description,
+        tags: input.tags,
+      };
+
+      if (input.keyValue && input.keyValue.length > 0) {
+        body.cipher = await encryptKeyValue(id, input.keyValue);
+      }
+
+      const response = await patchKeyEntry(id, body);
+      setEntries((previous) =>
+        previous.map((entry) =>
+          entry.id === id ? response.entry : entry,
+        ),
+      );
+      return response.entry;
+    },
+    [],
+  );
+
+  const deleteKeyEntry = useCallback(async (id: string): Promise<void> => {
+    await apiDeleteKeyEntry(id);
+    setEntries((previous) => previous.filter((entry) => entry.id !== id));
+  }, []);
+
   const markUsed = useCallback(
     async (id: string, action: KeyEntryUseAction): Promise<void> => {
       const response = await postKeyEntryUse(id, action);
@@ -158,6 +212,8 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     clipboardClearMs,
     reload,
     createKeyEntry,
+    updateKeyEntry,
+    deleteKeyEntry,
     markUsed,
   };
 }
