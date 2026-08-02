@@ -27,22 +27,23 @@ function formatPasswordError(error: unknown): string {
   return "Recovery code regeneration failed.";
 }
 
+/**
+ * Returns a freshly generated set rather than holding it: the codes belong in
+ * vault wizard state, which survives this hook's component unmounting.
+ */
 export function useRecoveryCodes(): {
   remaining: number | null;
   loadingRemaining: boolean;
   busy: boolean;
   error: string | null;
-  codes: string[] | null;
   refreshRemaining(): Promise<void>;
   regenerate(password: string): Promise<string[]>;
-  clearCodes(): void;
   clearError(): void;
 } {
   const [remaining, setRemaining] = useState<number | null>(null);
   const [loadingRemaining, setLoadingRemaining] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [codes, setCodes] = useState<string[] | null>(null);
 
   const refreshRemaining = useCallback(async () => {
     setLoadingRemaining(true);
@@ -65,7 +66,6 @@ export function useRecoveryCodes(): {
     setError(null);
     try {
       const result = await regenerateRecoveryCodes(password);
-      setCodes(result);
       setRemaining(result.length);
       return result;
     } catch (err) {
@@ -77,10 +77,6 @@ export function useRecoveryCodes(): {
     }
   }, []);
 
-  const clearCodes = useCallback(() => {
-    setCodes(null);
-  }, []);
-
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -90,10 +86,8 @@ export function useRecoveryCodes(): {
     loadingRemaining,
     busy,
     error,
-    codes,
     refreshRemaining,
     regenerate,
-    clearCodes,
     clearError,
   };
 }

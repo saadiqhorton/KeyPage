@@ -5,16 +5,12 @@ import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
 
-import { RecoveryCodesPanel } from "./RecoveryCodesPanel";
-
 type RecoveryCodesCardProps = {
   remaining: number | null;
   loadingRemaining: boolean;
   busy: boolean;
   error: string | null;
-  codes: string[] | null;
   onRegenerate(password: string): Promise<void>;
-  onSuccessAcknowledged(): void;
 };
 
 export function RecoveryCodesCard({
@@ -22,15 +18,15 @@ export function RecoveryCodesCard({
   loadingRemaining,
   busy,
   error,
-  codes,
   onRegenerate,
-  onSuccessAcknowledged,
 }: RecoveryCodesCardProps) {
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
+  // The new set is already being minted server-side; leaving now would lose
+  // codes that the /recovery-codes screen is about to show.
   useEffect(() => {
-    if (!busy && codes === null) return;
+    if (!busy) return;
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -39,7 +35,7 @@ export function RecoveryCodesCard({
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [busy, codes]);
+  }, [busy]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -56,24 +52,6 @@ export function RecoveryCodesCard({
     } catch {
       // Error surfaced via parent hook.
     }
-  }
-
-  if (codes) {
-    return (
-      <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
-        <div className="flex flex-col gap-1">
-          <h3 className="text-sm font-medium text-text">New recovery codes</h3>
-          <p className="text-xs text-muted">
-            Your previous recovery codes no longer work. Save this new set
-            offline.
-          </p>
-        </div>
-        <RecoveryCodesPanel
-          codes={codes}
-          onAcknowledged={onSuccessAcknowledged}
-        />
-      </div>
-    );
   }
 
   return (

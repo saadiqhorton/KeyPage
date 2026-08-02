@@ -1,5 +1,6 @@
 import { Navigate, Outlet, createBrowserRouter } from "react-router-dom";
 
+import { resolveGuard, type RouteGuard } from "@/routes/guards";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { RecoverScreen } from "@/screens/RecoverScreen";
 import { RecoveryCodesScreen } from "@/screens/RecoveryCodesScreen";
@@ -30,121 +31,23 @@ function LoadingGate() {
   return <Outlet />;
 }
 
-function RequireUnlocked({
-  children,
-  rendersRecoveryCodes = false,
-}: {
-  children: React.ReactNode;
-  rendersRecoveryCodes?: boolean;
-}) {
-  const { state, wizard } = useVault();
-
-  if (state.phase === "loading" || state.phase === "unavailable") {
-    return null;
-  }
-
-  // Settings renders freshly issued codes inline, so it may stay mounted while
-  // they are pending. Every other route hands them to the dedicated screen so
-  // the only copy in memory cannot be navigated or locked away.
-  if (
-    state.phase === "unlocked" &&
-    (wizard.kind === "none" || (wizard.kind === "codes" && rendersRecoveryCodes))
-  ) {
-    return children;
-  }
-
-  if (wizard.kind === "codes") {
-    return <Navigate to="/recovery-codes" replace />;
-  }
-  if (wizard.kind === "setup") {
-    return <Navigate to="/setup" replace />;
-  }
-  if (wizard.kind === "recovery") {
-    return <Navigate to="/recover" replace />;
-  }
-  if (state.phase === "setup_required") {
-    return <Navigate to="/setup" replace />;
-  }
-  return <Navigate to="/unlock" replace />;
-}
-
-function RequireRecoveryCodes({ children }: { children: React.ReactNode }) {
-  const { state, wizard } = useVault();
-
-  if (state.phase === "loading" || state.phase === "unavailable") {
-    return null;
-  }
-
-  if (wizard.kind === "codes") {
-    return children;
-  }
-
-  return <Navigate to="/" replace />;
-}
-
-function RequireWizard({
-  kind,
+function Guarded({
+  guard,
   children,
 }: {
-  kind: "setup" | "recovery";
+  guard: RouteGuard;
   children: React.ReactNode;
 }) {
   const { state, wizard } = useVault();
+  const decision = resolveGuard(guard, state.phase, wizard.kind);
 
-  if (state.phase === "loading" || state.phase === "unavailable") {
+  if (decision.kind === "wait") {
     return null;
   }
-
-  if (wizard.kind === "codes") {
-    return <Navigate to="/recovery-codes" replace />;
+  if (decision.kind === "redirect") {
+    return <Navigate to={decision.to} replace />;
   }
-
-  if (kind === "setup") {
-    if (state.phase === "setup_required" || wizard.kind === "setup") {
-      return children;
-    }
-    if (state.phase === "unlocked" && wizard.kind === "none") {
-      return <Navigate to="/" replace />;
-    }
-    return <Navigate to="/unlock" replace />;
-  }
-
-  if (state.phase === "locked" || wizard.kind === "recovery") {
-    return children;
-  }
-  if (state.phase === "unlocked" && wizard.kind === "none") {
-    return <Navigate to="/" replace />;
-  }
-  return <Navigate to="/setup" replace />;
-}
-
-function RequireLocked({ children }: { children: React.ReactNode }) {
-  const { state, wizard } = useVault();
-
-  if (state.phase === "loading" || state.phase === "unavailable") {
-    return null;
-  }
-
-  if (
-    (state.phase === "locked" || state.phase === "working") &&
-    wizard.kind === "none"
-  ) {
-    return children;
-  }
-
-  if (wizard.kind === "codes") {
-    return <Navigate to="/recovery-codes" replace />;
-  }
-  if (wizard.kind === "setup") {
-    return <Navigate to="/setup" replace />;
-  }
-  if (wizard.kind === "recovery") {
-    return <Navigate to="/recover" replace />;
-  }
-  if (state.phase === "unlocked") {
-    return <Navigate to="/" replace />;
-  }
-  return <Navigate to="/setup" replace />;
+  return children;
 }
 
 export const router = createBrowserRouter([
@@ -154,49 +57,49 @@ export const router = createBrowserRouter([
       {
         path: "/",
         element: (
-          <RequireUnlocked>
+          <Guarded guard="unlocked">
             <DashboardScreen />
-          </RequireUnlocked>
+          </Guarded>
         ),
       },
       {
         path: "/settings",
         element: (
-          <RequireUnlocked rendersRecoveryCodes>
+          <Guarded guard="unlocked">
             <SettingsScreen />
-          </RequireUnlocked>
+          </Guarded>
         ),
       },
       {
         path: "/recovery-codes",
         element: (
-          <RequireRecoveryCodes>
+          <Guarded guard="recovery-codes">
             <RecoveryCodesScreen />
-          </RequireRecoveryCodes>
+          </Guarded>
         ),
       },
       {
         path: "/setup",
         element: (
-          <RequireWizard kind="setup">
+          <Guarded guard="setup-wizard">
             <SetupScreen />
-          </RequireWizard>
+          </Guarded>
         ),
       },
       {
         path: "/unlock",
         element: (
-          <RequireLocked>
+          <Guarded guard="locked">
             <UnlockScreen />
-          </RequireLocked>
+          </Guarded>
         ),
       },
       {
         path: "/recover",
         element: (
-          <RequireWizard kind="recovery">
+          <Guarded guard="recovery-wizard">
             <RecoverScreen />
-          </RequireWizard>
+          </Guarded>
         ),
       },
       {

@@ -45,19 +45,20 @@ function formatPasswordError(error: unknown): string {
   return "Password change failed.";
 }
 
+/**
+ * Returns the new recovery codes rather than holding them: they belong in vault
+ * wizard state, which survives this hook's component unmounting or locking.
+ */
 export function useChangeMasterPassword(): {
   busy: boolean;
   error: string | null;
   progress: string | null;
-  codes: string[] | null;
   changePassword(currentPassword: string, newPassword: string): Promise<string[]>;
-  clearCodes(): void;
   clearError(): void;
 } {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
-  const [codes, setCodes] = useState<string[] | null>(null);
 
   const changePassword = useCallback(
     async (currentPassword: string, newPassword: string): Promise<string[]> => {
@@ -70,7 +71,6 @@ export function useChangeMasterPassword(): {
           newPassword,
           setProgress,
         );
-        setCodes(result);
         return result;
       } catch (err) {
         const message = formatPasswordError(err);
@@ -84,10 +84,6 @@ export function useChangeMasterPassword(): {
     [],
   );
 
-  const clearCodes = useCallback(() => {
-    setCodes(null);
-  }, []);
-
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -96,9 +92,7 @@ export function useChangeMasterPassword(): {
     busy,
     error,
     progress,
-    codes,
     changePassword,
-    clearCodes,
     clearError,
   };
 }

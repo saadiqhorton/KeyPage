@@ -59,6 +59,7 @@ Open source project — each deployment is single-user, but the code is public f
 Implemented on the Settings page:
 - Change Master Password (re-encrypts all Key Entries client-side and issues a new set of recovery codes)
 - Recovery codes: shows how many unused codes remain, and regenerates the full set (existing codes are never displayed again — only a freshly generated set is shown, once)
+- A freshly issued set is never rendered on Settings itself: it is parked in vault wizard state and every route redirects to the dedicated `/recovery-codes` screen until the user acknowledges it, so a lock, a back navigation, or a remount cannot drop the only copy
 - Encrypted backup import/export
 - Session inactivity timeout, chosen from 15/20/25/30 minutes. Setting `KEYPAGE_SESSION_IDLE_MINUTES` on the server pins the value: the control becomes read-only and the API rejects updates.
 

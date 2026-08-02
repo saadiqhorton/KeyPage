@@ -8,32 +8,28 @@ import { PasswordField } from "@/components/ui/PasswordField";
 import { PasswordStrengthHint } from "@/components/ui/PasswordStrengthHint";
 import { Spinner } from "@/components/ui/Spinner";
 
-import { RecoveryCodesPanel } from "./RecoveryCodesPanel";
-
 type ChangeMasterPasswordCardProps = {
   busy: boolean;
   error: string | null;
   progress: string | null;
-  codes: string[] | null;
   onChangePassword(currentPassword: string, newPassword: string): Promise<void>;
-  onSuccessAcknowledged(): void;
 };
 
 export function ChangeMasterPasswordCard({
   busy,
   error,
   progress,
-  codes,
   onChangePassword,
-  onSuccessAcknowledged,
 }: ChangeMasterPasswordCardProps) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Leaving mid-re-encryption would abandon a half-rotated vault; the codes it
+  // issues are guarded by the /recovery-codes screen it hands them to.
   useEffect(() => {
-    if (!busy && codes === null) return;
+    if (!busy) return;
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -42,7 +38,7 @@ export function ChangeMasterPasswordCard({
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [busy, codes]);
+  }, [busy]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -75,24 +71,6 @@ export function ChangeMasterPasswordCard({
     } catch {
       // Error surfaced via parent hook.
     }
-  }
-
-  if (codes) {
-    return (
-      <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
-        <div className="flex flex-col gap-1">
-          <h3 className="text-sm font-medium text-text">New recovery codes</h3>
-          <p className="text-xs text-muted">
-            Your Master Password was changed. Save these recovery codes offline —
-            they replace your previous set.
-          </p>
-        </div>
-        <RecoveryCodesPanel
-          codes={codes}
-          onAcknowledged={onSuccessAcknowledged}
-        />
-      </div>
-    );
   }
 
   return (

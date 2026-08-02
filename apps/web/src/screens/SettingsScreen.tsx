@@ -37,6 +37,10 @@ export function SettingsScreen() {
     return outcome;
   }
 
+  // Park the codes in vault state before anything else can fail or lock: that
+  // both preserves them and routes to /recovery-codes, which unmounts Settings.
+  // Refreshing the local hooks afterwards would be pointless, so the next mount
+  // does it instead.
   async function handleChangePassword(
     currentPassword: string,
     newPassword: string,
@@ -47,14 +51,12 @@ export function SettingsScreen() {
     );
     actions.showRecoveryCodes(codes, "password_change");
     await actions.refreshStatus();
-    await reload();
   }
 
   async function handleRegenerateRecoveryCodes(password: string) {
     const codes = await recoveryCodes.regenerate(password);
     actions.showRecoveryCodes(codes, "regen");
     await actions.refreshStatus();
-    await recoveryCodes.refreshRemaining();
   }
 
   async function handleSaveSessionTimeout() {
@@ -90,12 +92,7 @@ export function SettingsScreen() {
                 busy={passwordChange.busy}
                 error={passwordChange.error}
                 progress={passwordChange.progress}
-                codes={passwordChange.codes}
                 onChangePassword={handleChangePassword}
-                onSuccessAcknowledged={() => {
-                  passwordChange.clearCodes();
-                  actions.finishWizard();
-                }}
               />
             </SettingsSection>
 
@@ -108,12 +105,7 @@ export function SettingsScreen() {
                 loadingRemaining={recoveryCodes.loadingRemaining}
                 busy={recoveryCodes.busy}
                 error={recoveryCodes.error}
-                codes={recoveryCodes.codes}
                 onRegenerate={handleRegenerateRecoveryCodes}
-                onSuccessAcknowledged={() => {
-                  recoveryCodes.clearCodes();
-                  actions.finishWizard();
-                }}
               />
             </SettingsSection>
 
