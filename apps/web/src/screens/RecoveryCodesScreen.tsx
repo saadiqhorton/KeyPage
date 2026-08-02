@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import { AuthShell } from "@/components/AuthShell";
 import { RecoveryCodesPanel } from "@/components/settings/RecoveryCodesPanel";
 import { Callout } from "@/components/ui/Callout";
@@ -5,6 +7,19 @@ import { useVault } from "@/vault/useVault";
 
 export function RecoveryCodesScreen() {
   const { state, wizard, actions } = useVault();
+  const codesPending = wizard.kind === "codes";
+
+  useEffect(() => {
+    if (!codesPending) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [codesPending]);
 
   if (wizard.kind !== "codes") {
     return null;
