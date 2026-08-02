@@ -209,16 +209,7 @@ export function DashboardScreen() {
         open={addKeyOpen}
         mode="create"
         onClose={() => setAddKeyOpen(false)}
-        onSubmit={async (values) => {
-          await createKeyEntry({
-            label: values.label,
-            serviceId: values.serviceId,
-            customServiceName: values.customServiceName,
-            description: values.description,
-            tags: values.tags,
-            keyValue: values.keyValue ?? "",
-          });
-        }}
+        onSubmit={createKeyEntry}
       />
       <KeyEntryModal
         open={editEntry !== null}
@@ -230,7 +221,6 @@ export function DashboardScreen() {
           await updateKeyEntry(editEntry.id, values);
           hideAll();
           showToast("Key Entry updated", "default", 4500);
-          setEditEntry(null);
         }}
       />
       <DeleteKeyEntryModal

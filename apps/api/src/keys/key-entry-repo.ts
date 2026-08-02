@@ -4,6 +4,7 @@ import type {
   KeyEntry,
   KeyEntryCipherInput,
   KeyEntryCreateRequest,
+  KeyEntryUpdateRequest,
 } from "@keypage/shared";
 
 import { getVaultAuth } from "../auth/vault-repo.js";
@@ -148,10 +149,12 @@ export function insertKeyEntry(
   return rowToKeyEntry(row);
 }
 
-export type UpdateKeyEntryInput = {
+export type UpdateKeyEntryInput = Omit<
+  KeyEntryUpdateRequest,
+  "customServiceName" | "description" | "label" | "tags" | "cipher"
+> & {
   id: string;
   label: string;
-  serviceId: string;
   customServiceName: string | null;
   description: string | null;
   tags: string[];

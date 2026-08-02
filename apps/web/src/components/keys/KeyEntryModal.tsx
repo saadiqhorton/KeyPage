@@ -17,23 +17,22 @@ import { TagInput } from "@/components/ui/TagInput";
 import { TextArea } from "@/components/ui/TextArea";
 import { TextField } from "@/components/ui/TextField";
 import { ApiError } from "@/lib/api";
+import type { EditKeyEntryInput, NewKeyEntryInput } from "@/vault/useKeyEntries";
 
-export type KeyEntryFormValues = {
-  label: string;
-  serviceId: string;
-  customServiceName?: string;
-  description?: string;
-  tags: string[];
-  keyValue?: string;
-};
-
-type Props = {
-  open: boolean;
-  mode: "create" | "edit";
-  entry?: KeyEntry | null;
-  onClose(): void;
-  onSubmit(values: KeyEntryFormValues): Promise<unknown>;
-};
+type KeyEntryModalProps =
+  | {
+      open: boolean;
+      mode: "create";
+      onClose(): void;
+      onSubmit(values: NewKeyEntryInput): Promise<unknown>;
+    }
+  | {
+      open: boolean;
+      mode: "edit";
+      entry: KeyEntry | null;
+      onClose(): void;
+      onSubmit(values: EditKeyEntryInput): Promise<unknown>;
+    };
 
 type FieldErrors = {
   label?: string;
@@ -134,13 +133,9 @@ function seedFromEntry(entry: KeyEntry) {
   };
 }
 
-export function KeyEntryModal({
-  open,
-  mode,
-  entry,
-  onClose,
-  onSubmit,
-}: Props) {
+export function KeyEntryModal(props: KeyEntryModalProps) {
+  const { open, mode, onClose } = props;
+  const entry = mode === "edit" ? props.entry : null;
   const formId = useId();
   const [label, setLabel] = useState(INITIAL_FORM.label);
   const [serviceId, setServiceId] = useState(INITIAL_FORM.serviceId);
@@ -207,28 +202,48 @@ export function KeyEntryModal({
     setFieldErrors({});
     setSubmitting(true);
 
-    const values: KeyEntryFormValues = {
-      label: label.trim(),
-      serviceId,
-      tags: normalizedTags,
-    };
-
-    if (serviceId === "custom") {
-      values.customServiceName = customServiceName.trim();
-    }
-
-    const trimmedDescription = description.trim();
-    if (trimmedDescription.length > 0) {
-      values.description = trimmedDescription;
-    }
-
-    const trimmedKeyValue = keyValue.trim();
-    if (trimmedKeyValue.length > 0) {
-      values.keyValue = trimmedKeyValue;
-    }
-
     try {
-      await onSubmit(values);
+      if (mode === "create") {
+        const values: NewKeyEntryInput = {
+          label: label.trim(),
+          serviceId,
+          tags: normalizedTags,
+          keyValue: keyValue.trim(),
+        };
+
+        if (serviceId === "custom") {
+          values.customServiceName = customServiceName.trim();
+        }
+
+        const trimmedDescription = description.trim();
+        if (trimmedDescription.length > 0) {
+          values.description = trimmedDescription;
+        }
+
+        await props.onSubmit(values);
+      } else {
+        const values: EditKeyEntryInput = {
+          label: label.trim(),
+          serviceId,
+          tags: normalizedTags,
+        };
+
+        if (serviceId === "custom") {
+          values.customServiceName = customServiceName.trim();
+        }
+
+        const trimmedDescription = description.trim();
+        if (trimmedDescription.length > 0) {
+          values.description = trimmedDescription;
+        }
+
+        const trimmedKeyValue = keyValue.trim();
+        if (trimmedKeyValue.length > 0) {
+          values.keyValue = trimmedKeyValue;
+        }
+
+        await props.onSubmit(values);
+      }
       onClose();
     } catch (err) {
       const message =
