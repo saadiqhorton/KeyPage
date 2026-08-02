@@ -92,7 +92,4 @@ See [CONTEXT.md](CONTEXT.md) for product scope, security model, and glossary.
 
 Not implemented in this release:
 
-- Key Entry CRUD (create, edit, delete)
-- Settings (change Master Password, view/regenerate recovery codes, backup import/export, session timeout UI)
-- Service Catalog picker in the UI
-- Dashboard view modes, search, and tag filters
+- Provider integrations (automatic key refresh/rotation)

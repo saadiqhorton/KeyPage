@@ -10,13 +10,12 @@ import {
 import { deriveVaultKeys, pickKdfParams } from "@/crypto/derive.js";
 import {
   buildRecoveryCodeEnvelopes,
-  buildRecoveryCodesFileText,
   computeLookupHash,
   unwrapMasterKey,
 } from "@/crypto/recovery.js";
 import { zeroize } from "@/crypto/provider.js";
 import { ApiError, getVaultStatus, postRecoveryClaim, postRecoveryReset, postVaultLock, postVaultLogin, postVaultSetup } from "@/lib/api.js";
-import { downloadTextFile } from "@/lib/download.js";
+import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
 import { normalizeRecoveryCode } from "@keypage/shared";
 
 import {
@@ -41,12 +40,6 @@ let recoveryTicket: string | null = null;
 
 function clearRecoveryTicket(): void {
   recoveryTicket = null;
-}
-
-function downloadRecoveryCodes(codes: string[]): void {
-  const date = new Date().toISOString().slice(0, 10);
-  const text = buildRecoveryCodesFileText(codes);
-  downloadTextFile(`keypage-recovery-codes-${date}.txt`, text);
 }
 
 function isUnlocked(): boolean {

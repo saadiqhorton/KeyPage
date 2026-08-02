@@ -9,7 +9,7 @@
  * - Cross-tab: BroadcastChannel("keypage-lock") clears keys in every tab on lock.
  */
 
-import { zeroize, type AesKey } from "@/crypto/provider.js";
+import { zeroize, zeroizeAesKey, type AesKey } from "@/crypto/provider.js";
 
 const LOCK_CHANNEL = "keypage-lock";
 
@@ -32,6 +32,13 @@ let recoveredMasterKey: Uint8Array | null = null;
 const keyClearedListeners = new Set<() => void>();
 
 export function setEncryptionKey(key: AesKey): void {
+  encryptionKey = key;
+}
+
+export function replaceEncryptionKey(key: AesKey): void {
+  if (encryptionKey) {
+    zeroizeAesKey(encryptionKey);
+  }
   encryptionKey = key;
 }
 
