@@ -1,7 +1,8 @@
 import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
-import type { KeyEntryRevealProps } from "@/components/keys/KeyEntryCardGrid";
+import type { KeyEntryRevealProps, KeyEntryActionProps } from "@/components/keys/key-entry-view-props";
+import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatShortDate } from "@/lib/format";
@@ -9,7 +10,8 @@ import { serviceDisplayName } from "@/lib/key-entry-filter";
 
 type KeyEntryListProps = {
   entries: KeyEntry[];
-} & KeyEntryRevealProps;
+} & KeyEntryRevealProps &
+  KeyEntryActionProps;
 
 export function KeyEntryList({
   entries,
@@ -18,6 +20,8 @@ export function KeyEntryList({
   busyId,
   onToggleReveal,
   onCopy,
+  onEdit,
+  onDelete,
 }: KeyEntryListProps) {
   return (
     <div className="view-enter bezel-shell">
@@ -62,6 +66,12 @@ export function KeyEntryList({
                   className="w-full lg:w-auto lg:shrink-0"
                   onToggleReveal={() => onToggleReveal(entry)}
                   onCopy={() => onCopy(entry)}
+                />
+                <KeyEntryRowActions
+                  entry={entry}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  className="shrink-0 self-start"
                 />
               </li>
             );

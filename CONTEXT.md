@@ -80,7 +80,7 @@ Planned settings surface (features ship in later tickets; intent documented here
 
 ## Edit & Delete
 - Row-level kebab menu with "Edit" and "Delete" actions
-- Edit opens the same modal pre-filled with existing data
+- Edit opens the same modal pre-filled with existing metadata and the decrypted API key value (masked); re-encryption happens only when the value changes
 - Delete requires confirmation modal
 - Future: bulk select with toolbar for batch operations
 
@@ -142,5 +142,6 @@ Future: expiration date, refresh token (encrypted), provider-specific config —
 ## Activity Log
 - Basic activity events recorded for create, edit, delete, reveal, and copy
 - Timestamps only — never stores plaintext keys
+- Delete tombstones keep `key_entry_id` so deleted entries remain attributable in the log
 - No dedicated history UI in v1 (data stored for future use)
 - "Last used" on a Key Entry updates when the key is revealed or copied

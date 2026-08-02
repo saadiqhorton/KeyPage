@@ -2,7 +2,9 @@ import type Database from "better-sqlite3";
 
 import type {
   KeyEntry,
+  KeyEntryCipherInput,
   KeyEntryCreateRequest,
+  KeyEntryUpdateRequest,
 } from "@keypage/shared";
 
 import { getVaultAuth } from "../auth/vault-repo.js";
@@ -145,4 +147,82 @@ export function insertKeyEntry(
     .get(input.id) as KeyEntryRow;
 
   return rowToKeyEntry(row);
+}
+
+export type UpdateKeyEntryInput = Omit<
+  KeyEntryUpdateRequest,
+  "customServiceName" | "description" | "label" | "tags" | "cipher"
+> & {
+  id: string;
+  label: string;
+  customServiceName: string | null;
+  description: string | null;
+  tags: string[];
+  cipher?: KeyEntryCipherInput;
+  updatedAt: string;
+};
+
+export function updateKeyEntry(
+  db: Database.Database,
+  input: UpdateKeyEntryInput,
+): KeyEntry | null {
+  const assignments = [
+    "label = ?",
+    "service_id = ?",
+    "custom_service_name = ?",
+    "description = ?",
+    "tags_json = ?",
+    "updated_at = ?",
+  ];
+  const values: unknown[] = [
+    input.label,
+    input.serviceId,
+    input.customServiceName,
+    input.description,
+    JSON.stringify(input.tags),
+    input.updatedAt,
+  ];
+
+  if (input.cipher !== undefined) {
+    const vault = getVaultAuth(db);
+    if (!vault) {
+      throw new HttpSetupRequired();
+    }
+
+    assignments.push(
+      "cipher_algorithm = ?",
+      "cipher_iv = ?",
+      "cipher_text = ?",
+      "key_version = ?",
+    );
+    values.push(
+      input.cipher.algorithm,
+      input.cipher.ivB64,
+      input.cipher.ciphertextB64,
+      vault.key_version,
+    );
+  }
+
+  values.push(input.id);
+
+  const result = db
+    .prepare(
+      `UPDATE key_entries SET ${assignments.join(", ")} WHERE id = ?`,
+    )
+    .run(...values);
+
+  if (result.changes === 0) {
+    return null;
+  }
+
+  const row = db
+    .prepare(`SELECT * FROM key_entries WHERE id = ?`)
+    .get(input.id) as KeyEntryRow;
+
+  return rowToKeyEntry(row);
+}
+
+export function deleteKeyEntry(db: Database.Database, id: string): boolean {
+  const result = db.prepare(`DELETE FROM key_entries WHERE id = ?`).run(id);
+  return result.changes > 0;
 }

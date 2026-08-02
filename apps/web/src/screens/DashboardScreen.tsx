@@ -1,9 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { KeyEntry } from "@keypage/shared";
 
-import { AddKeyModal } from "@/components/keys/AddKeyModal";
+import { DeleteKeyEntryModal } from "@/components/keys/DeleteKeyEntryModal";
 import { KeyEntryCardGrid } from "@/components/keys/KeyEntryCardGrid";
 import { KeyEntryList } from "@/components/keys/KeyEntryList";
+import { KeyEntryModal } from "@/components/keys/KeyEntryModal";
 import { KeyEntryTable } from "@/components/keys/KeyEntryTable";
 import { KeyEntryToolbar } from "@/components/keys/KeyEntryToolbar";
 import { NoFilterMatchesState } from "@/components/keys/NoFilterMatchesState";
@@ -36,7 +38,7 @@ export function DashboardScreen() {
   const { state, actions } = useVault();
   const { warningVisible, secondsRemaining, stayUnlocked } = useIdleLock();
   const vaultUnlocked = state.phase === "unlocked";
-  const { status, entries, error, createKeyEntry, clipboardClearMs, markUsed } =
+  const { status, entries, error, createKeyEntry, updateKeyEntry, deleteKeyEntry, clipboardClearMs, markUsed } =
     useKeyEntries(vaultUnlocked);
   const { toast, showToast } = useToast();
   const {
@@ -57,9 +59,19 @@ export function DashboardScreen() {
     },
   });
   const [addKeyOpen, setAddKeyOpen] = useState(false);
+  const [editEntry, setEditEntry] = useState<KeyEntry | null>(null);
+  const [deleteEntry, setDeleteEntry] = useState<KeyEntry | null>(null);
   const [query, setQuery] = useState("");
   const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
   const { view, setView } = useKeyEntryView();
+
+  const actionProps = useMemo(
+    () => ({
+      onEdit: (entry: KeyEntry) => setEditEntry(entry),
+      onDelete: (entry: KeyEntry) => setDeleteEntry(entry),
+    }),
+    [],
+  );
 
   const revealProps = useMemo(
     () => ({
@@ -75,6 +87,9 @@ export function DashboardScreen() {
   useEffect(() => {
     if (!vaultUnlocked) {
       hideAll();
+      setAddKeyOpen(false);
+      setEditEntry(null);
+      setDeleteEntry(null);
     }
   }, [vaultUnlocked, hideAll]);
 
@@ -134,11 +149,11 @@ export function DashboardScreen() {
   } else if (visible.length === 0) {
     content = <NoFilterMatchesState onClearFilters={clearFilters} />;
   } else if (view === "table") {
-    content = <KeyEntryTable entries={visible} {...revealProps} />;
+    content = <KeyEntryTable entries={visible} {...revealProps} {...actionProps} />;
   } else if (view === "list") {
-    content = <KeyEntryList entries={visible} {...revealProps} />;
+    content = <KeyEntryList entries={visible} {...revealProps} {...actionProps} />;
   } else {
-    content = <KeyEntryCardGrid entries={visible} {...revealProps} />;
+    content = <KeyEntryCardGrid entries={visible} {...revealProps} {...actionProps} />;
   }
 
   const headerActions =
@@ -193,10 +208,33 @@ export function DashboardScreen() {
         onStayUnlocked={stayUnlocked}
       />
       <Toast message={toast?.message ?? null} tone={toast?.tone} />
-      <AddKeyModal
+      <KeyEntryModal
         open={addKeyOpen}
+        mode="create"
         onClose={() => setAddKeyOpen(false)}
-        onCreate={createKeyEntry}
+        onSubmit={createKeyEntry}
+      />
+      <KeyEntryModal
+        open={editEntry !== null}
+        mode="edit"
+        entry={editEntry}
+        onClose={() => setEditEntry(null)}
+        onSubmit={async (values) => {
+          if (!editEntry) return;
+          await updateKeyEntry(editEntry.id, values);
+          hideAll();
+          showToast("Key Entry updated", "default", 4500);
+        }}
+      />
+      <DeleteKeyEntryModal
+        entry={deleteEntry}
+        onClose={() => setDeleteEntry(null)}
+        onConfirm={async (entry) => {
+          await deleteKeyEntry(entry.id);
+          hideAll();
+          showToast("Key Entry deleted", "default", 4500);
+          setDeleteEntry(null);
+        }}
       />
     </>
   );

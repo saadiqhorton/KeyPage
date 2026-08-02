@@ -9,6 +9,8 @@ import type {
   KeyEntryImportRequest,
   KeyEntryImportResponse,
   KeyEntryListResponse,
+  KeyEntryUpdateRequest,
+  KeyEntryUpdateResponse,
   KeyEntryUseRequest,
   KeyEntryUseResponse,
 } from "@keypage/shared";
@@ -16,10 +18,13 @@ import { KEY_ENTRY_IMPORT_MAX } from "@keypage/shared";
 
 import { recordActivityEvent } from "../keys/activity-repo.js";
 import {
+  deleteKeyEntry,
+  getKeyEntry,
   insertKeyEntry,
   listKeyEntries,
   listKeyEntryIds,
   markKeyEntryUsed,
+  updateKeyEntry,
 } from "../keys/key-entry-repo.js";
 import {
   normalizeDescription,
@@ -353,6 +358,105 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       })();
 
       return { entry };
+    },
+  );
+
+  app.patch(
+    "/:id",
+    {
+      bodyLimit: BODY_LIMIT,
+      preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: ["label", "serviceId", "tags"],
+          properties: {
+            label: { type: "string" },
+            serviceId: { type: "string" },
+            customServiceName: { type: "string" },
+            description: { type: "string" },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+            },
+            cipher: cipherSchema,
+          },
+        },
+      },
+    },
+    async (request): Promise<KeyEntryUpdateResponse> => {
+      const { id } = request.params as { id: string };
+      validateKeyEntryId(id);
+
+      const body = request.body as KeyEntryUpdateRequest;
+      const label = normalizeLabel(body.label);
+      const description = normalizeDescription(body.description);
+      const tags = normalizeTags(body.tags);
+      const { customServiceName } = validateService(
+        body.serviceId,
+        body.customServiceName,
+      );
+      if (body.cipher !== undefined) {
+        validateCipherInput(body.cipher);
+      }
+
+      const occurredAt = new Date().toISOString();
+
+      const entry = db.transaction(() => {
+        const updated = updateKeyEntry(db, {
+          id,
+          label,
+          serviceId: body.serviceId,
+          customServiceName,
+          description,
+          tags,
+          ...(body.cipher !== undefined ? { cipher: body.cipher } : {}),
+          updatedAt: occurredAt,
+        });
+        if (!updated) {
+          throw new HttpInvalidRequest("Unknown key entry", [
+            { field: "id", message: "not found" },
+          ]);
+        }
+        recordActivityEvent(db, {
+          keyEntryId: id,
+          action: "edited",
+          occurredAt,
+        });
+        return updated;
+      })();
+
+      return { entry };
+    },
+  );
+
+  app.delete(
+    "/:id",
+    {
+      preHandler: [checkOrigin, requireSession],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      validateKeyEntryId(id);
+
+      const occurredAt = new Date().toISOString();
+
+      db.transaction(() => {
+        const existing = getKeyEntry(db, id);
+        if (!existing) {
+          throw new HttpInvalidRequest("Unknown key entry", [
+            { field: "id", message: "not found" },
+          ]);
+        }
+        recordActivityEvent(db, {
+          keyEntryId: id,
+          action: "deleted",
+          occurredAt,
+        });
+        deleteKeyEntry(db, id);
+      })();
+
+      return reply.status(204).send();
     },
   );
 };

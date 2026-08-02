@@ -59,6 +59,19 @@ export type KeyEntryCreateResponse = {
   entry: KeyEntry;
 };
 
+export type KeyEntryUpdateRequest = {
+  label: string;
+  serviceId: string;
+  customServiceName?: string;
+  description?: string;
+  tags: string[];
+  cipher?: KeyEntryCipherInput;
+};
+
+export type KeyEntryUpdateResponse = {
+  entry: KeyEntry;
+};
+
 export type ActivityEventAction =
   | "created"
   | "edited"
