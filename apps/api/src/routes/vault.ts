@@ -7,8 +7,10 @@ import {
   SESSION_COOKIE_NAME,
   type KdfParams,
   type RecoveryClaimResponse,
+  type RecoveryCodesRegenerateResponse,
   type RecoveryResetResponse,
   type VaultLoginResponse,
+  type VaultPasswordChangeResponse,
   type VaultSessionResponse,
   type VaultSetupResponse,
   type VaultStatusResponse,
@@ -33,14 +35,23 @@ import {
 import { newId, randomToken, sha256Hex } from "../auth/tokens.js";
 import { hashAuthKey, verifyAuthKey } from "../auth/verifier.js";
 import {
+  kdfSchema,
+  recoveryEnvelopeSchema,
+  reencryptedEntrySchema,
+  validateAuthKeyB64,
+} from "../auth/vault-request.js";
+import {
+  changeMasterPassword,
   countUnusedRecoveryCodes,
   findRecoveryCodeByLookupHash,
   getVaultAuth,
   initializeVault,
   isVaultInitialized,
+  regenerateRecoveryCodes,
   resetVaultFromRecovery,
   vaultAuthToKdfParams,
 } from "../auth/vault-repo.js";
+import { validateCipherInput } from "../keys/validate.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
 import type { RecoveryCodeRow } from "../db/rows.js";
 import {
@@ -55,30 +66,8 @@ import { createRequireSession } from "../plugins/require-session.js";
 import { resolveIdleTimeoutSeconds } from "../settings.js";
 
 const BODY_LIMIT = 65536;
+const LARGE_BODY_LIMIT = 4_194_304;
 const LOOKUP_HASH_PATTERN = /^[0-9a-f]{64}$/;
-
-const kdfSchema = {
-  type: "object",
-  required: ["algorithm", "saltB64", "iterations"],
-  properties: {
-    algorithm: { type: "string", enum: ["argon2id", "pbkdf2-sha256"] },
-    saltB64: { type: "string" },
-    iterations: { type: "number" },
-    memoryKiB: { type: "number" },
-    parallelism: { type: "number" },
-  },
-} as const;
-
-const recoveryEnvelopeSchema = {
-  type: "object",
-  required: ["label", "lookupHash", "kdf", "wrappedMasterKeyB64"],
-  properties: {
-    label: { type: "string" },
-    lookupHash: { type: "string" },
-    kdf: kdfSchema,
-    wrappedMasterKeyB64: { type: "string" },
-  },
-} as const;
 
 export type VaultRouteOptions = {
   db: Database.Database;
@@ -88,20 +77,20 @@ function idleTimeoutSeconds(db: Database.Database): number {
   return resolveIdleTimeoutSeconds(db);
 }
 
-function validateAuthKeyB64(authKeyB64: string): void {
-  let length: number;
+function withEntryFieldPrefix<T>(index: number, fn: () => T): T {
   try {
-    length = Buffer.from(authKeyB64, "base64").length;
-  } catch {
-    throw new HttpInvalidRequest("Invalid authKeyB64", [
-      { field: "authKeyB64", message: "must be valid base64" },
-    ]);
-  }
-
-  if (length !== 32) {
-    throw new HttpInvalidRequest("Invalid authKeyB64", [
-      { field: "authKeyB64", message: "must decode to exactly 32 bytes" },
-    ]);
+    return fn();
+  } catch (error) {
+    if (error instanceof HttpInvalidRequest && error.details) {
+      throw new HttpInvalidRequest(
+        error.message,
+        error.details.map((detail) => ({
+          field: `entries[${index}].${detail.field}`,
+          message: detail.message,
+        })),
+      );
+    }
+    throw error;
   }
 }
 
@@ -538,6 +527,159 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         state: "ready",
         session: info,
       };
+    },
+  );
+
+  app.post(
+    "/password",
+    {
+      bodyLimit: LARGE_BODY_LIMIT,
+      preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: [
+            "currentAuthKeyB64",
+            "kdf",
+            "authKeyB64",
+            "recoveryCodes",
+            "entries",
+          ],
+          properties: {
+            currentAuthKeyB64: { type: "string" },
+            kdf: kdfSchema,
+            authKeyB64: { type: "string" },
+            recoveryCodes: {
+              type: "array",
+              minItems: RECOVERY_CODE_COUNT,
+              maxItems: RECOVERY_CODE_COUNT,
+              items: recoveryEnvelopeSchema,
+            },
+            entries: {
+              type: "array",
+              items: reencryptedEntrySchema,
+            },
+          },
+        },
+      },
+    },
+    async (request, reply): Promise<VaultPasswordChangeResponse> => {
+      assertNotLocked(db, "login");
+
+      const body = request.body as {
+        currentAuthKeyB64: string;
+        kdf: KdfParams;
+        authKeyB64: string;
+        recoveryCodes: Parameters<typeof validateRecoveryEnvelopes>[0];
+        entries: Array<{
+          id: string;
+          cipher: Parameters<typeof validateCipherInput>[0];
+        }>;
+      };
+
+      validateAuthKeyB64(body.currentAuthKeyB64, "currentAuthKeyB64");
+      validateKdfParams(body.kdf);
+      validateAuthKeyB64(body.authKeyB64);
+      validateRecoveryEnvelopes(body.recoveryCodes);
+
+      body.entries.forEach((entry, index) => {
+        withEntryFieldPrefix(index, () => {
+          validateCipherInput(entry.cipher);
+        });
+      });
+
+      const vault = getVaultAuth(db);
+      if (!vault) {
+        throw new HttpSetupRequired();
+      }
+
+      const currentValid = await verifyAuthKey(
+        body.currentAuthKeyB64,
+        vault.auth_verifier,
+      );
+      if (!currentValid) {
+        const attemptsRemaining = recordFailure(db, "login");
+        throw new HttpInvalidCredentials(
+          "Incorrect Master Password",
+          attemptsRemaining,
+        );
+      }
+
+      const authVerifier = await hashAuthKey(body.authKeyB64);
+      const idleSeconds = idleTimeoutSeconds(db);
+
+      const { token, info, keyVersion, reEncrypted } = changeMasterPassword(
+        db,
+        {
+          kdf: body.kdf,
+          authVerifier,
+          recoveryCodes: body.recoveryCodes,
+          entries: body.entries,
+        },
+        request,
+        idleSeconds,
+      );
+
+      setSessionCookie(reply, request, token);
+
+      return {
+        state: "ready",
+        keyVersion,
+        reEncrypted,
+        session: info,
+      };
+    },
+  );
+
+  app.post(
+    "/recovery-codes",
+    {
+      bodyLimit: BODY_LIMIT,
+      preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: ["authKeyB64", "recoveryCodes"],
+          properties: {
+            authKeyB64: { type: "string" },
+            recoveryCodes: {
+              type: "array",
+              minItems: RECOVERY_CODE_COUNT,
+              maxItems: RECOVERY_CODE_COUNT,
+              items: recoveryEnvelopeSchema,
+            },
+          },
+        },
+      },
+    },
+    async (request): Promise<RecoveryCodesRegenerateResponse> => {
+      assertNotLocked(db, "login");
+
+      const body = request.body as {
+        authKeyB64: string;
+        recoveryCodes: Parameters<typeof validateRecoveryEnvelopes>[0];
+      };
+
+      validateAuthKeyB64(body.authKeyB64);
+      validateRecoveryEnvelopes(body.recoveryCodes);
+
+      const vault = getVaultAuth(db);
+      if (!vault) {
+        throw new HttpSetupRequired();
+      }
+
+      const valid = await verifyAuthKey(body.authKeyB64, vault.auth_verifier);
+      if (!valid) {
+        const attemptsRemaining = recordFailure(db, "login");
+        throw new HttpInvalidCredentials(
+          "Incorrect Master Password",
+          attemptsRemaining,
+        );
+      }
+
+      resetThrottle(db, "login");
+
+      return regenerateRecoveryCodes(db, body.recoveryCodes);
     },
   );
 };

@@ -226,3 +226,37 @@ export function deleteKeyEntry(db: Database.Database, id: string): boolean {
   const result = db.prepare(`DELETE FROM key_entries WHERE id = ?`).run(id);
   return result.changes > 0;
 }
+
+export type ReencryptedEntryInput = {
+  id: string;
+  cipher: KeyEntryCipherInput;
+};
+
+export function replaceKeyEntryCiphers(
+  db: Database.Database,
+  entries: ReencryptedEntryInput[],
+  keyVersion: number,
+): number {
+  const stmt = db.prepare(
+    `UPDATE key_entries
+     SET cipher_algorithm = ?,
+         cipher_iv = ?,
+         cipher_text = ?,
+         key_version = ?
+     WHERE id = ?`,
+  );
+
+  let updated = 0;
+  for (const entry of entries) {
+    const result = stmt.run(
+      entry.cipher.algorithm,
+      entry.cipher.ivB64,
+      entry.cipher.ciphertextB64,
+      keyVersion,
+      entry.id,
+    );
+    updated += result.changes;
+  }
+
+  return updated;
+}
