@@ -1,4 +1,7 @@
-import type { ReencryptedKeyEntry } from "@keypage/shared";
+import type {
+  ReencryptedKeyEntry,
+  VaultPasswordChangeResponse,
+} from "@keypage/shared";
 
 import { deriveVaultKeys, pickKdfParams } from "@/crypto/derive.js";
 import {
@@ -47,22 +50,22 @@ export async function changeMasterPassword(
 
   const decrypted: Array<{ id: string; plaintext: string }> = [];
   if (entries.length > 0) {
-    onProgress?.("Verifying encryption key…");
-    try {
-      await decryptKeyValueWith(current.encryptionKey, entries[0]!);
-    } catch {
-      zeroizeAesKey(current.encryptionKey);
-      throw new MasterPasswordError("That's not your Master Password.");
-    }
-
     onProgress?.("Decrypting key entries…");
+    let anyDecrypted = false;
     for (const entry of entries) {
       try {
         const plaintext = await decryptKeyValueWith(current.encryptionKey, entry);
         decrypted.push({ id: entry.id, plaintext });
+        anyDecrypted = true;
       } catch {
         zeroizeAesKey(current.encryptionKey);
-        throw new MasterPasswordError("That's not your Master Password.");
+        // One successful decrypt already proved the password, so a later
+        // failure is a problem with that entry, not with the password.
+        throw new MasterPasswordError(
+          anyDecrypted
+            ? `“${entry.label}” (${entry.id}) could not be decrypted, so nothing was changed. Check that key entry and try again.`
+            : "That's not your Master Password.",
+        );
       }
     }
   }
@@ -88,8 +91,9 @@ export async function changeMasterPassword(
   zeroize(next.masterKey);
 
   onProgress?.("Saving new Master Password…");
+  let response: VaultPasswordChangeResponse;
   try {
-    await postVaultPasswordChange({
+    response = await postVaultPasswordChange({
       currentAuthKeyB64: current.authKeyB64,
       kdf,
       authKeyB64: next.authKeyB64,
@@ -109,6 +113,13 @@ export async function changeMasterPassword(
 
   replaceEncryptionKey(next.encryptionKey);
   downloadRecoveryCodes(codes);
+
+  if (response.reEncrypted !== reencrypted.length) {
+    throw new MasterPasswordError(
+      `Your Master Password was changed, but the server re-encrypted ${response.reEncrypted} of ${reencrypted.length} key entries. Your new recovery codes were downloaded to this device — keep that file and check your key entries.`,
+    );
+  }
+
   return codes;
 }
 
