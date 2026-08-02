@@ -2,8 +2,6 @@ import type Database from "better-sqlite3";
 import type { FastifyPluginAsync } from "fastify";
 
 import {
-  SESSION_IDLE_MINUTES_MAX,
-  SESSION_IDLE_MINUTES_MIN,
   SESSION_IDLE_MINUTES_OPTIONS,
   type AppSettingsResponse,
   type AppSettingsUpdateRequest,
@@ -14,7 +12,7 @@ import { checkOrigin } from "../plugins/check-origin.js";
 import { createRequireSession } from "../plugins/require-session.js";
 import {
   describeIdleTimeout,
-  isIdleMinutesInBand,
+  isIdleMinutesOption,
   resolveClipboardClearSeconds,
   resolveIdleTimeoutSeconds,
   writeIdleTimeoutSetting,
@@ -71,11 +69,23 @@ export const settingsRoutes: FastifyPluginAsync<SettingsRouteOptions> = async (
     async (request): Promise<AppSettingsResponse> => {
       const body = request.body as AppSettingsUpdateRequest;
 
-      if (!isIdleMinutesInBand(body.sessionIdleMinutes)) {
+      if (!isIdleMinutesOption(body.sessionIdleMinutes)) {
         throw new HttpInvalidRequest("Invalid sessionIdleMinutes", [
           {
             field: "sessionIdleMinutes",
-            message: `must be one of ${SESSION_IDLE_MINUTES_OPTIONS.join(", ")} (${SESSION_IDLE_MINUTES_MIN}–${SESSION_IDLE_MINUTES_MAX})`,
+            message: `must be one of ${SESSION_IDLE_MINUTES_OPTIONS.join(", ")}`,
+          },
+        ]);
+      }
+
+      // A stored value would be silently ignored while the env var is set, so
+      // refuse rather than report a save that has no effect.
+      if (describeIdleTimeout(db).source === "env") {
+        throw new HttpInvalidRequest("Session timeout is set by the server", [
+          {
+            field: "sessionIdleMinutes",
+            message:
+              "KEYPAGE_SESSION_IDLE_MINUTES is set on the server; unset it to change the timeout here",
           },
         ]);
       }

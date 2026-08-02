@@ -273,13 +273,14 @@ function assertEntryIdsMatch(
   const submittedIds = new Set(entries.map((entry) => entry.id));
 
   if (
+    entries.length !== submittedIds.size ||
     dbIds.size !== submittedIds.size ||
     ![...dbIds].every((id) => submittedIds.has(id))
   ) {
     throw new HttpInvalidRequest("Entry set does not match vault", [
       {
         field: "entries",
-        message: "must include exactly all key entry ids in the vault",
+        message: "must include each key entry id in the vault exactly once",
       },
     ]);
   }

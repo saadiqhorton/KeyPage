@@ -8,8 +8,7 @@ import {
   LOGIN_FAILURE_WINDOW_SECONDS,
   LOGIN_LOCKOUT_SECONDS,
   LOGIN_MAX_ATTEMPTS,
-  SESSION_IDLE_MINUTES_MAX,
-  SESSION_IDLE_MINUTES_MIN,
+  SESSION_IDLE_MINUTES_OPTIONS,
   type IdleTimeoutSource,
 } from "@keypage/shared";
 
@@ -25,11 +24,8 @@ export function clampIdleMinutes(minutes: number): number {
   return Math.min(480, Math.max(1, Math.round(minutes)));
 }
 
-export function isIdleMinutesInBand(minutes: number): boolean {
-  const rounded = Math.round(minutes);
-  return (
-    rounded >= SESSION_IDLE_MINUTES_MIN && rounded <= SESSION_IDLE_MINUTES_MAX
-  );
+export function isIdleMinutesOption(minutes: number): boolean {
+  return (SESSION_IDLE_MINUTES_OPTIONS as readonly number[]).includes(minutes);
 }
 
 export function readIdleTimeoutSetting(
