@@ -1,7 +1,7 @@
 import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
-import type { KeyEntryRevealProps, KeyEntryActionProps } from "@/components/keys/KeyEntryCardGrid";
+import type { KeyEntryRevealProps, KeyEntryActionProps } from "@/components/keys/key-entry-view-props";
 import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";

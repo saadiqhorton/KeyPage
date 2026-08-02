@@ -83,7 +83,7 @@ export type KeyEntryRow = {
 
 export type ActivityEventRow = {
   id: string;
-  key_entry_id: string | null;
+  key_entry_id: string;
   action: "created" | "edited" | "deleted" | "revealed" | "copied";
   occurred_at: string;
 };

@@ -87,6 +87,9 @@ export function DashboardScreen() {
   useEffect(() => {
     if (!vaultUnlocked) {
       hideAll();
+      setAddKeyOpen(false);
+      setEditEntry(null);
+      setDeleteEntry(null);
     }
   }, [vaultUnlocked, hideAll]);
 

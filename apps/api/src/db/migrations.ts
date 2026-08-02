@@ -107,6 +107,26 @@ CREATE INDEX idx_key_entries_created_at ON key_entries (created_at DESC);
 CREATE INDEX idx_activity_events_occurred_at ON activity_events (occurred_at DESC);
 `;
 
+const MIGRATION_3_SQL = `
+CREATE TABLE activity_events_new (
+  id           TEXT PRIMARY KEY,
+  key_entry_id TEXT NOT NULL,
+  action       TEXT NOT NULL CHECK (action IN ('created','edited','deleted','revealed','copied')),
+  occurred_at  TEXT NOT NULL
+);
+
+INSERT INTO activity_events_new (id, key_entry_id, action, occurred_at)
+SELECT id, key_entry_id, action, occurred_at
+FROM activity_events
+WHERE key_entry_id IS NOT NULL;
+
+DROP TABLE activity_events;
+ALTER TABLE activity_events_new RENAME TO activity_events;
+
+CREATE INDEX idx_activity_events_occurred_at ON activity_events (occurred_at DESC);
+CREATE INDEX idx_activity_events_key_entry ON activity_events (key_entry_id);
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -122,6 +142,12 @@ export const MIGRATIONS: Migration[] = [
     version: 2,
     up(db) {
       db.exec(MIGRATION_2_SQL);
+    },
+  },
+  {
+    version: 3,
+    up(db) {
+      db.exec(MIGRATION_3_SQL);
     },
   },
 ];

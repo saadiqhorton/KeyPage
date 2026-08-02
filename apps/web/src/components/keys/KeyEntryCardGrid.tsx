@@ -1,19 +1,12 @@
 import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryCard } from "@/components/keys/KeyEntryCard";
+import type {
+  KeyEntryActionProps,
+  KeyEntryRevealProps,
+} from "@/components/keys/key-entry-view-props";
 
-export type KeyEntryRevealProps = {
-  revealedId: string | null;
-  revealedValue: string | null;
-  busyId: string | null;
-  onToggleReveal(entry: KeyEntry): void;
-  onCopy(entry: KeyEntry): void;
-};
-
-export type KeyEntryActionProps = {
-  onEdit(entry: KeyEntry): void;
-  onDelete(entry: KeyEntry): void;
-};
+export type { KeyEntryActionProps, KeyEntryRevealProps } from "@/components/keys/key-entry-view-props";
 
 type KeyEntryCardGridProps = {
   entries: KeyEntry[];

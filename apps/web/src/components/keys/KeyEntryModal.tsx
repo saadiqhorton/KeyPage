@@ -6,7 +6,7 @@ import {
   KEY_ENTRY_TAG_MAX,
   KEY_ENTRY_TAGS_MAX,
 } from "@keypage/shared";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import { ServicePicker } from "@/components/keys/ServicePicker";
 import { Button } from "@/components/ui/Button";
@@ -16,7 +16,9 @@ import { PasswordField } from "@/components/ui/PasswordField";
 import { TagInput } from "@/components/ui/TagInput";
 import { TextArea } from "@/components/ui/TextArea";
 import { TextField } from "@/components/ui/TextField";
+import { decryptKeyValue } from "@/crypto/key-entry.js";
 import { ApiError } from "@/lib/api";
+import { onKeyCleared } from "@/vault/session-keys.js";
 import type { EditKeyEntryInput, NewKeyEntryInput } from "@/vault/useKeyEntries";
 
 type KeyEntryModalProps =
@@ -42,6 +44,8 @@ type FieldErrors = {
   tags?: string;
   keyValue?: string;
 };
+
+type PrefillState = "idle" | "loading" | "ready" | "failed";
 
 const INITIAL_FORM = {
   label: "",
@@ -73,6 +77,7 @@ function normalizeTags(tags: string[]): string[] {
 
 function validateForm(
   mode: "create" | "edit",
+  prefillState: PrefillState,
   label: string,
   serviceId: string,
   customServiceName: string,
@@ -119,6 +124,10 @@ function validateForm(
     errors.keyValue = "API Key value is required.";
   }
 
+  if (mode === "edit" && prefillState === "ready" && keyValue.trim().length === 0) {
+    errors.keyValue = "API Key value is required.";
+  }
+
   return errors;
 }
 
@@ -129,14 +138,26 @@ function seedFromEntry(entry: KeyEntry) {
     customServiceName: entry.customServiceName ?? "",
     description: entry.description ?? "",
     tags: [...entry.tags],
-    keyValue: "",
   };
+}
+
+function resetKeyValueState(
+  setKeyValue: (value: string) => void,
+  setPrefillState: (state: PrefillState) => void,
+  setDecryptWarning: (value: boolean) => void,
+  originalKeyValueRef: { current: string },
+) {
+  setKeyValue("");
+  originalKeyValueRef.current = "";
+  setPrefillState("idle");
+  setDecryptWarning(false);
 }
 
 export function KeyEntryModal(props: KeyEntryModalProps) {
   const { open, mode, onClose } = props;
   const entry = mode === "edit" ? props.entry : null;
   const formId = useId();
+  const originalKeyValueRef = useRef("");
   const [label, setLabel] = useState(INITIAL_FORM.label);
   const [serviceId, setServiceId] = useState(INITIAL_FORM.serviceId);
   const [customServiceName, setCustomServiceName] = useState(
@@ -145,12 +166,44 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
   const [description, setDescription] = useState(INITIAL_FORM.description);
   const [tags, setTags] = useState<string[]>(INITIAL_FORM.tags);
   const [keyValue, setKeyValue] = useState(INITIAL_FORM.keyValue);
+  const [prefillState, setPrefillState] = useState<PrefillState>("idle");
+  const [decryptWarning, setDecryptWarning] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+    return onKeyCleared(() => {
+      resetKeyValueState(
+        setKeyValue,
+        setPrefillState,
+        setDecryptWarning,
+        originalKeyValueRef,
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+
+    resetKeyValueState(
+      setKeyValue,
+      setPrefillState,
+      setDecryptWarning,
+      originalKeyValueRef,
+    );
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setFieldErrors({});
+    setSubmitError(null);
+    setSubmitting(false);
 
     if (mode === "create") {
       setLabel(INITIAL_FORM.label);
@@ -158,20 +211,55 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
       setCustomServiceName(INITIAL_FORM.customServiceName);
       setDescription(INITIAL_FORM.description);
       setTags(INITIAL_FORM.tags);
-      setKeyValue(INITIAL_FORM.keyValue);
-    } else if (entry) {
-      const seeded = seedFromEntry(entry);
-      setLabel(seeded.label);
-      setServiceId(seeded.serviceId);
-      setCustomServiceName(seeded.customServiceName);
-      setDescription(seeded.description);
-      setTags(seeded.tags);
-      setKeyValue(seeded.keyValue);
+      resetKeyValueState(
+        setKeyValue,
+        setPrefillState,
+        setDecryptWarning,
+        originalKeyValueRef,
+      );
+      return;
     }
 
-    setFieldErrors({});
-    setSubmitError(null);
-    setSubmitting(false);
+    if (!entry) {
+      return;
+    }
+
+    const seeded = seedFromEntry(entry);
+    setLabel(seeded.label);
+    setServiceId(seeded.serviceId);
+    setCustomServiceName(seeded.customServiceName);
+    setDescription(seeded.description);
+    setTags(seeded.tags);
+    setKeyValue("");
+    originalKeyValueRef.current = "";
+    setPrefillState("loading");
+    setDecryptWarning(false);
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const decrypted = await decryptKeyValue(entry);
+        if (cancelled) {
+          return;
+        }
+        originalKeyValueRef.current = decrypted;
+        setKeyValue(decrypted);
+        setPrefillState("ready");
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        originalKeyValueRef.current = "";
+        setKeyValue("");
+        setPrefillState("failed");
+        setDecryptWarning(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, mode, entry]);
 
   function handleClose() {
@@ -186,6 +274,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     const normalizedTags = normalizeTags(tags);
     const errors = validateForm(
       mode,
+      prefillState,
       label,
       serviceId,
       customServiceName,
@@ -238,7 +327,11 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
         }
 
         const trimmedKeyValue = keyValue.trim();
-        if (trimmedKeyValue.length > 0) {
+        if (prefillState === "ready") {
+          if (trimmedKeyValue !== originalKeyValueRef.current) {
+            values.keyValue = trimmedKeyValue;
+          }
+        } else if (trimmedKeyValue.length > 0) {
           values.keyValue = trimmedKeyValue;
         }
 
@@ -263,7 +356,16 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
   const submitLabel = isCreate ? "Add Key Entry" : "Save Changes";
   const descriptionText = isCreate
     ? "Your API key is encrypted in the browser before it leaves this device."
-    : "Update the details below. Enter a new API Key value only if you want to replace it — it is encrypted in the browser before it leaves this device.";
+    : "Update the details below. The API key value is shown for editing and re-encrypted in the browser before it leaves this device.";
+  const keyValueDisabled =
+    submitting || (!isCreate && prefillState === "loading");
+  const keyValueHint = isCreate
+    ? undefined
+    : prefillState === "failed"
+      ? "Leave blank to keep the current API key."
+      : prefillState === "loading"
+        ? "Decrypting API key…"
+        : undefined;
 
   return (
     <Modal
@@ -291,6 +393,13 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
       >
         {submitError ? (
           <Callout tone="danger">{submitError}</Callout>
+        ) : null}
+
+        {decryptWarning ? (
+          <Callout tone="warning">
+            Could not decrypt the current API key. Leave the field blank to keep
+            the stored value, or enter a new key to replace it.
+          </Callout>
         ) : null}
 
         <TextField
@@ -337,19 +446,15 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
 
         <div className="border-t border-hairline pt-5">
           <PasswordField
-            label={isCreate ? "API Key value" : "New API Key value"}
+            label="API Key value"
             value={keyValue}
             onChange={(event) => setKeyValue(event.target.value)}
-            disabled={submitting}
+            disabled={keyValueDisabled}
             error={fieldErrors.keyValue}
             autoComplete="off"
             spellCheck={false}
-            required={isCreate}
-            hint={
-              isCreate
-                ? undefined
-                : "Leave blank to keep the current API key."
-            }
+            required={isCreate || prefillState === "ready"}
+            hint={keyValueHint}
           />
         </div>
       </form>

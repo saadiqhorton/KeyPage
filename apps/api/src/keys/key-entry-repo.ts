@@ -166,7 +166,22 @@ export function updateKeyEntry(
   db: Database.Database,
   input: UpdateKeyEntryInput,
 ): KeyEntry | null {
-  let result;
+  const assignments = [
+    "label = ?",
+    "service_id = ?",
+    "custom_service_name = ?",
+    "description = ?",
+    "tags_json = ?",
+    "updated_at = ?",
+  ];
+  const values: unknown[] = [
+    input.label,
+    input.serviceId,
+    input.customServiceName,
+    input.description,
+    JSON.stringify(input.tags),
+    input.updatedAt,
+  ];
 
   if (input.cipher !== undefined) {
     const vault = getVaultAuth(db);
@@ -174,45 +189,27 @@ export function updateKeyEntry(
       throw new HttpSetupRequired();
     }
 
-    result = db
-      .prepare(
-        `UPDATE key_entries SET
-           label = ?, service_id = ?, custom_service_name = ?, description = ?, tags_json = ?,
-           cipher_algorithm = ?, cipher_iv = ?, cipher_text = ?, key_version = ?,
-           updated_at = ?
-         WHERE id = ?`,
-      )
-      .run(
-        input.label,
-        input.serviceId,
-        input.customServiceName,
-        input.description,
-        JSON.stringify(input.tags),
-        input.cipher.algorithm,
-        input.cipher.ivB64,
-        input.cipher.ciphertextB64,
-        vault.key_version,
-        input.updatedAt,
-        input.id,
-      );
-  } else {
-    result = db
-      .prepare(
-        `UPDATE key_entries SET
-           label = ?, service_id = ?, custom_service_name = ?, description = ?, tags_json = ?,
-           updated_at = ?
-         WHERE id = ?`,
-      )
-      .run(
-        input.label,
-        input.serviceId,
-        input.customServiceName,
-        input.description,
-        JSON.stringify(input.tags),
-        input.updatedAt,
-        input.id,
-      );
+    assignments.push(
+      "cipher_algorithm = ?",
+      "cipher_iv = ?",
+      "cipher_text = ?",
+      "key_version = ?",
+    );
+    values.push(
+      input.cipher.algorithm,
+      input.cipher.ivB64,
+      input.cipher.ciphertextB64,
+      vault.key_version,
+    );
   }
+
+  values.push(input.id);
+
+  const result = db
+    .prepare(
+      `UPDATE key_entries SET ${assignments.join(", ")} WHERE id = ?`,
+    )
+    .run(...values);
 
   if (result.changes === 0) {
     return null;
