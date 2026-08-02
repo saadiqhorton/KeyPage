@@ -2,6 +2,7 @@ import { Navigate, Outlet, createBrowserRouter } from "react-router-dom";
 
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { RecoverScreen } from "@/screens/RecoverScreen";
+import { SettingsScreen } from "@/screens/SettingsScreen";
 import { SetupScreen } from "@/screens/SetupScreen";
 import { UnlockScreen } from "@/screens/UnlockScreen";
 import { useVault } from "@/vault/useVault";
@@ -118,6 +119,14 @@ export const router = createBrowserRouter([
         element: (
           <RequireUnlocked>
             <DashboardScreen />
+          </RequireUnlocked>
+        ),
+      },
+      {
+        path: "/settings",
+        element: (
+          <RequireUnlocked>
+            <SettingsScreen />
           </RequireUnlocked>
         ),
       },

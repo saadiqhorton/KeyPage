@@ -51,6 +51,14 @@ export function listKeyEntries(db: Database.Database): KeyEntry[] {
   return rows.map(rowToKeyEntry);
 }
 
+export function listKeyEntryIds(db: Database.Database): Set<string> {
+  const rows = db
+    .prepare(`SELECT id FROM key_entries`)
+    .all() as Array<{ id: string }>;
+
+  return new Set(rows.map((row) => row.id));
+}
+
 export function getKeyEntry(
   db: Database.Database,
   id: string,
@@ -94,6 +102,9 @@ export type InsertKeyEntryInput = Omit<
   customServiceName: string | null;
   description: string | null;
   tags: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  lastUsedAt?: string | null;
 };
 
 export function insertKeyEntry(
@@ -112,7 +123,7 @@ export function insertKeyEntry(
        id, label, service_id, custom_service_name, description, tags_json,
        cipher_algorithm, cipher_iv, cipher_text, key_version,
        created_at, updated_at, last_used_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.label,
@@ -124,8 +135,9 @@ export function insertKeyEntry(
     input.cipher.ivB64,
     input.cipher.ciphertextB64,
     vault.key_version,
-    now,
-    now,
+    input.createdAt ?? now,
+    input.updatedAt ?? now,
+    input.lastUsedAt ?? null,
   );
 
   const row = db

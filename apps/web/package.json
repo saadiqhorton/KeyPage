@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test \"src/**/*.test.ts\"",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "clean": "rm -rf dist"
@@ -29,6 +29,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.4",
     "tailwindcss": "4.3.3",
+    "tsx": "4.23.1",
     "typescript": "5.9.3",
     "vite": "8.1.5"
   }

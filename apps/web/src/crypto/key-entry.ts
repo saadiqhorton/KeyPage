@@ -11,6 +11,7 @@ import {
   aesGcmEncrypt,
   randomBytes,
   zeroize,
+  type AesKey,
 } from "./provider.js";
 import { getEncryptionKey } from "@/vault/session-keys.js";
 
@@ -26,15 +27,11 @@ export function keyEntryAad(id: string): Uint8Array {
   return utf8Bytes(`${KEY_ENTRY_AAD_PREFIX}${id}`);
 }
 
-export async function encryptKeyValue(
+export async function encryptKeyValueWith(
+  key: AesKey,
   id: string,
   keyValue: string,
 ): Promise<KeyEntryCipherInput> {
-  const key = getEncryptionKey();
-  if (key === null) {
-    throw new Error("Vault is locked");
-  }
-
   const plaintextBytes = utf8Bytes(keyValue);
   const iv = randomBytes(AES_GCM_IV_BYTES);
   try {
@@ -54,12 +51,10 @@ export async function encryptKeyValue(
   }
 }
 
-export async function decryptKeyValue(entry: KeyEntry): Promise<string> {
-  const key = getEncryptionKey();
-  if (key === null) {
-    throw new Error("Vault is locked");
-  }
-
+export async function decryptKeyValueWith(
+  key: AesKey,
+  entry: Pick<KeyEntry, "id" | "cipher">,
+): Promise<string> {
   const iv = base64Decode(entry.cipher.ivB64);
   const ciphertext = base64Decode(entry.cipher.ciphertextB64);
   const plaintextBytes = await aesGcmDecrypt(
@@ -73,4 +68,25 @@ export async function decryptKeyValue(entry: KeyEntry): Promise<string> {
   } finally {
     zeroize(plaintextBytes);
   }
+}
+
+export async function encryptKeyValue(
+  id: string,
+  keyValue: string,
+): Promise<KeyEntryCipherInput> {
+  const key = getEncryptionKey();
+  if (key === null) {
+    throw new Error("Vault is locked");
+  }
+
+  return encryptKeyValueWith(key, id, keyValue);
+}
+
+export async function decryptKeyValue(entry: KeyEntry): Promise<string> {
+  const key = getEncryptionKey();
+  if (key === null) {
+    throw new Error("Vault is locked");
+  }
+
+  return decryptKeyValueWith(key, entry);
 }

@@ -16,6 +16,8 @@ export const DERIVED_KEY_BYTES = 32;
 export const AES_GCM_IV_BYTES = 12;
 export const HKDF_INFO_ENCRYPTION_KEY = "keypage:v1:encryption-key";
 export const HKDF_INFO_AUTH_KEY = "keypage:v1:auth-key";
+export const HKDF_INFO_BACKUP_KEY = "keypage:v1:backup-key";
+export const BACKUP_AAD_PREFIX = "keypage:v1:backup:";
 export const RECOVERY_WRAP_AAD = "keypage:v1:recovery-wrap";
 export const RECOVERY_CODE_LOOKUP_PREFIX = "keypage:v1:recovery-code:";
 

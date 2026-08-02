@@ -3,6 +3,8 @@ import type {
   ApiErrorCode,
   KeyEntryCreateRequest,
   KeyEntryCreateResponse,
+  KeyEntryImportRequest,
+  KeyEntryImportResponse,
   KeyEntryListResponse,
   KeyEntryUseAction,
   KeyEntryUseResponse,
@@ -157,4 +159,13 @@ export function postKeyEntryUse(
       body: JSON.stringify({ action }),
     },
   );
+}
+
+export function postKeyEntryImport(
+  body: KeyEntryImportRequest,
+): Promise<KeyEntryImportResponse> {
+  return apiFetch<KeyEntryImportResponse>("/api/keys/import", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
