@@ -30,7 +30,7 @@ export function RecoveryCodesCard({
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!busy || !codes) return;
+    if (!busy && codes === null) return;
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();

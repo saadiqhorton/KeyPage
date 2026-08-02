@@ -41,13 +41,18 @@ export function SettingsScreen() {
     currentPassword: string,
     newPassword: string,
   ) {
-    await passwordChange.changePassword(currentPassword, newPassword);
+    const codes = await passwordChange.changePassword(
+      currentPassword,
+      newPassword,
+    );
+    actions.showRecoveryCodes(codes, "password_change");
     await actions.refreshStatus();
     await reload();
   }
 
   async function handleRegenerateRecoveryCodes(password: string) {
-    await recoveryCodes.regenerate(password);
+    const codes = await recoveryCodes.regenerate(password);
+    actions.showRecoveryCodes(codes, "regen");
     await actions.refreshStatus();
     await recoveryCodes.refreshRemaining();
   }
@@ -89,6 +94,7 @@ export function SettingsScreen() {
                 onChangePassword={handleChangePassword}
                 onSuccessAcknowledged={() => {
                   passwordChange.clearCodes();
+                  actions.finishWizard();
                 }}
               />
             </SettingsSection>
@@ -106,6 +112,7 @@ export function SettingsScreen() {
                 onRegenerate={handleRegenerateRecoveryCodes}
                 onSuccessAcknowledged={() => {
                   recoveryCodes.clearCodes();
+                  actions.finishWizard();
                 }}
               />
             </SettingsSection>

@@ -33,7 +33,7 @@ export function ChangeMasterPasswordCard({
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!busy) return;
+    if (!busy && codes === null) return;
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -42,7 +42,7 @@ export function ChangeMasterPasswordCard({
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [busy]);
+  }, [busy, codes]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

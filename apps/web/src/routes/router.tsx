@@ -2,6 +2,7 @@ import { Navigate, Outlet, createBrowserRouter } from "react-router-dom";
 
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { RecoverScreen } from "@/screens/RecoverScreen";
+import { RecoveryCodesScreen } from "@/screens/RecoveryCodesScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { SetupScreen } from "@/screens/SetupScreen";
 import { UnlockScreen } from "@/screens/UnlockScreen";
@@ -29,17 +30,32 @@ function LoadingGate() {
   return <Outlet />;
 }
 
-function RequireUnlocked({ children }: { children: React.ReactNode }) {
+function RequireUnlocked({
+  children,
+  rendersRecoveryCodes = false,
+}: {
+  children: React.ReactNode;
+  rendersRecoveryCodes?: boolean;
+}) {
   const { state, wizard } = useVault();
 
   if (state.phase === "loading" || state.phase === "unavailable") {
     return null;
   }
 
-  if (state.phase === "unlocked" && wizard.kind === "none") {
+  // Settings renders freshly issued codes inline, so it may stay mounted while
+  // they are pending. Every other route hands them to the dedicated screen so
+  // the only copy in memory cannot be navigated or locked away.
+  if (
+    state.phase === "unlocked" &&
+    (wizard.kind === "none" || (wizard.kind === "codes" && rendersRecoveryCodes))
+  ) {
     return children;
   }
 
+  if (wizard.kind === "codes") {
+    return <Navigate to="/recovery-codes" replace />;
+  }
   if (wizard.kind === "setup") {
     return <Navigate to="/setup" replace />;
   }
@@ -50,6 +66,20 @@ function RequireUnlocked({ children }: { children: React.ReactNode }) {
     return <Navigate to="/setup" replace />;
   }
   return <Navigate to="/unlock" replace />;
+}
+
+function RequireRecoveryCodes({ children }: { children: React.ReactNode }) {
+  const { state, wizard } = useVault();
+
+  if (state.phase === "loading" || state.phase === "unavailable") {
+    return null;
+  }
+
+  if (wizard.kind === "codes") {
+    return children;
+  }
+
+  return <Navigate to="/" replace />;
 }
 
 function RequireWizard({
@@ -63,6 +93,10 @@ function RequireWizard({
 
   if (state.phase === "loading" || state.phase === "unavailable") {
     return null;
+  }
+
+  if (wizard.kind === "codes") {
+    return <Navigate to="/recovery-codes" replace />;
   }
 
   if (kind === "setup") {
@@ -98,6 +132,9 @@ function RequireLocked({ children }: { children: React.ReactNode }) {
     return children;
   }
 
+  if (wizard.kind === "codes") {
+    return <Navigate to="/recovery-codes" replace />;
+  }
   if (wizard.kind === "setup") {
     return <Navigate to="/setup" replace />;
   }
@@ -125,9 +162,17 @@ export const router = createBrowserRouter([
       {
         path: "/settings",
         element: (
-          <RequireUnlocked>
+          <RequireUnlocked rendersRecoveryCodes>
             <SettingsScreen />
           </RequireUnlocked>
+        ),
+      },
+      {
+        path: "/recovery-codes",
+        element: (
+          <RequireRecoveryCodes>
+            <RecoveryCodesScreen />
+          </RequireRecoveryCodes>
         ),
       },
       {

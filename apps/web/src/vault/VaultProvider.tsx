@@ -21,6 +21,7 @@ import { normalizeRecoveryCode } from "@keypage/shared";
 import {
   VaultContext,
   type LockReason,
+  type RecoveryCodesReason,
   type VaultActions,
   type VaultContextValue,
   type VaultState,
@@ -289,6 +290,19 @@ export function VaultProvider({ children }: VaultProviderProps) {
     }
   }, [refreshStatus]);
 
+  /**
+   * Recovery codes only exist in memory, so an idle lock or an expired session
+   * while they are on screen would destroy the only copy the user has. Parking
+   * them in wizard state lets the router keep showing them across a lock until
+   * the user acknowledges them.
+   */
+  const showRecoveryCodes = useCallback(
+    (codes: string[], reason: RecoveryCodesReason) => {
+      setWizard({ kind: "codes", codes, reason });
+    },
+    [],
+  );
+
   const finishWizard = useCallback(() => {
     setWizard({ kind: "none" });
   }, []);
@@ -310,6 +324,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
+      showRecoveryCodes,
       finishWizard,
       cancelRecovery,
     }),
@@ -322,6 +337,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
+      showRecoveryCodes,
       finishWizard,
       cancelRecovery,
     ],
