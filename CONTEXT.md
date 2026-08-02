@@ -56,11 +56,11 @@ Open source project — each deployment is single-user, but the code is public f
 - Self-hosted fonts via fontsource (no external font CDN)
 
 ## Settings (v1)
-Shipped on the Settings page:
-- Change Master Password (re-encrypt all Key Entries client-side; new recovery codes)
-- View and regenerate recovery codes
+Implemented on the Settings page:
+- Change Master Password (re-encrypts all Key Entries client-side and issues a new set of recovery codes)
+- Recovery codes: shows how many unused codes remain, and regenerates the full set (existing codes are never displayed again — only a freshly generated set is shown, once)
 - Encrypted backup import/export
-- Session inactivity timeout (15–30 minutes; overridable via `KEYPAGE_SESSION_IDLE_MINUTES` on the server)
+- Session inactivity timeout, chosen from 15/20/25/30 minutes. Setting `KEYPAGE_SESSION_IDLE_MINUTES` on the server pins the value: the control becomes read-only and the API rejects updates.
 
 ## Dashboard Layout
 - User-toggleable views: Card Grid (default), Table, List
