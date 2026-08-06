@@ -40,6 +40,13 @@ function isEntrySetMismatch(error: ApiError): boolean {
   );
 }
 
+function rethrowInvalidCredentials(error: unknown): never {
+  if (error instanceof ApiError && error.code === "invalid_credentials") {
+    throw new MasterPasswordError("That's not your Master Password.");
+  }
+  throw error;
+}
+
 export function formatPasswordError(
   error: unknown,
   options?: {
@@ -97,22 +104,27 @@ export async function changeMasterPassword(
   const decrypted: Array<{ id: string; plaintext: string }> = [];
   if (entries.length > 0) {
     onProgress?.("Decrypting key entries…");
-    let anyDecrypted = false;
+    let firstFailedEntry: { label: string; id: string } | undefined;
     for (const entry of entries) {
       try {
         const plaintext = await decryptKeyValueWith(current.encryptionKey, entry);
         decrypted.push({ id: entry.id, plaintext });
-        anyDecrypted = true;
       } catch {
-        zeroizeAesKey(current.encryptionKey);
-        // One successful decrypt already proved the password, so a later
-        // failure is a problem with that entry, not with the password.
-        throw new MasterPasswordError(
-          anyDecrypted
-            ? `“${entry.label}” (${entry.id}) could not be decrypted, so nothing was changed. Check that key entry and try again.`
-            : "That's not your Master Password.",
-        );
+        if (!firstFailedEntry) {
+          firstFailedEntry = { label: entry.label, id: entry.id };
+        }
       }
+    }
+
+    if (decrypted.length === 0) {
+      zeroizeAesKey(current.encryptionKey);
+      throw new MasterPasswordError("That's not your Master Password.");
+    }
+    if (firstFailedEntry) {
+      zeroizeAesKey(current.encryptionKey);
+      throw new MasterPasswordError(
+        `“${firstFailedEntry.label}” (${firstFailedEntry.id}) could not be decrypted, so nothing was changed. Check that key entry and try again.`,
+      );
     }
   }
   zeroizeAesKey(current.encryptionKey);
@@ -148,13 +160,7 @@ export async function changeMasterPassword(
     });
   } catch (error) {
     zeroizeAesKey(next.encryptionKey);
-    if (
-      error instanceof ApiError &&
-      error.code === "invalid_credentials"
-    ) {
-      throw new MasterPasswordError("That's not your Master Password.");
-    }
-    throw error;
+    rethrowInvalidCredentials(error);
   }
 
   replaceEncryptionKey(next.encryptionKey);
@@ -189,13 +195,7 @@ export async function regenerateRecoveryCodes(
       recoveryCodes: envelopes,
     });
   } catch (error) {
-    if (
-      error instanceof ApiError &&
-      error.code === "invalid_credentials"
-    ) {
-      throw new MasterPasswordError("That's not your Master Password.");
-    }
-    throw error;
+    rethrowInvalidCredentials(error);
   }
 
   downloadRecoveryCodes(codes);
