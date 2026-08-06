@@ -52,7 +52,7 @@ sudo chown -R 1000:1000 ./data
 | `HOST` | `0.0.0.0` | Bind address |
 | `KEYPAGE_DATA_DIR` | `./data` | Persistent data directory (SQLite, etc.) |
 | `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package) | Path to the built web UI served as static files |
-| `KEYPAGE_SESSION_IDLE_MINUTES` | `20` | Lock the vault after this many minutes without user activity |
+| `KEYPAGE_SESSION_IDLE_MINUTES` | `20` | Lock the vault after this many minutes without user activity (valid range 15–30; Settings options are 15, 20, 25, 30). Setting it pins the timeout: the Settings control becomes read-only and `PATCH /api/settings` is rejected. Leave it unset to manage the timeout from Settings |
 | `KEYPAGE_SESSION_ABSOLUTE_HOURS` | `12` | Maximum session lifetime regardless of activity |
 | `KEYPAGE_LOGIN_MAX_ATTEMPTS` | `5` | Failed login or recovery attempts before a temporary lockout |
 | `KEYPAGE_LOGIN_LOCKOUT_MINUTES` | `5` | Duration of login/recovery lockout after max failed attempts |
@@ -92,7 +92,4 @@ See [CONTEXT.md](CONTEXT.md) for product scope, security model, and glossary.
 
 Not implemented in this release:
 
-- Key Entry CRUD (create, edit, delete)
-- Settings (change Master Password, view/regenerate recovery codes, backup import/export, session timeout UI)
-- Service Catalog picker in the UI
-- Dashboard view modes, search, and tag filters
+- Provider integrations (automatic key refresh/rotation)

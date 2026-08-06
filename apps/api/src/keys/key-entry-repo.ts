@@ -61,6 +61,16 @@ export function listKeyEntryIds(db: Database.Database): Set<string> {
   return new Set(rows.map((row) => row.id));
 }
 
+export function listKeyEntryCipherIvs(
+  db: Database.Database,
+): Map<string, string> {
+  const rows = db
+    .prepare(`SELECT id, cipher_iv FROM key_entries`)
+    .all() as Array<{ id: string; cipher_iv: string }>;
+
+  return new Map(rows.map((row) => [row.id, row.cipher_iv]));
+}
+
 export function getKeyEntry(
   db: Database.Database,
   id: string,
@@ -225,4 +235,39 @@ export function updateKeyEntry(
 export function deleteKeyEntry(db: Database.Database, id: string): boolean {
   const result = db.prepare(`DELETE FROM key_entries WHERE id = ?`).run(id);
   return result.changes > 0;
+}
+
+export type ReencryptedEntryInput = {
+  id: string;
+  baseIvB64: string;
+  cipher: KeyEntryCipherInput;
+};
+
+export function replaceKeyEntryCiphers(
+  db: Database.Database,
+  entries: ReencryptedEntryInput[],
+  keyVersion: number,
+): number {
+  const stmt = db.prepare(
+    `UPDATE key_entries
+     SET cipher_algorithm = ?,
+         cipher_iv = ?,
+         cipher_text = ?,
+         key_version = ?
+     WHERE id = ?`,
+  );
+
+  let updated = 0;
+  for (const entry of entries) {
+    const result = stmt.run(
+      entry.cipher.algorithm,
+      entry.cipher.ivB64,
+      entry.cipher.ciphertextB64,
+      keyVersion,
+      entry.id,
+    );
+    updated += result.changes;
+  }
+
+  return updated;
 }

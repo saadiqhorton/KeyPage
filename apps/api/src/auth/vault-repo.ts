@@ -8,6 +8,7 @@ import type {
 
 import {
   HttpInvalidRecoveryTicket,
+  HttpInvalidRequest,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
 import type {
@@ -15,8 +16,18 @@ import type {
   RecoveryTicketRow,
   VaultAuthRow,
 } from "../db/rows.js";
+import {
+  listKeyEntryCipherIvs,
+  listKeyEntryIds,
+  replaceKeyEntryCiphers,
+  type ReencryptedEntryInput,
+} from "../keys/key-entry-repo.js";
 import { resetThrottle } from "./throttle.js";
-import { createSession, type SessionRequest } from "./sessions.js";
+import {
+  createSession,
+  revokeAllSessions,
+  type SessionRequest,
+} from "./sessions.js";
 import { newId, sha256Hex } from "./tokens.js";
 
 export function getVaultAuth(
@@ -107,6 +118,19 @@ function insertRecoveryCode(
   );
 }
 
+export function replaceRecoveryCodes(
+  db: Database.Database,
+  envelopes: RecoveryCodeEnvelope[],
+  keyVersion: number,
+  nowIso: string,
+): void {
+  db.prepare(`DELETE FROM recovery_codes`).run();
+
+  for (const envelope of envelopes) {
+    insertRecoveryCode(db, envelope, keyVersion, nowIso);
+  }
+}
+
 function insertVaultAuth(
   db: Database.Database,
   kdf: KdfParams,
@@ -145,9 +169,7 @@ export function initializeVault(
 
     insertVaultAuth(db, input.kdf, input.authVerifier, 1, nowIso);
 
-    for (const envelope of input.recoveryCodes) {
-      insertRecoveryCode(db, envelope, 1, nowIso);
-    }
+    replaceRecoveryCodes(db, input.recoveryCodes, 1, nowIso);
   });
 
   try {
@@ -220,11 +242,7 @@ export function resetVaultFromRecovery(
       nowIso,
     );
 
-    db.prepare(`DELETE FROM recovery_codes`).run();
-
-    for (const envelope of input.recoveryCodes) {
-      insertRecoveryCode(db, envelope, nextKeyVersion, nowIso);
-    }
+    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
 
     db.prepare(
       `UPDATE recovery_tickets SET consumed_at = ? WHERE id = ?`,
@@ -233,12 +251,138 @@ export function resetVaultFromRecovery(
     resetThrottle(db, "login");
     resetThrottle(db, "recovery");
 
-    const revokedAt = nowIso;
-    db.prepare(
-      `UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL`,
-    ).run(revokedAt);
+    revokeAllSessions(db);
 
     return createSession(db, req, idleTimeoutSeconds);
+  });
+
+  return apply();
+}
+
+export type ChangeMasterPasswordInput = {
+  kdf: KdfParams;
+  authVerifier: string;
+  recoveryCodes: RecoveryCodeEnvelope[];
+  entries: ReencryptedEntryInput[];
+};
+
+function assertEntriesMatchVault(
+  db: Database.Database,
+  entries: ReencryptedEntryInput[],
+): void {
+  const dbIds = listKeyEntryIds(db);
+  const cipherIvs = listKeyEntryCipherIvs(db);
+  const submittedIds = new Set(entries.map((entry) => entry.id));
+
+  if (
+    entries.length !== submittedIds.size ||
+    dbIds.size !== submittedIds.size ||
+    ![...dbIds].every((id) => submittedIds.has(id))
+  ) {
+    throw new HttpInvalidRequest("Entry set does not match vault", [
+      {
+        field: "entries",
+        message: "must include each key entry id in the vault exactly once",
+      },
+    ]);
+  }
+
+  for (const entry of entries) {
+    if (cipherIvs.get(entry.id) !== entry.baseIvB64) {
+      throw new HttpInvalidRequest("Entry set does not match vault", [
+        {
+          field: "entries",
+          message:
+            "one or more entries were modified since the client snapshot",
+        },
+      ]);
+    }
+  }
+}
+
+export function changeMasterPassword(
+  db: Database.Database,
+  input: ChangeMasterPasswordInput,
+  req: SessionRequest,
+  idleTimeoutSeconds: number,
+): { token: string; info: SessionInfo; keyVersion: number; reEncrypted: number } {
+  const nowIso = new Date().toISOString();
+
+  const apply = db.transaction(() => {
+    const vault = getVaultAuth(db);
+    if (!vault) {
+      throw new HttpInvalidRequest("Vault is not initialized");
+    }
+
+    assertEntriesMatchVault(db, input.entries);
+
+    const nextKeyVersion = vault.key_version + 1;
+
+    db.prepare(
+      `UPDATE vault_auth
+       SET kdf_algorithm = ?,
+           kdf_memory_kib = ?,
+           kdf_iterations = ?,
+           kdf_parallelism = ?,
+           kdf_salt = ?,
+           auth_verifier = ?,
+           key_version = ?,
+           updated_at = ?
+       WHERE id = 1`,
+    ).run(
+      input.kdf.algorithm,
+      input.kdf.memoryKiB ?? null,
+      input.kdf.iterations,
+      input.kdf.parallelism ?? null,
+      input.kdf.saltB64,
+      input.authVerifier,
+      nextKeyVersion,
+      nowIso,
+    );
+
+    const reEncrypted = replaceKeyEntryCiphers(
+      db,
+      input.entries,
+      nextKeyVersion,
+    );
+
+    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
+
+    resetThrottle(db, "login");
+    resetThrottle(db, "recovery");
+
+    revokeAllSessions(db);
+
+    const session = createSession(db, req, idleTimeoutSeconds);
+
+    return {
+      ...session,
+      keyVersion: nextKeyVersion,
+      reEncrypted,
+    };
+  });
+
+  return apply();
+}
+
+export function regenerateRecoveryCodes(
+  db: Database.Database,
+  envelopes: RecoveryCodeEnvelope[],
+): { recoveryCodesRemaining: number; keyVersion: number } {
+  const nowIso = new Date().toISOString();
+
+  const apply = db.transaction(() => {
+    const vault = getVaultAuth(db);
+    if (!vault) {
+      throw new HttpInvalidRequest("Vault is not initialized");
+    }
+
+    replaceRecoveryCodes(db, envelopes, vault.key_version, nowIso);
+
+    return {
+      recoveryCodesRemaining: countUnusedRecoveryCodes(db),
+      keyVersion: vault.key_version,
+    };
   });
 
   return apply();

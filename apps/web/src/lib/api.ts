@@ -1,6 +1,8 @@
 import type {
   ApiErrorBody,
   ApiErrorCode,
+  AppSettingsResponse,
+  AppSettingsUpdateRequest,
   KeyEntryCreateRequest,
   KeyEntryCreateResponse,
   KeyEntryUpdateRequest,
@@ -12,8 +14,12 @@ import type {
   KeyEntryUseResponse,
   RecoveryClaimRequest,
   RecoveryClaimResponse,
+  RecoveryCodesRegenerateRequest,
+  RecoveryCodesRegenerateResponse,
   RecoveryResetRequest,
   RecoveryResetResponse,
+  VaultPasswordChangeRequest,
+  VaultPasswordChangeResponse,
   VaultLoginRequest,
   VaultLoginResponse,
   VaultSessionResponse,
@@ -187,6 +193,37 @@ export function postKeyEntryImport(
 ): Promise<KeyEntryImportResponse> {
   return apiFetch<KeyEntryImportResponse>("/api/keys/import", {
     method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function postVaultPasswordChange(
+  body: VaultPasswordChangeRequest,
+): Promise<VaultPasswordChangeResponse> {
+  return apiFetch<VaultPasswordChangeResponse>("/api/vault/password", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function postRecoveryCodesRegenerate(
+  body: RecoveryCodesRegenerateRequest,
+): Promise<RecoveryCodesRegenerateResponse> {
+  return apiFetch<RecoveryCodesRegenerateResponse>("/api/vault/recovery-codes", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getAppSettings(): Promise<AppSettingsResponse> {
+  return apiFetch<AppSettingsResponse>("/api/settings");
+}
+
+export function patchAppSettings(
+  body: AppSettingsUpdateRequest,
+): Promise<AppSettingsResponse> {
+  return apiFetch<AppSettingsResponse>("/api/settings", {
+    method: "PATCH",
     body: JSON.stringify(body),
   });
 }

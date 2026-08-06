@@ -1,3 +1,5 @@
+import type { KeyEntryCipherInput } from "./key-entries.js";
+
 export const ARGON2ID_VAULT_PARAMS = {
   memoryKiB: 65536,
   iterations: 3,
@@ -27,6 +29,10 @@ export const LOGIN_MAX_ATTEMPTS = 5;
 export const LOGIN_LOCKOUT_SECONDS = 300;
 export const LOGIN_FAILURE_WINDOW_SECONDS = 900;
 export const DEFAULT_SESSION_IDLE_MINUTES = 20;
+export const SESSION_IDLE_MINUTES_MIN = 15;
+export const SESSION_IDLE_MINUTES_MAX = 30;
+export const SESSION_IDLE_MINUTES_OPTIONS = [15, 20, 25, 30] as const;
+export const MASTER_PASSWORD_MIN_LENGTH = 12;
 export const SESSION_ABSOLUTE_HOURS = 12;
 export const RECOVERY_TICKET_TTL_SECONDS = 600;
 
@@ -119,3 +125,47 @@ export type RecoveryResetRequest = {
 };
 
 export type RecoveryResetResponse = { state: "ready"; session: SessionInfo };
+
+export type ReencryptedKeyEntry = {
+  id: string;
+  /** `ivB64` of the ciphertext this re-encryption replaces (optimistic concurrency token). */
+  baseIvB64: string;
+  cipher: KeyEntryCipherInput;
+};
+
+export type VaultPasswordChangeRequest = {
+  currentAuthKeyB64: string;
+  kdf: KdfParams;
+  authKeyB64: string;
+  recoveryCodes: RecoveryCodeEnvelope[];
+  entries: ReencryptedKeyEntry[];
+};
+
+export type VaultPasswordChangeResponse = {
+  state: "ready";
+  keyVersion: number;
+  reEncrypted: number;
+  session: SessionInfo;
+};
+
+export type RecoveryCodesRegenerateRequest = {
+  authKeyB64: string;
+  recoveryCodes: RecoveryCodeEnvelope[];
+};
+
+export type RecoveryCodesRegenerateResponse = {
+  recoveryCodesRemaining: number;
+  keyVersion: number;
+};
+
+export type IdleTimeoutSource = "env" | "database" | "default";
+
+export type AppSettingsResponse = {
+  sessionIdleMinutes: number;
+  sessionIdleSource: IdleTimeoutSource;
+  clipboardClearSeconds: number;
+};
+
+export type AppSettingsUpdateRequest = {
+  sessionIdleMinutes: number;
+};

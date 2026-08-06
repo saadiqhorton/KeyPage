@@ -10,18 +10,18 @@ import {
 import { deriveVaultKeys, pickKdfParams } from "@/crypto/derive.js";
 import {
   buildRecoveryCodeEnvelopes,
-  buildRecoveryCodesFileText,
   computeLookupHash,
   unwrapMasterKey,
 } from "@/crypto/recovery.js";
 import { zeroize } from "@/crypto/provider.js";
 import { ApiError, getVaultStatus, postRecoveryClaim, postRecoveryReset, postVaultLock, postVaultLogin, postVaultSetup } from "@/lib/api.js";
-import { downloadTextFile } from "@/lib/download.js";
+import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
 import { normalizeRecoveryCode } from "@keypage/shared";
 
 import {
   VaultContext,
   type LockReason,
+  type RecoveryCodesReason,
   type VaultActions,
   type VaultContextValue,
   type VaultState,
@@ -41,12 +41,6 @@ let recoveryTicket: string | null = null;
 
 function clearRecoveryTicket(): void {
   recoveryTicket = null;
-}
-
-function downloadRecoveryCodes(codes: string[]): void {
-  const date = new Date().toISOString().slice(0, 10);
-  const text = buildRecoveryCodesFileText(codes);
-  downloadTextFile(`keypage-recovery-codes-${date}.txt`, text);
 }
 
 function isUnlocked(): boolean {
@@ -296,6 +290,19 @@ export function VaultProvider({ children }: VaultProviderProps) {
     }
   }, [refreshStatus]);
 
+  /**
+   * Recovery codes only exist in memory, so an idle lock or an expired session
+   * while they are on screen would destroy the only copy the user has. Parking
+   * them in wizard state lets the router keep showing them across a lock until
+   * the user acknowledges them.
+   */
+  const showRecoveryCodes = useCallback(
+    (codes: string[], reason: RecoveryCodesReason) => {
+      setWizard({ kind: "codes", codes, reason });
+    },
+    [],
+  );
+
   const finishWizard = useCallback(() => {
     setWizard({ kind: "none" });
   }, []);
@@ -317,6 +324,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
+      showRecoveryCodes,
       finishWizard,
       cancelRecovery,
     }),
@@ -329,6 +337,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
+      showRecoveryCodes,
       finishWizard,
       cancelRecovery,
     ],

@@ -56,11 +56,13 @@ Open source project — each deployment is single-user, but the code is public f
 - Self-hosted fonts via fontsource (no external font CDN)
 
 ## Settings (v1)
-Planned settings surface (features ship in later tickets; intent documented here):
-- Change Master Password (re-encrypt all Key Entries client-side)
-- View and regenerate recovery codes
+Implemented on the Settings page:
+- Change Master Password (re-encrypts all Key Entries client-side and issues a new set of recovery codes)
+- Recovery codes: shows how many unused codes remain, and regenerates the full set (existing codes are never displayed again — only a freshly generated set is shown, once)
+- A freshly issued set is never rendered on Settings itself: it is parked in vault wizard state and every route redirects to the dedicated `/recovery-codes` screen until the user acknowledges it, so a lock, a back navigation, or a remount cannot drop the only copy
+- While a Master Password change or recovery-code regeneration is in flight, or while a freshly issued recovery-code set is on screen, the UI warns before unload/reload so the only copy of new codes is not lost
 - Encrypted backup import/export
-- Session inactivity timeout
+- Session inactivity timeout, chosen from 15/20/25/30 minutes. Setting `KEYPAGE_SESSION_IDLE_MINUTES` on the server pins the value: the control becomes read-only and the API rejects updates.
 
 ## Dashboard Layout
 - User-toggleable views: Card Grid (default), Table, List
@@ -108,6 +110,7 @@ Planned settings surface (features ship in later tickets; intent documented here
 - Requires current password + new password confirmation
 - Client re-encrypts all Key Entries with the new encryption key
 - Verification hash updated; recovery codes regenerated and re-downloaded
+- Changing the Master Password revokes other sessions server-side so they cannot keep using the previous auth state; the current browser session is re-established as part of the change flow
 
 ## Technology Stack
 - **Monorepo:** pnpm workspaces + Turborepo

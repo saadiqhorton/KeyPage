@@ -8,6 +8,10 @@ import {
   LOGIN_FAILURE_WINDOW_SECONDS,
   LOGIN_LOCKOUT_SECONDS,
   LOGIN_MAX_ATTEMPTS,
+  SESSION_IDLE_MINUTES_MAX,
+  SESSION_IDLE_MINUTES_MIN,
+  SESSION_IDLE_MINUTES_OPTIONS,
+  type IdleTimeoutSource,
 } from "@keypage/shared";
 
 export type ThrottleConfig = {
@@ -16,27 +20,72 @@ export type ThrottleConfig = {
   failureWindowSeconds: number;
 };
 
-export function resolveIdleTimeoutSeconds(db: Database.Database): number {
+const SESSION_IDLE_SETTING_KEY = "session_idle_minutes";
+
+export function clampIdleMinutes(minutes: number): number {
+  return Math.min(
+    SESSION_IDLE_MINUTES_MAX,
+    Math.max(SESSION_IDLE_MINUTES_MIN, Math.round(minutes)),
+  );
+}
+
+export function isIdleMinutesOption(minutes: number): boolean {
+  return (SESSION_IDLE_MINUTES_OPTIONS as readonly number[]).includes(minutes);
+}
+
+export function readIdleTimeoutSetting(
+  db: Database.Database,
+): number | undefined {
+  const row = db
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(SESSION_IDLE_SETTING_KEY) as { value: string } | undefined;
+
+  if (!row) {
+    return undefined;
+  }
+
+  const parsed = Number(row.value);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+
+  return clampIdleMinutes(parsed);
+}
+
+export function writeIdleTimeoutSetting(
+  db: Database.Database,
+  minutes: number,
+): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(SESSION_IDLE_SETTING_KEY, String(Math.round(minutes)), now);
+}
+
+export function describeIdleTimeout(db: Database.Database): {
+  minutes: number;
+  source: IdleTimeoutSource;
+} {
   const envValue = process.env.KEYPAGE_SESSION_IDLE_MINUTES;
   if (envValue !== undefined && envValue !== "") {
     const parsed = Number(envValue);
     if (Number.isFinite(parsed)) {
-      return clampIdleMinutes(parsed) * 60;
+      return { minutes: clampIdleMinutes(parsed), source: "env" };
     }
   }
 
-  const row = db
-    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
-    .get("session_idle_minutes") as { value: string } | undefined;
-
-  if (row) {
-    const parsed = Number(row.value);
-    if (Number.isFinite(parsed)) {
-      return clampIdleMinutes(parsed) * 60;
-    }
+  const stored = readIdleTimeoutSetting(db);
+  if (stored !== undefined) {
+    return { minutes: stored, source: "database" };
   }
 
-  return DEFAULT_SESSION_IDLE_MINUTES * 60;
+  return { minutes: DEFAULT_SESSION_IDLE_MINUTES, source: "default" };
+}
+
+export function resolveIdleTimeoutSeconds(db: Database.Database): number {
+  const { minutes } = describeIdleTimeout(db);
+  return minutes * 60;
 }
 
 export function clampClipboardClearSeconds(seconds: number): number {
@@ -67,10 +116,6 @@ export function resolveClipboardClearSeconds(db: Database.Database): number {
   }
 
   return DEFAULT_CLIPBOARD_CLEAR_SECONDS;
-}
-
-function clampIdleMinutes(minutes: number): number {
-  return Math.min(480, Math.max(1, Math.round(minutes)));
 }
 
 export function resolveThrottleConfig(): ThrottleConfig {

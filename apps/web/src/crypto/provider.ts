@@ -164,3 +164,9 @@ export function zeroize(...buffers: Uint8Array[]): void {
     buffer.fill(0);
   }
 }
+
+export function zeroizeAesKey(key: AesKey): void {
+  if (key.kind === "fallback") {
+    zeroize(key.bytes);
+  }
+}

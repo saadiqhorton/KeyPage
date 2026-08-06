@@ -20,10 +20,13 @@ export type VaultState =
   | { phase: "working"; label: string }
   | { phase: "unlocked"; idleTimeoutSeconds: number };
 
+export type RecoveryCodesReason = "password_change" | "regen";
+
 export type WizardState =
   | { kind: "none" }
   | { kind: "setup"; step: 1 | 2 | 3; codes: string[] | null }
-  | { kind: "recovery"; step: 1 | 2 | 3; codes: string[] | null };
+  | { kind: "recovery"; step: 1 | 2 | 3; codes: string[] | null }
+  | { kind: "codes"; codes: string[]; reason: RecoveryCodesReason };
 
 export type VaultActions = {
   refreshStatus(): Promise<void>;
@@ -34,6 +37,7 @@ export type VaultActions = {
   startRecovery(): void;
   claimRecoveryCode(code: string): Promise<void>;
   completeRecovery(newPassword: string): Promise<void>;
+  showRecoveryCodes(codes: string[], reason: RecoveryCodesReason): void;
   finishWizard(): void;
   cancelRecovery(): void;
 };
