@@ -8,6 +8,8 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { Spinner } from "@/components/ui/Spinner";
+import { SelectField } from "@/components/ui/SelectField";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 
 type SessionTimeoutSettings = {
   loading: boolean;
@@ -64,24 +66,23 @@ export function SessionTimeoutCard({
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
+      <SettingsCard
+        title="Session timeout"
+        description="Lock the vault after this period of inactivity."
+      >
         <div className="flex items-center gap-2 text-sm text-muted">
           <Spinner size="sm" />
           <span>Loading session settings…</span>
         </div>
-      </div>
+      </SettingsCard>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-medium text-text">Session timeout</h3>
-        <p className="text-xs text-muted">
-          Lock the vault after this period of inactivity.
-        </p>
-      </div>
-
+    <SettingsCard
+      title="Session timeout"
+      description="Lock the vault after this period of inactivity."
+    >
       {readOnly ? (
         <Callout tone="info">
           Session timeout is set by the server environment variable{" "}
@@ -97,25 +98,22 @@ export function SessionTimeoutCard({
         </Callout>
       ) : (
         <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
-          <label className="flex flex-col gap-2 text-sm text-text">
-            <span>Inactivity timeout</span>
-            <select
-              className="rounded-sm border border-hairline bg-obsidian/50 px-3 py-2 text-sm text-text outline-none focus:border-brass/60"
-              value={sessionIdleMinutes ?? ""}
-              disabled={saveBusy || sessionIdleMinutes === null}
-              onChange={(event) => {
-                onSessionIdleMinutesChange(Number(event.target.value));
-                setDirty(true);
-                onClearSuccess();
-              }}
-            >
-              {SESSION_IDLE_MINUTES_OPTIONS.map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {minutes} minutes
-                </option>
-              ))}
-            </select>
-          </label>
+          <SelectField
+            label="Inactivity timeout"
+            value={sessionIdleMinutes ?? ""}
+            disabled={saveBusy || sessionIdleMinutes === null}
+            onChange={(event) => {
+              onSessionIdleMinutesChange(Number(event.target.value));
+              setDirty(true);
+              onClearSuccess();
+            }}
+          >
+            {SESSION_IDLE_MINUTES_OPTIONS.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes} minutes
+              </option>
+            ))}
+          </SelectField>
 
           {error ? (
             <p className="text-sm text-danger" role="alert">
@@ -134,6 +132,6 @@ export function SessionTimeoutCard({
           </div>
         </form>
       )}
-    </div>
+    </SettingsCard>
   );
 }

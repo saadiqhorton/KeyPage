@@ -34,40 +34,25 @@ export function StatusPanel({ health }: StatusPanelProps) {
         : "bg-danger";
 
   return (
-    <aside className="entrance-delayed w-full max-w-md">
-      <div className="rounded-sm border border-hairline bg-surface p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="rounded-[3px] border border-hairline/90 bg-obsidian/80 p-6">
-          <div className="mb-6 flex items-center gap-3 border-b border-hairline pb-4">
-            <span
-              className={cn(
-                "size-2 shrink-0 rounded-full",
-                statusTone,
-                health.status === "loading" && "animate-pulse",
-              )}
-              aria-hidden="true"
-            />
-            <p className="font-mono text-sm tracking-wide text-text">
-              {statusLabel}
-            </p>
-          </div>
-
-          <dl className="space-y-4 font-mono text-sm">
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-muted">Services in catalog</dt>
-              <dd className="tabular-nums text-text">{catalogCount}</dd>
-            </div>
-
-            {health.status === "ok" ? (
-              <div className="flex items-baseline justify-between gap-4 border-t border-hairline pt-4">
-                <dt className="text-muted">First boot</dt>
-                <dd className="text-right text-text">
-                  {formatFirstBoot(health.data.firstBootAt)}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-        </div>
-      </div>
-    </aside>
+    <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-hairline pt-4 font-mono text-[11px] text-muted">
+      <span className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            statusTone,
+            health.status === "loading" && "animate-pulse",
+          )}
+          aria-hidden="true"
+        />
+        {statusLabel}
+      </span>
+      <span>{catalogCount} services</span>
+      {health.status === "ok" ? (
+        <span>since {formatFirstBoot(health.data.firstBootAt)}</span>
+      ) : null}
+      {health.status === "ok" && health.data.version ? (
+        <span>v{health.data.version}</span>
+      ) : null}
+    </footer>
   );
 }

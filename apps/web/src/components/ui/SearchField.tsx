@@ -50,7 +50,7 @@ export function SearchField({
           type="button"
           aria-label="Clear search"
           className={cn(
-            "mr-1.5 rounded-sm px-1.5 py-0.5 text-sm text-muted",
+            "pressable mr-1.5 rounded-sm px-1.5 py-0.5 text-sm text-muted",
             "hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/70",
           )}
           onClick={() => onChange("")}

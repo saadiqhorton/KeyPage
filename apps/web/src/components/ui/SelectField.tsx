@@ -1,27 +1,48 @@
-import { type InputHTMLAttributes, type ReactNode, useId, useState } from "react";
+import { type ReactNode, type SelectHTMLAttributes, useId } from "react";
 
 import { cn } from "@/lib/cn";
 
-type PasswordFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "type"> & {
+type SelectFieldProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & {
   label: string;
   error?: ReactNode;
   hint?: ReactNode;
+  children: ReactNode;
 };
 
-export function PasswordField({
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="none"
+      className={className}
+      aria-hidden
+    >
+      <path
+        d="M4 6l4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function SelectField({
   label,
   error,
   hint,
   id,
   className,
   disabled,
+  children,
   ...props
-}: PasswordFieldProps) {
+}: SelectFieldProps) {
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const errorId = error ? `${fieldId}-error` : undefined;
   const hintId = hint ? `${fieldId}-hint` : undefined;
-  const [revealed, setRevealed] = useState(false);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -29,37 +50,23 @@ export function PasswordField({
         {label}
       </label>
       <div className="relative">
-        <input
+        <select
           id={fieldId}
-          type={revealed ? "text" : "password"}
           disabled={disabled}
           aria-invalid={error ? true : undefined}
           aria-describedby={[hintId, errorId].filter(Boolean).join(" ") || undefined}
           className={cn(
-            "w-full rounded-sm border border-hairline bg-obsidian/60 py-2.5 pr-16 pl-3 text-sm text-text",
-            "placeholder:text-muted/70",
+            "w-full appearance-none rounded-sm border border-hairline bg-obsidian/60 py-2.5 pr-9 pl-3 text-sm text-text",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/70",
             "disabled:cursor-not-allowed disabled:opacity-50",
             error && "border-danger/50",
             className,
           )}
           {...props}
-        />
-        <button
-          type="button"
-          tabIndex={-1}
-          disabled={disabled}
-          onClick={() => setRevealed((value) => !value)}
-          className={cn(
-            "pressable absolute top-1/2 right-2 -translate-y-1/2 rounded-sm px-2 py-1",
-            "font-mono text-[0.65rem] uppercase tracking-wider text-muted",
-            "hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/70",
-            "disabled:cursor-not-allowed disabled:opacity-50",
-          )}
-          aria-label={revealed ? "Hide password" : "Show password"}
         >
-          {revealed ? "Hide" : "Show"}
-        </button>
+          {children}
+        </select>
+        <ChevronIcon className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted" />
       </div>
       {hint ? (
         <div id={hintId} className="text-xs text-muted">

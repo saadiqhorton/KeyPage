@@ -124,14 +124,16 @@ export function ServicePicker({
         </p>
       ) : null}
       {value === "custom" ? (
-        <TextField
+        <div className="field-reveal">
+          <TextField
           label="Custom service name"
           value={customName}
           onChange={(event) => onCustomNameChange(event.target.value)}
           disabled={disabled}
           maxLength={KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX}
           required
-        />
+          />
+        </div>
       ) : null}
     </div>
   );

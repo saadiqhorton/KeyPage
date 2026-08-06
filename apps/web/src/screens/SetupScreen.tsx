@@ -194,7 +194,7 @@ export function SetupScreen() {
       <div className="flex flex-col gap-4">
         <Callout tone="info">
           Your Master Password and recovery codes are set. Open the Dashboard to
-          continue — you can add API keys in a future release.
+          add your first API key.
         </Callout>
         <Button
           type="button"
