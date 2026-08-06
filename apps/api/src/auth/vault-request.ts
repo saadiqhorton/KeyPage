@@ -25,9 +25,10 @@ export const recoveryEnvelopeSchema = {
 
 export const reencryptedEntrySchema = {
   type: "object",
-  required: ["id", "cipher"],
+  required: ["id", "cipher", "baseIvB64"],
   properties: {
     id: { type: "string" },
+    baseIvB64: { type: "string" },
     cipher: {
       type: "object",
       required: ["algorithm", "ivB64", "ciphertextB64"],

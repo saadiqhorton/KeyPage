@@ -17,6 +17,7 @@ import type {
   VaultAuthRow,
 } from "../db/rows.js";
 import {
+  listKeyEntryCipherIvs,
   listKeyEntryIds,
   replaceKeyEntryCiphers,
   type ReencryptedEntryInput,
@@ -265,11 +266,12 @@ export type ChangeMasterPasswordInput = {
   entries: ReencryptedEntryInput[];
 };
 
-function assertEntryIdsMatch(
+function assertEntriesMatchVault(
   db: Database.Database,
   entries: ReencryptedEntryInput[],
 ): void {
   const dbIds = listKeyEntryIds(db);
+  const cipherIvs = listKeyEntryCipherIvs(db);
   const submittedIds = new Set(entries.map((entry) => entry.id));
 
   if (
@@ -283,6 +285,18 @@ function assertEntryIdsMatch(
         message: "must include each key entry id in the vault exactly once",
       },
     ]);
+  }
+
+  for (const entry of entries) {
+    if (cipherIvs.get(entry.id) !== entry.baseIvB64) {
+      throw new HttpInvalidRequest("Entry set does not match vault", [
+        {
+          field: "entries",
+          message:
+            "one or more entries were modified since the client snapshot",
+        },
+      ]);
+    }
   }
 }
 
@@ -300,7 +314,7 @@ export function changeMasterPassword(
       throw new HttpInvalidRequest("Vault is not initialized");
     }
 
-    assertEntryIdsMatch(db, input.entries);
+    assertEntriesMatchVault(db, input.entries);
 
     const nextKeyVersion = vault.key_version + 1;
 

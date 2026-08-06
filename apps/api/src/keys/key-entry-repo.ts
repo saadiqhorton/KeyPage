@@ -61,6 +61,16 @@ export function listKeyEntryIds(db: Database.Database): Set<string> {
   return new Set(rows.map((row) => row.id));
 }
 
+export function listKeyEntryCipherIvs(
+  db: Database.Database,
+): Map<string, string> {
+  const rows = db
+    .prepare(`SELECT id, cipher_iv FROM key_entries`)
+    .all() as Array<{ id: string; cipher_iv: string }>;
+
+  return new Map(rows.map((row) => [row.id, row.cipher_iv]));
+}
+
 export function getKeyEntry(
   db: Database.Database,
   id: string,
@@ -229,6 +239,7 @@ export function deleteKeyEntry(db: Database.Database, id: string): boolean {
 
 export type ReencryptedEntryInput = {
   id: string;
+  baseIvB64: string;
   cipher: KeyEntryCipherInput;
 };
 

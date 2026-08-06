@@ -53,7 +53,7 @@ import {
 } from "../auth/vault-repo.js";
 import { validateCipherInput } from "../keys/validate.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
-import type { RecoveryCodeRow } from "../db/rows.js";
+import type { RecoveryCodeRow, VaultAuthRow } from "../db/rows.js";
 import {
   HttpInvalidCredentials,
   HttpInvalidRecoveryCode,
@@ -66,7 +66,8 @@ import { createRequireSession } from "../plugins/require-session.js";
 import { resolveIdleTimeoutSeconds } from "../settings.js";
 
 const BODY_LIMIT = 65536;
-const LARGE_BODY_LIMIT = 4_194_304;
+// 32 MiB: ~8.5 KiB worst-case JSON per entry (KEY_ENTRY_CIPHERTEXT_B64_MAX ciphertext + iv/metadata).
+const PASSWORD_CHANGE_BODY_LIMIT = 33_554_432;
 const LOOKUP_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 export type VaultRouteOptions = {
@@ -187,6 +188,27 @@ function buildSessionResponse(
     idleSecondsRemaining,
     absoluteExpiresAt: resolution.session.absoluteExpiresAt,
   };
+}
+
+async function verifyMasterPassword(
+  db: Database.Database,
+  authKeyB64: string,
+): Promise<VaultAuthRow> {
+  const vault = getVaultAuth(db);
+  if (!vault) {
+    throw new HttpSetupRequired();
+  }
+
+  const valid = await verifyAuthKey(authKeyB64, vault.auth_verifier);
+  if (!valid) {
+    const attemptsRemaining = recordFailure(db, "login");
+    throw new HttpInvalidCredentials(
+      "Incorrect Master Password",
+      attemptsRemaining,
+    );
+  }
+
+  return vault;
 }
 
 function claimRecoveryCode(
@@ -533,7 +555,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
   app.post(
     "/password",
     {
-      bodyLimit: LARGE_BODY_LIMIT,
+      bodyLimit: PASSWORD_CHANGE_BODY_LIMIT,
       preHandler: [checkOrigin, requireSession],
       schema: {
         body: {
@@ -573,6 +595,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         recoveryCodes: Parameters<typeof validateRecoveryEnvelopes>[0];
         entries: Array<{
           id: string;
+          baseIvB64: string;
           cipher: Parameters<typeof validateCipherInput>[0];
         }>;
       };
@@ -588,22 +611,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         });
       });
 
-      const vault = getVaultAuth(db);
-      if (!vault) {
-        throw new HttpSetupRequired();
-      }
-
-      const currentValid = await verifyAuthKey(
-        body.currentAuthKeyB64,
-        vault.auth_verifier,
-      );
-      if (!currentValid) {
-        const attemptsRemaining = recordFailure(db, "login");
-        throw new HttpInvalidCredentials(
-          "Incorrect Master Password",
-          attemptsRemaining,
-        );
-      }
+      await verifyMasterPassword(db, body.currentAuthKeyB64);
 
       const authVerifier = await hashAuthKey(body.authKeyB64);
       const idleSeconds = idleTimeoutSeconds(db);
@@ -663,19 +671,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       validateAuthKeyB64(body.authKeyB64);
       validateRecoveryEnvelopes(body.recoveryCodes);
 
-      const vault = getVaultAuth(db);
-      if (!vault) {
-        throw new HttpSetupRequired();
-      }
-
-      const valid = await verifyAuthKey(body.authKeyB64, vault.auth_verifier);
-      if (!valid) {
-        const attemptsRemaining = recordFailure(db, "login");
-        throw new HttpInvalidCredentials(
-          "Incorrect Master Password",
-          attemptsRemaining,
-        );
-      }
+      await verifyMasterPassword(db, body.authKeyB64);
 
       resetThrottle(db, "login");
 
