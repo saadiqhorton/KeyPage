@@ -128,6 +128,8 @@ export type RecoveryResetResponse = { state: "ready"; session: SessionInfo };
 
 export type ReencryptedKeyEntry = {
   id: string;
+  /** `ivB64` of the ciphertext this re-encryption replaces (optimistic concurrency token). */
+  baseIvB64: string;
   cipher: KeyEntryCipherInput;
 };
 

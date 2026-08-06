@@ -15,6 +15,7 @@ import {
   getKeyEntries,
   getVaultStatus,
   postRecoveryCodesRegenerate,
+  postVaultLogin,
   postVaultPasswordChange,
 } from "@/lib/api.js";
 
@@ -101,14 +102,19 @@ export async function changeMasterPassword(
   onProgress?.("Loading key entries…");
   const { entries } = await getKeyEntries();
 
-  const decrypted: Array<{ id: string; plaintext: string }> = [];
+  const decrypted: Array<{ id: string; plaintext: string; baseIvB64: string }> =
+    [];
   if (entries.length > 0) {
     onProgress?.("Decrypting key entries…");
     let firstFailedEntry: { label: string; id: string } | undefined;
     for (const entry of entries) {
       try {
         const plaintext = await decryptKeyValueWith(current.encryptionKey, entry);
-        decrypted.push({ id: entry.id, plaintext });
+        decrypted.push({
+          id: entry.id,
+          plaintext,
+          baseIvB64: entry.cipher.ivB64,
+        });
       } catch {
         if (!firstFailedEntry) {
           firstFailedEntry = { label: entry.label, id: entry.id };
@@ -117,8 +123,20 @@ export async function changeMasterPassword(
     }
 
     if (decrypted.length === 0) {
+      // A successful arbitration login revokes/reissues the session cookie (server /login behavior); harmless here.
+      try {
+        await postVaultLogin({ authKeyB64: current.authKeyB64 });
+      } catch (error) {
+        zeroizeAesKey(current.encryptionKey);
+        if (error instanceof ApiError && error.code === "invalid_credentials") {
+          throw error;
+        }
+        throw error;
+      }
       zeroizeAesKey(current.encryptionKey);
-      throw new MasterPasswordError("That's not your Master Password.");
+      throw new MasterPasswordError(
+        `None of your key entries could be decrypted, so nothing was changed. First failure: “${firstFailedEntry!.label}” (${firstFailedEntry!.id}).`,
+      );
     }
     if (firstFailedEntry) {
       zeroizeAesKey(current.encryptionKey);
@@ -141,7 +159,7 @@ export async function changeMasterPassword(
       item.id,
       item.plaintext,
     );
-    reencrypted.push({ id: item.id, cipher });
+    reencrypted.push({ id: item.id, baseIvB64: item.baseIvB64, cipher });
   }
 
   onProgress?.("Generating recovery codes…");
