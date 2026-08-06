@@ -72,12 +72,13 @@ Implemented on the Settings page:
 - Empty vault: `EmptyVaultState` with no toolbar
 - Filters match nothing: `NoFilterMatchesState` with Clear filters (toolbar stays visible)
 - Empty state: guided center message ("Add your first API key") with primary CTA — no suggested-provider cards in v1
+- Footer shows a compact API status strip (status, service count, first boot, version) — not a card
 
 ## Add Key Flow
 - Form modal triggered by "Add Key" button
 - Fields: label, service, description, tags, key value
-- Animated modal entrance/exit (spring physics)
-- Visually polished (high-end premium design, tasteful motion)
+- Animated modal entrance/exit (CSS cubic-bezier; functional motion only)
+- Visually polished dark UI (restrained motion: modals, toasts, press feedback)
 - Design skills: high-end-visual-design, find-animation-opportunities, design-taste-frontend
 
 ## Edit & Delete
