@@ -8,6 +8,8 @@ import {
   LOGIN_FAILURE_WINDOW_SECONDS,
   LOGIN_LOCKOUT_SECONDS,
   LOGIN_MAX_ATTEMPTS,
+  SESSION_IDLE_MINUTES_MAX,
+  SESSION_IDLE_MINUTES_MIN,
   SESSION_IDLE_MINUTES_OPTIONS,
   type IdleTimeoutSource,
 } from "@keypage/shared";
@@ -21,7 +23,10 @@ export type ThrottleConfig = {
 const SESSION_IDLE_SETTING_KEY = "session_idle_minutes";
 
 export function clampIdleMinutes(minutes: number): number {
-  return Math.min(480, Math.max(1, Math.round(minutes)));
+  return Math.min(
+    SESSION_IDLE_MINUTES_MAX,
+    Math.max(SESSION_IDLE_MINUTES_MIN, Math.round(minutes)),
+  );
 }
 
 export function isIdleMinutesOption(minutes: number): boolean {

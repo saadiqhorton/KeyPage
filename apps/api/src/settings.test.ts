@@ -8,6 +8,8 @@ import {
   CLIPBOARD_CLEAR_SECONDS_MIN,
   DEFAULT_CLIPBOARD_CLEAR_SECONDS,
   DEFAULT_SESSION_IDLE_MINUTES,
+  SESSION_IDLE_MINUTES_MAX,
+  SESSION_IDLE_MINUTES_MIN,
   SESSION_IDLE_MINUTES_OPTIONS,
 } from "@keypage/shared";
 
@@ -21,6 +23,7 @@ import { runMigrations } from "./db/migrations.js";
 import { insertKeyEntry } from "./keys/key-entry-repo.js";
 import {
   clampClipboardClearSeconds,
+  clampIdleMinutes,
   describeIdleTimeout,
   isIdleMinutesOption,
   readIdleTimeoutSetting,
@@ -104,6 +107,23 @@ describe("clampClipboardClearSeconds", () => {
       clampClipboardClearSeconds(DEFAULT_CLIPBOARD_CLEAR_SECONDS),
       DEFAULT_CLIPBOARD_CLEAR_SECONDS,
     );
+  });
+});
+
+describe("clampIdleMinutes", () => {
+  it("clamps below min", () => {
+    assert.equal(clampIdleMinutes(2), SESSION_IDLE_MINUTES_MIN);
+    assert.equal(clampIdleMinutes(14), SESSION_IDLE_MINUTES_MIN);
+  });
+
+  it("clamps above max", () => {
+    assert.equal(clampIdleMinutes(300), SESSION_IDLE_MINUTES_MAX);
+    assert.equal(clampIdleMinutes(31), SESSION_IDLE_MINUTES_MAX);
+  });
+
+  it("passes in-range values through", () => {
+    assert.equal(clampIdleMinutes(18), 18);
+    assert.equal(clampIdleMinutes(25), 25);
   });
 });
 
