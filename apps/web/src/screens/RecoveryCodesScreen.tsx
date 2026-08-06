@@ -14,7 +14,8 @@ export function RecoveryCodesScreen() {
     return null;
   }
 
-  const locked = state.phase !== "unlocked";
+  const unavailable = state.phase === "unavailable";
+  const locked = state.phase !== "unlocked" && !unavailable;
   const title =
     wizard.reason === "password_change"
       ? "Your Master Password was changed. Save these recovery codes offline."
@@ -27,7 +28,12 @@ export function RecoveryCodesScreen() {
           These codes replace your previous set and are shown only once. They
           are not stored anywhere you can read them again.
         </Callout>
-        {locked ? (
+        {unavailable ? (
+          <Callout tone="info">
+            The server could not be reached. Save these codes before leaving this
+            page, then choose Done.
+          </Callout>
+        ) : locked ? (
           <Callout tone="info">
             The vault locked while these codes were on screen. Save them, then
             choose Done to go back to the unlock screen.

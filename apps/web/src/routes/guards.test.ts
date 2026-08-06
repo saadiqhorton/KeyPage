@@ -17,9 +17,24 @@ describe("resolveGuard", () => {
       assert.deepEqual(resolveGuard(guard, "loading", "none"), {
         kind: "wait",
       });
-      assert.deepEqual(resolveGuard(guard, "unavailable", "codes"), {
+      assert.deepEqual(resolveGuard(guard, "unavailable", "none"), {
         kind: "wait",
       });
+    }
+  });
+
+  it("renders pending codes even while loading or unavailable", () => {
+    for (const phase of ["loading", "unavailable"] as const) {
+      assert.deepEqual(resolveGuard("recovery-codes", phase, "codes"), {
+        kind: "render",
+      });
+      for (const guard of ALL_GUARDS.filter((it) => it !== "recovery-codes")) {
+        assert.deepEqual(
+          resolveGuard(guard, phase, "codes"),
+          { kind: "redirect", to: "/recovery-codes" },
+          `${guard} while ${phase}`,
+        );
+      }
     }
   });
 

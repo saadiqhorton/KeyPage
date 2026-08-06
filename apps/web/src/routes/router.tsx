@@ -10,7 +10,11 @@ import { UnlockScreen } from "@/screens/UnlockScreen";
 import { useVault } from "@/vault/useVault";
 
 function LoadingGate() {
-  const { state } = useVault();
+  const { state, wizard } = useVault();
+
+  if (wizard.kind === "codes") {
+    return <Outlet />;
+  }
 
   if (state.phase === "loading") {
     return (
