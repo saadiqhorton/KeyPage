@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 
 import { MASTER_PASSWORD_MIN_LENGTH } from "@keypage/shared";
 
@@ -7,6 +7,7 @@ import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { PasswordStrengthHint } from "@/components/ui/PasswordStrengthHint";
 import { Spinner } from "@/components/ui/Spinner";
+import { useWarnBeforeUnload } from "@/hooks/useWarnBeforeUnload";
 
 type ChangeMasterPasswordCardProps = {
   busy: boolean;
@@ -28,17 +29,7 @@ export function ChangeMasterPasswordCard({
 
   // Leaving mid-re-encryption would abandon a half-rotated vault; the codes it
   // issues are guarded by the /recovery-codes screen it hands them to.
-  useEffect(() => {
-    if (!busy) return;
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [busy]);
+  useWarnBeforeUnload(busy);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

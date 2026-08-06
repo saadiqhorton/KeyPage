@@ -1,6 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 
-import { SESSION_IDLE_MINUTES_OPTIONS } from "@keypage/shared";
+import {
+  type IdleTimeoutSource,
+  SESSION_IDLE_MINUTES_OPTIONS,
+} from "@keypage/shared";
 
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
@@ -9,7 +12,7 @@ import { Spinner } from "@/components/ui/Spinner";
 type SessionTimeoutCardProps = {
   loading: boolean;
   sessionIdleMinutes: number | null;
-  sessionIdleSource: "env" | "database" | "default" | null;
+  sessionIdleSource: IdleTimeoutSource | null;
   saveBusy: boolean;
   error: string | null;
   success: boolean;

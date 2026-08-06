@@ -1,31 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, getVaultStatus } from "@/lib/api.js";
+import { getVaultStatus } from "@/lib/api.js";
 import {
-  MasterPasswordError,
+  formatPasswordError,
   regenerateRecoveryCodes,
 } from "@/vault/master-password.js";
-
-function formatPasswordError(error: unknown): string {
-  if (error instanceof MasterPasswordError) {
-    return error.message;
-  }
-  if (
-    error instanceof ApiError &&
-    error.code === "invalid_credentials" &&
-    error.body.attemptsRemaining !== undefined
-  ) {
-    const remaining = error.body.attemptsRemaining;
-    return `Incorrect Master Password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before a temporary lockout.`;
-  }
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "Recovery code regeneration failed.";
-}
 
 /**
  * Returns a freshly generated set rather than holding it: the codes belong in
@@ -69,7 +48,9 @@ export function useRecoveryCodes(): {
       setRemaining(result.length);
       return result;
     } catch (err) {
-      const message = formatPasswordError(err);
+      const message = formatPasswordError(err, {
+        fallback: "Recovery code regeneration failed.",
+      });
       setError(message);
       throw err;
     } finally {

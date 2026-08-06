@@ -28,6 +28,52 @@ export class MasterPasswordError extends Error {
   }
 }
 
+function isEntrySetMismatch(error: ApiError): boolean {
+  if (error.code !== "invalid_request") {
+    return false;
+  }
+  if (error.message === "Entry set does not match vault") {
+    return true;
+  }
+  return (error.body.details ?? []).some(
+    (detail) => detail.field === "entries",
+  );
+}
+
+export function formatPasswordError(
+  error: unknown,
+  options?: {
+    fallback?: string;
+    onEntryMismatch?: string;
+  },
+): string {
+  if (error instanceof MasterPasswordError) {
+    return error.message;
+  }
+  if (
+    error instanceof ApiError &&
+    error.code === "invalid_credentials" &&
+    error.body.attemptsRemaining !== undefined
+  ) {
+    const remaining = error.body.attemptsRemaining;
+    return `Incorrect Master Password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before a temporary lockout.`;
+  }
+  if (
+    options?.onEntryMismatch &&
+    error instanceof ApiError &&
+    isEntrySetMismatch(error)
+  ) {
+    return options.onEntryMismatch;
+  }
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return options?.fallback ?? "Something went wrong.";
+}
+
 export type PasswordChangeProgress = (label: string) => void;
 
 export async function changeMasterPassword(

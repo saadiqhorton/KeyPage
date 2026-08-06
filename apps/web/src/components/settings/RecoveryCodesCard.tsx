@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
+import { useWarnBeforeUnload } from "@/hooks/useWarnBeforeUnload";
 
 type RecoveryCodesCardProps = {
   remaining: number | null;
@@ -25,17 +26,7 @@ export function RecoveryCodesCard({
 
   // The new set is already being minted server-side; leaving now would lose
   // codes that the /recovery-codes screen is about to show.
-  useEffect(() => {
-    if (!busy) return;
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [busy]);
+  useWarnBeforeUnload(busy);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

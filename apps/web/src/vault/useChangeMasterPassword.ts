@@ -1,49 +1,12 @@
 import { useCallback, useState } from "react";
 
-import { ApiError } from "@/lib/api.js";
 import {
-  MasterPasswordError,
   changeMasterPassword,
+  formatPasswordError,
 } from "@/vault/master-password.js";
 
 const ENTRY_SET_MISMATCH_MESSAGE =
   "Your key entries changed while the password was being updated. Nothing was saved — please try again.";
-
-function isEntrySetMismatch(error: ApiError): boolean {
-  if (error.code !== "invalid_request") {
-    return false;
-  }
-  if (error.message === "Entry set does not match vault") {
-    return true;
-  }
-  return (error.body.details ?? []).some(
-    (detail) => detail.field === "entries",
-  );
-}
-
-function formatPasswordError(error: unknown): string {
-  if (error instanceof MasterPasswordError) {
-    return error.message;
-  }
-  if (
-    error instanceof ApiError &&
-    error.code === "invalid_credentials" &&
-    error.body.attemptsRemaining !== undefined
-  ) {
-    const remaining = error.body.attemptsRemaining;
-    return `Incorrect Master Password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before a temporary lockout.`;
-  }
-  if (error instanceof ApiError && isEntrySetMismatch(error)) {
-    return ENTRY_SET_MISMATCH_MESSAGE;
-  }
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "Password change failed.";
-}
 
 /**
  * Returns the new recovery codes rather than holding them: they belong in vault
@@ -73,7 +36,10 @@ export function useChangeMasterPassword(): {
         );
         return result;
       } catch (err) {
-        const message = formatPasswordError(err);
+        const message = formatPasswordError(err, {
+          fallback: "Password change failed.",
+          onEntryMismatch: ENTRY_SET_MISMATCH_MESSAGE,
+        });
         setError(message);
         throw err;
       } finally {
