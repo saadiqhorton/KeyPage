@@ -114,12 +114,14 @@ export function SettingsScreen() {
               description="Configure how long KeyPage stays unlocked during inactivity."
             >
               <SessionTimeoutCard
-                loading={appSettings.loading}
-                sessionIdleMinutes={appSettings.sessionIdleMinutes}
-                sessionIdleSource={appSettings.sessionIdleSource}
-                saveBusy={appSettings.saveBusy}
-                error={appSettings.error}
-                success={appSettings.success}
+                settings={{
+                  loading: appSettings.loading,
+                  sessionIdleMinutes: appSettings.sessionIdleMinutes,
+                  sessionIdleSource: appSettings.sessionIdleSource,
+                  saveBusy: appSettings.saveBusy,
+                  error: appSettings.error,
+                  success: appSettings.success,
+                }}
                 onSessionIdleMinutesChange={appSettings.setSessionIdleMinutes}
                 onSave={handleSaveSessionTimeout}
                 onClearSuccess={appSettings.clearSuccess}

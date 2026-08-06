@@ -9,29 +9,36 @@ import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { Spinner } from "@/components/ui/Spinner";
 
-type SessionTimeoutCardProps = {
+type SessionTimeoutSettings = {
   loading: boolean;
   sessionIdleMinutes: number | null;
   sessionIdleSource: IdleTimeoutSource | null;
   saveBusy: boolean;
   error: string | null;
   success: boolean;
+};
+
+type SessionTimeoutCardProps = {
+  settings: SessionTimeoutSettings;
   onSessionIdleMinutesChange(minutes: number): void;
   onSave(): Promise<void>;
   onClearSuccess(): void;
 };
 
 export function SessionTimeoutCard({
-  loading,
-  sessionIdleMinutes,
-  sessionIdleSource,
-  saveBusy,
-  error,
-  success,
+  settings,
   onSessionIdleMinutesChange,
   onSave,
   onClearSuccess,
 }: SessionTimeoutCardProps) {
+  const {
+    loading,
+    sessionIdleMinutes,
+    sessionIdleSource,
+    saveBusy,
+    error,
+    success,
+  } = settings;
   const [dirty, setDirty] = useState(false);
   const readOnly = sessionIdleSource === "env";
 
