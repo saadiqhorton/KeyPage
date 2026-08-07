@@ -3,6 +3,7 @@ import { FormEvent, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 import {
   BackupFormatError,
   BackupPasswordError,
@@ -92,15 +93,10 @@ export function BackupImportCard({ busy, onImport }: BackupImportCardProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-medium text-text">Import backup</h3>
-        <p className="text-xs text-muted">
-          Restore key entries from an encrypted backup file. Existing entries
-          with the same ID are left unchanged.
-        </p>
-      </div>
-
+    <SettingsCard
+      title="Import backup"
+      description="Restore key entries from an encrypted backup file. Existing entries with the same ID are left unchanged."
+    >
       <div className="flex flex-col gap-2">
         <label htmlFor="backup-file" className="text-sm text-text">
           Backup file
@@ -112,7 +108,7 @@ export function BackupImportCard({ busy, onImport }: BackupImportCardProps) {
           accept="application/json,.json"
           disabled={busy}
           onChange={(event) => void handleFileChange(event)}
-          className="block w-full cursor-pointer rounded-sm border border-hairline bg-obsidian/60 px-3 py-2 text-sm text-text file:mr-3 file:rounded-sm file:border-0 file:bg-brass/15 file:px-3 file:py-1 file:text-xs file:font-medium file:text-text disabled:cursor-not-allowed disabled:opacity-50"
+          className="block w-full cursor-pointer rounded-sm border border-hairline bg-obsidian/60 px-3 py-2 text-sm text-text file:mr-3 file:rounded-sm file:border-0 file:bg-brass/15 file:px-3 file:py-1 file:text-xs file:font-medium file:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/70 disabled:cursor-not-allowed disabled:opacity-50"
         />
       </div>
 
@@ -155,6 +151,6 @@ export function BackupImportCard({ busy, onImport }: BackupImportCardProps) {
           ) : null}
         </Callout>
       ) : null}
-    </div>
+    </SettingsCard>
   );
 }

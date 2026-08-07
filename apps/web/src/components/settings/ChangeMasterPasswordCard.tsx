@@ -7,6 +7,7 @@ import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { PasswordStrengthHint } from "@/components/ui/PasswordStrengthHint";
 import { Spinner } from "@/components/ui/Spinner";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 import { useWarnBeforeUnload } from "@/hooks/useWarnBeforeUnload";
 
 type ChangeMasterPasswordCardProps = {
@@ -65,15 +66,10 @@ export function ChangeMasterPasswordCard({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-medium text-text">Change Master Password</h3>
-        <p className="text-xs text-muted">
-          Re-encrypts every key entry in your browser and issues a new set of
-          recovery codes.
-        </p>
-      </div>
-
+    <SettingsCard
+      title="Change Master Password"
+      description="Re-encrypts every key entry in your browser and issues a new set of recovery codes."
+    >
       <Callout tone="warning">
         Changing your Master Password generates new recovery codes and signs out
         other browser sessions. Download and store the new codes before closing
@@ -126,6 +122,6 @@ export function ChangeMasterPasswordCard({
           </Button>
         </div>
       </form>
-    </div>
+    </SettingsCard>
   );
 }

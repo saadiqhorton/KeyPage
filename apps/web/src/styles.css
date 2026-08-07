@@ -18,6 +18,8 @@
   --duration-press: 160ms;
   --duration-modal: 220ms;
   --duration-modal-out: 150ms;
+  --duration-toast-in: 200ms;
+  --duration-toast-out: 140ms;
 }
 
 @layer base {
@@ -77,7 +79,7 @@
 @keyframes entrance-rise {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(8px);
   }
 
   to {
@@ -87,7 +89,7 @@
 }
 
 .entrance-stagger > * {
-  animation: entrance-rise 560ms var(--ease-out-soft) both;
+  animation: entrance-rise 320ms var(--ease-out-soft) both;
 }
 
 .entrance-stagger > *:nth-child(1) {
@@ -95,19 +97,15 @@
 }
 
 .entrance-stagger > *:nth-child(2) {
-  animation-delay: 90ms;
+  animation-delay: 60ms;
 }
 
 .entrance-stagger > *:nth-child(3) {
-  animation-delay: 180ms;
+  animation-delay: 120ms;
 }
 
 .entrance-stagger > *:nth-child(4) {
-  animation-delay: 270ms;
-}
-
-.entrance-delayed {
-  animation: entrance-rise 560ms var(--ease-out-soft) 280ms both;
+  animation-delay: 180ms;
 }
 
 /* Press feedback — shared by buttons / picker tiles */
@@ -206,7 +204,7 @@
 }
 
 .card-grid-enter > * {
-  animation: entrance-rise 420ms var(--ease-out-soft) both;
+  animation: entrance-rise 260ms var(--ease-out-soft) both;
 }
 
 .card-grid-enter > *:nth-child(1) {
@@ -214,31 +212,93 @@
 }
 
 .card-grid-enter > *:nth-child(2) {
-  animation-delay: 45ms;
+  animation-delay: 35ms;
 }
 
 .card-grid-enter > *:nth-child(3) {
-  animation-delay: 90ms;
+  animation-delay: 70ms;
 }
 
 .card-grid-enter > *:nth-child(4) {
-  animation-delay: 135ms;
+  animation-delay: 105ms;
 }
 
 .card-grid-enter > *:nth-child(5) {
-  animation-delay: 180ms;
+  animation-delay: 140ms;
 }
 
 .card-grid-enter > *:nth-child(6) {
-  animation-delay: 225ms;
+  animation-delay: 140ms;
 }
 
 .card-grid-enter > *:nth-child(n + 7) {
-  animation-delay: 260ms;
+  animation-delay: 140ms;
+}
+
+@keyframes view-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .view-enter {
-  animation: entrance-rise 420ms var(--ease-out-soft) both;
+  animation: view-fade 160ms var(--ease-out-soft) both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.toast-in {
+  animation: toast-in var(--duration-toast-in) var(--ease-out-soft) both;
+}
+
+.toast-out {
+  animation: toast-out var(--duration-toast-out) var(--ease-out-soft) both;
+}
+
+.toast-surface {
+  @apply rounded-sm border border-hairline bg-surface px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)];
+}
+
+@keyframes field-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.field-reveal {
+  animation: field-reveal 160ms var(--ease-out-soft) both;
 }
 
 @keyframes menu-pop-in {
@@ -259,9 +319,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .entrance-stagger > *,
-  .entrance-delayed,
   .card-grid-enter > *,
   .view-enter,
+  .toast-in,
+  .toast-out,
+  .field-reveal,
   .modal-backdrop-in,
   .modal-backdrop-out,
   .modal-panel-in,

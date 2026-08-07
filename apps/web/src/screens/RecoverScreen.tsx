@@ -17,7 +17,7 @@ import { ApiError } from "@/lib/api.js";
 import { copyTextWithAutoClear } from "@/lib/clipboard.js";
 import { downloadTextFile } from "@/lib/download.js";
 import { formatRecoveryCodeInput } from "@/lib/format.js";
-import { formatRecoveryCode, normalizeRecoveryCode } from "@keypage/shared";
+import { formatRecoveryCode, normalizeRecoveryCode, RECOVERY_CODE_COUNT } from "@keypage/shared";
 import { useVault } from "@/vault/useVault";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -207,7 +207,7 @@ export function RecoverScreen() {
       <AuthShell chip="ACCOUNT RECOVERY" title="Set a new Master Password for your vault.">
         <div className="flex flex-col gap-4">
           <Callout tone="warning">
-            This replaces all 10 of your recovery codes. You will download a new
+            This replaces all {RECOVERY_CODE_COUNT} of your recovery codes. You will download a new
             set after resetting.
           </Callout>
           <form className="flex flex-col gap-4" onSubmit={handlePasswordSubmit}>

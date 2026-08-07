@@ -18,7 +18,7 @@ export function AuthShell({ chip, title, children, className }: AuthShellProps) 
       )}
     >
       <div className="entrance-stagger flex w-full max-w-md flex-col items-center gap-8">
-        <p className="border border-hairline bg-surface/70 px-3 py-1.5 font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted">
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
           {chip}
         </p>
 
@@ -32,10 +32,8 @@ export function AuthShell({ chip, title, children, className }: AuthShellProps) 
           ) : null}
         </div>
 
-        <div className="w-full rounded-sm border border-hairline bg-surface p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-          <div className="rounded-[3px] border border-hairline/90 bg-obsidian/80 p-6">
-            {children}
-          </div>
+        <div className="bezel-shell w-full">
+          <div className="bezel-core p-6">{children}</div>
         </div>
       </div>
     </main>

@@ -1,12 +1,32 @@
+import { useMemo } from "react";
+
 import { cn } from "@/lib/cn";
+import { useExitTransition } from "@/hooks/useExitTransition";
+
+type ToastTone = "default" | "danger";
 
 type ToastProps = {
   message: string | null;
-  tone?: "default" | "danger";
+  tone?: ToastTone;
 };
 
+type ToastContent = {
+  message: string;
+  tone: ToastTone;
+};
+
+const TOAST_OUT_MS = 140;
+
 export function Toast({ message, tone = "default" }: ToastProps) {
-  if (message === null) {
+  // Stable identity while message/tone are unchanged — a fresh object each
+  // render would retrigger useExitTransition's effect and loop setState.
+  const value = useMemo<ToastContent | null>(
+    () => (message !== null ? { message, tone } : null),
+    [message, tone],
+  );
+  const { rendered, closing } = useExitTransition(value, TOAST_OUT_MS);
+
+  if (rendered === null) {
     return null;
   }
 
@@ -16,14 +36,19 @@ export function Toast({ message, tone = "default" }: ToastProps) {
       aria-live="polite"
       className="fixed inset-x-0 bottom-24 z-50 flex justify-center px-4"
     >
-      <div className="max-w-md rounded-sm border border-hairline bg-surface px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+      <div
+        className={cn(
+          "toast-surface max-w-md",
+          closing ? "toast-out" : "toast-in",
+        )}
+      >
         <p
           className={cn(
             "font-mono text-sm",
-            tone === "danger" ? "text-danger" : "text-text",
+            rendered.tone === "danger" ? "text-danger" : "text-text",
           )}
         >
-          {message}
+          {rendered.message}
         </p>
       </div>
     </div>

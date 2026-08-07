@@ -1,5 +1,8 @@
 import { Navigate, Outlet, createBrowserRouter } from "react-router-dom";
 
+import { AuthShell } from "@/components/AuthShell";
+import { Callout } from "@/components/ui/Callout";
+import { Spinner } from "@/components/ui/Spinner";
 import { resolveGuard, type RouteGuard } from "@/routes/guards";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { RecoverScreen } from "@/screens/RecoverScreen";
@@ -18,17 +21,20 @@ function LoadingGate() {
 
   if (state.phase === "loading") {
     return (
-      <div className="flex min-h-dvh items-center justify-center">
-        <p className="text-muted">Loading vault…</p>
-      </div>
+      <AuthShell chip="STARTING">
+        <div className="flex flex-col items-center gap-3">
+          <Spinner />
+          <p className="text-sm text-muted">Loading vault…</p>
+        </div>
+      </AuthShell>
     );
   }
 
   if (state.phase === "unavailable") {
     return (
-      <div className="flex min-h-dvh items-center justify-center px-6">
-        <p className="max-w-md text-center text-danger">{state.message}</p>
-      </div>
+      <AuthShell chip="UNAVAILABLE">
+        <Callout tone="danger">{state.message}</Callout>
+      </AuthShell>
     );
   }
 

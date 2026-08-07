@@ -31,14 +31,14 @@ export function KeyEntryToolbar({
 }: KeyEntryToolbarProps) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-wrap flex-col gap-3 sm:flex-row sm:items-center">
         <SearchField
           value={query}
           onChange={onQueryChange}
           aria-label="Search Key Entries"
           className="w-full max-w-sm"
         />
-        <p className="ml-auto text-xs tabular-nums text-muted" aria-live="polite">
+        <p className="text-xs tabular-nums text-muted sm:ml-auto" aria-live="polite">
           {visibleCount} of {totalCount} Key Entries
         </p>
         <ViewToggle value={view} onChange={onViewChange} />

@@ -3,6 +3,7 @@ import { FormEvent, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 import type { ExportOutcome } from "@/vault/useBackup";
 
 type BackupExportCardProps = {
@@ -42,14 +43,10 @@ export function BackupExportCard({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-medium text-text">Export backup</h3>
-        <p className="text-xs text-muted">
-          Download an encrypted copy of every key entry in this vault.
-        </p>
-      </div>
-
+    <SettingsCard
+      title="Export backup"
+      description="Download an encrypted copy of every key entry in this vault."
+    >
       <Callout tone="warning">
         This file contains every API key in this vault. It is encrypted with your
         Master Password — store it offline.
@@ -81,6 +78,6 @@ export function BackupExportCard({
           {success.entryCount} key {success.entryCount === 1 ? "entry" : "entries"}.
         </Callout>
       ) : null}
-    </div>
+    </SettingsCard>
   );
 }

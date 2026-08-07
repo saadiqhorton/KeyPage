@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 import { useWarnBeforeUnload } from "@/hooks/useWarnBeforeUnload";
 
 type RecoveryCodesCardProps = {
@@ -46,14 +47,10 @@ export function RecoveryCodesCard({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface/40 p-5">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-medium text-text">Recovery codes</h3>
-        <p className="text-xs text-muted">
-          One-time codes for account recovery if you forget your Master Password.
-        </p>
-      </div>
-
+    <SettingsCard
+      title="Recovery codes"
+      description="One-time codes for account recovery if you forget your Master Password."
+    >
       {loadingRemaining ? (
         <div className="flex items-center gap-2 text-sm text-muted">
           <Spinner size="sm" />
@@ -87,6 +84,6 @@ export function RecoveryCodesCard({
           </Button>
         </div>
       </form>
-    </div>
+    </SettingsCard>
   );
 }
