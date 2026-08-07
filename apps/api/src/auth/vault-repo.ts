@@ -9,6 +9,7 @@ import type {
 import {
   HttpInvalidRecoveryTicket,
   HttpInvalidRequest,
+  HttpSessionExpired,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
 import type {
@@ -25,6 +26,7 @@ import {
 import { resetThrottle } from "./throttle.js";
 import {
   createSession,
+  isSessionActive,
   revokeAllSessions,
   type SessionRequest,
 } from "./sessions.js";
@@ -84,6 +86,47 @@ export function findRecoveryTicketByTokenHash(
   return db
     .prepare(`SELECT * FROM recovery_tickets WHERE token_hash = ?`)
     .get(tokenHash) as RecoveryTicketRow | undefined;
+}
+
+export function hasOpenRecoveryTicket(db: Database.Database): boolean {
+  const nowIso = new Date().toISOString();
+  const row = db
+    .prepare(
+      `SELECT 1 AS ok
+       FROM recovery_tickets
+       WHERE consumed_at IS NULL AND expires_at > ?
+       LIMIT 1`,
+    )
+    .get(nowIso) as { ok: number } | undefined;
+
+  return row !== undefined;
+}
+
+/**
+ * Call at the start of Key Entry mutation transactions.
+ * Blocks writes after session revoke (recovery/password reset) and while a
+ * recovery ticket is open so claim snapshots cannot go stale.
+ */
+export function assertKeyEntryMutationsAllowed(
+  db: Database.Database,
+  sessionId: string,
+): void {
+  if (!isSessionActive(db, sessionId)) {
+    throw new HttpSessionExpired();
+  }
+
+  if (hasOpenRecoveryTicket(db)) {
+    throw new HttpInvalidRequest(
+      "Vault recovery in progress",
+      [
+        {
+          field: "recovery",
+          message:
+            "key entry changes are blocked until recovery reset completes or the ticket expires",
+        },
+      ],
+    );
+  }
 }
 
 export type InitializeVaultInput = {
@@ -221,6 +264,10 @@ export function resetVaultFromRecovery(
 
     assertEntriesMatchVault(db, input.entries);
 
+    // Revoke before ciphertext rotation so in-flight session writes re-check
+    // and fail instead of storing old-key material under the new key_version.
+    revokeAllSessions(db);
+
     const nextKeyVersion = vault.key_version + 1;
 
     db.prepare(
@@ -259,8 +306,6 @@ export function resetVaultFromRecovery(
 
     resetThrottle(db, "login");
     resetThrottle(db, "recovery");
-
-    revokeAllSessions(db);
 
     const session = createSession(db, req, idleTimeoutSeconds);
 
@@ -331,6 +376,8 @@ export function changeMasterPassword(
 
     assertEntriesMatchVault(db, input.entries);
 
+    revokeAllSessions(db);
+
     const nextKeyVersion = vault.key_version + 1;
 
     db.prepare(
@@ -365,8 +412,6 @@ export function changeMasterPassword(
 
     resetThrottle(db, "login");
     resetThrottle(db, "recovery");
-
-    revokeAllSessions(db);
 
     const session = createSession(db, req, idleTimeoutSeconds);
 

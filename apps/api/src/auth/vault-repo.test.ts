@@ -5,14 +5,18 @@ import Database from "better-sqlite3";
 
 import { hashAuthKey } from "./verifier.js";
 import {
+  assertKeyEntryMutationsAllowed,
   changeMasterPassword,
+  hasOpenRecoveryTicket,
   initializeVault,
   regenerateRecoveryCodes,
   resetVaultFromRecovery,
 } from "./vault-repo.js";
+import { createSession, isSessionActive, revokeAllSessions } from "./sessions.js";
 import { validateKdfParams, validateRecoveryEnvelopes } from "./kdf-params.js";
 import { runMigrations } from "../db/migrations.js";
 import { insertKeyEntry } from "../keys/key-entry-repo.js";
+import { HttpInvalidRequest, HttpSessionExpired } from "../errors.js";
 import { sha256Hex } from "./tokens.js";
 
 function openMemoryDb(): Database.Database {
@@ -457,5 +461,105 @@ describe("resetVaultFromRecovery", () => {
     assert.equal(entryRow.cipher_iv, newCipher.ivB64);
     assert.equal(entryRow.key_version, 2);
     assert.equal(readKeyVersion(db), 2);
+  });
+
+  it("revokes existing sessions before rotating entry ciphers", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+    const { token } = createSession(db, {}, 1200);
+    const sessionId = (
+      db
+        .prepare(`SELECT id FROM sessions WHERE token_hash = ?`)
+        .get(sha256Hex(token)) as { id: string }
+    ).id;
+
+    assert.equal(isSessionActive(db, sessionId), true);
+
+    resetVaultFromRecovery(
+      db,
+      {
+        recoveryTicket: "recovery-ticket-token",
+        kdf: sampleKdf(),
+        authVerifier: await hashAuthKey(
+          Buffer.alloc(32, 5).toString("base64"),
+        ),
+        recoveryCodes: sampleRecoveryCodes(),
+        entries: [entryPayload(ENTRY_ID)],
+      },
+      {},
+      1200,
+    );
+
+    assert.equal(isSessionActive(db, sessionId), false);
+    assert.equal(hasOpenRecoveryTicket(db), false);
+  });
+});
+
+describe("assertKeyEntryMutationsAllowed", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = openMemoryDb();
+    const kdf = sampleKdf();
+    validateKdfParams(kdf);
+    const recoveryCodes = sampleRecoveryCodes();
+    validateRecoveryEnvelopes(recoveryCodes);
+    const authVerifier = await hashAuthKey(
+      Buffer.alloc(32, 9).toString("base64"),
+    );
+    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+  });
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  it("rejects mutations when the session was revoked mid-flight", () => {
+    const { token } = createSession(db, {}, 1200);
+    const sessionId = (
+      db
+        .prepare(`SELECT id FROM sessions WHERE token_hash = ?`)
+        .get(sha256Hex(token)) as { id: string }
+    ).id;
+
+    revokeAllSessions(db);
+
+    assert.throws(
+      () => assertKeyEntryMutationsAllowed(db, sessionId),
+      (error: unknown) => error instanceof HttpSessionExpired,
+    );
+  });
+
+  it("rejects mutations while an open recovery ticket exists", () => {
+    const { token } = createSession(db, {}, 1200);
+    const sessionId = (
+      db
+        .prepare(`SELECT id FROM sessions WHERE token_hash = ?`)
+        .get(sha256Hex(token)) as { id: string }
+    ).id;
+
+    const codeId = (
+      db.prepare(`SELECT id FROM recovery_codes LIMIT 1`).get() as { id: string }
+    ).id;
+    const now = new Date();
+    db.prepare(
+      `INSERT INTO recovery_tickets (
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
+       ) VALUES (?, ?, ?, ?, ?, NULL)`,
+    ).run(
+      "open-ticket-1",
+      sha256Hex("open-ticket-plain"),
+      codeId,
+      now.toISOString(),
+      new Date(now.getTime() + 600_000).toISOString(),
+    );
+
+    assert.equal(hasOpenRecoveryTicket(db), true);
+    assert.throws(
+      () => assertKeyEntryMutationsAllowed(db, sessionId),
+      (error: unknown) =>
+        error instanceof HttpInvalidRequest &&
+        error.message === "Vault recovery in progress",
+    );
   });
 });

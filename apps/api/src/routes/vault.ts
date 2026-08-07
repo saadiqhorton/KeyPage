@@ -23,6 +23,7 @@ import {
 import {
   createSession,
   resolveSession,
+  revokeAllSessions,
   revokeSession,
   touchSession,
 } from "../auth/sessions.js";
@@ -256,6 +257,9 @@ function claimRecoveryCode(
          id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
        ) VALUES (?, ?, ?, ?, ?, NULL)`,
     ).run(newId(), tokenHash, code.id, nowIso, expiresAt);
+
+    // Freeze other sessions so they cannot mutate the claim snapshot.
+    revokeAllSessions(db);
   });
 
   apply();

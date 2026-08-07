@@ -35,6 +35,7 @@ import {
   validateKeyEntryId,
   validateService,
 } from "../keys/validate.js";
+import { assertKeyEntryMutationsAllowed } from "../auth/vault-repo.js";
 import { checkOrigin } from "../plugins/check-origin.js";
 import { createRequireSession } from "../plugins/require-session.js";
 import { resolveClipboardClearSeconds, resolveIdleTimeoutSeconds } from "../settings.js";
@@ -199,7 +200,9 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
 
       try {
         const occurredAt = new Date().toISOString();
+        const sessionId = request.vaultSession!.id;
         const apply = db.transaction(() => {
+          assertKeyEntryMutationsAllowed(db, sessionId);
           const created = insertKeyEntry(db, {
             id: body.id,
             label,
@@ -282,8 +285,10 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       );
 
       const occurredAt = new Date().toISOString();
+      const sessionId = request.vaultSession!.id;
 
       return db.transaction(() => {
+        assertKeyEntryMutationsAllowed(db, sessionId);
         const existingIds = listKeyEntryIds(db);
         const skippedIds: string[] = [];
         let imported = 0;
@@ -401,8 +406,10 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       }
 
       const occurredAt = new Date().toISOString();
+      const sessionId = request.vaultSession!.id;
 
       const entry = db.transaction(() => {
+        assertKeyEntryMutationsAllowed(db, sessionId);
         const updated = updateKeyEntry(db, {
           id,
           label,
@@ -440,8 +447,10 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       validateKeyEntryId(id);
 
       const occurredAt = new Date().toISOString();
+      const sessionId = request.vaultSession!.id;
 
       db.transaction(() => {
+        assertKeyEntryMutationsAllowed(db, sessionId);
         const existing = getKeyEntry(db, id);
         if (!existing) {
           throw new HttpInvalidRequest("Unknown key entry", [
