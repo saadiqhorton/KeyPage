@@ -222,6 +222,14 @@ export function VaultProvider({ children }: VaultProviderProps) {
     await refreshStatus();
   }, [refreshStatus]);
 
+  const lockLocal = useCallback(async (reason: LockReason) => {
+    clearEncryptionKey();
+    clearRecoveredMasterKey();
+    clearRecoveryTicket();
+    lockReasonRef.current = reason;
+    await refreshStatus();
+  }, [refreshStatus]);
+
   const startRecovery = useCallback(() => {
     setWizard({ kind: "recovery", step: 1, codes: null });
   }, []);
@@ -348,6 +356,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       submitSetup,
       unlock,
       lock,
+      lockLocal,
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
@@ -361,6 +370,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       submitSetup,
       unlock,
       lock,
+      lockLocal,
       startRecovery,
       claimRecoveryCode,
       completeRecovery,

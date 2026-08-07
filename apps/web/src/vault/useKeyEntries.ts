@@ -47,7 +47,7 @@ import {
   postKeyEntryUse,
 } from "@/lib/api.js";
 import { resolveClipboardClearMs } from "@/lib/clipboard-timeout.js";
-import { onKeyCleared } from "@/vault/session-keys.js";
+import { getEncryptionKeyVersion, onKeyCleared } from "@/vault/session-keys.js";
 import { useRekeyLock } from "@/vault/useRekeyLock.js";
 
 export type NewKeyEntryInput = {
@@ -160,7 +160,16 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
 
   const updateKeyEntry = useCallback(
     async (id: string, input: EditKeyEntryInput): Promise<KeyEntry> => {
+      const keyVersion = getEncryptionKeyVersion();
+      if (keyVersion === null) {
+        throw new ApiError({
+          error: "session_expired",
+          message: "Vault is locked.",
+        });
+      }
+
       const body: Parameters<typeof patchKeyEntry>[1] = {
+        keyVersion,
         label: input.label,
         serviceId: input.serviceId,
         customServiceName: input.customServiceName,
@@ -184,9 +193,17 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
   );
 
   const deleteKeyEntry = useCallback(async (id: string): Promise<void> => {
-    await apiDeleteKeyEntry(id);
+    const keyVersion = getEncryptionKeyVersion();
+    if (keyVersion === null) {
+      throw new ApiError({
+        error: "session_expired",
+        message: "Vault is locked.",
+      });
+    }
+
+    await guardRekey(apiDeleteKeyEntry(id, { keyVersion }));
     setEntries((previous) => previous.filter((entry) => entry.id !== id));
-  }, []);
+  }, [guardRekey]);
 
   const markUsed = useCallback(
     async (id: string, action: KeyEntryUseAction): Promise<void> => {

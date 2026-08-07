@@ -44,6 +44,25 @@ function assertCipherKeyVersion(
   }
 }
 
+/** Reject mutations from a client whose in-memory key version is stale. */
+export function assertClientKeyVersion(
+  db: Database.Database,
+  declared: number,
+  field = "keyVersion",
+): void {
+  const vault = getVaultAuth(db);
+  if (!vault) {
+    throw new HttpSetupRequired();
+  }
+  if (declared !== vault.key_version) {
+    throw new HttpKeyVersionMismatch({
+      field,
+      expected: vault.key_version,
+      received: declared,
+    });
+  }
+}
+
 function parseTagsJson(tagsJson: string): string[] {
   try {
     const parsed = JSON.parse(tagsJson);
@@ -211,6 +230,8 @@ export function updateKeyEntry(
   db: Database.Database,
   input: UpdateKeyEntryInput,
 ): KeyEntry | null {
+  assertClientKeyVersion(db, input.keyVersion);
+
   const assignments = [
     "label = ?",
     "service_id = ?",
@@ -269,7 +290,12 @@ export function updateKeyEntry(
   return rowToKeyEntry(row);
 }
 
-export function deleteKeyEntry(db: Database.Database, id: string): boolean {
+export function deleteKeyEntry(
+  db: Database.Database,
+  id: string,
+  keyVersion: number,
+): boolean {
+  assertClientKeyVersion(db, keyVersion);
   const result = db.prepare(`DELETE FROM key_entries WHERE id = ?`).run(id);
   return result.changes > 0;
 }

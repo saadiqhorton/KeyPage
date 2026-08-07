@@ -73,12 +73,18 @@ export type KeyEntryCreateResponse = {
 };
 
 export type KeyEntryUpdateRequest = {
+  /** Vault key version this tab encrypted under (required even for metadata-only edits). */
+  keyVersion: number;
   label: string;
   serviceId: string;
   customServiceName?: string;
   description?: string;
   tags: string[];
   cipher?: KeyEntryCipherInput;
+};
+
+export type KeyEntryDeleteRequest = {
+  keyVersion: number;
 };
 
 export type KeyEntryUpdateResponse = {

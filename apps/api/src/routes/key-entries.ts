@@ -381,8 +381,9 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       schema: {
         body: {
           type: "object",
-          required: ["label", "serviceId", "tags"],
+          required: ["label", "serviceId", "tags", "keyVersion"],
           properties: {
+            keyVersion: { type: "integer" },
             label: { type: "string" },
             serviceId: { type: "string" },
             customServiceName: { type: "string" },
@@ -419,6 +420,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
         assertKeyEntryMutationsAllowed(db, sessionId);
         const updated = updateKeyEntry(db, {
           id,
+          keyVersion: body.keyVersion,
           label,
           serviceId: body.serviceId,
           customServiceName,
@@ -447,12 +449,23 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
   app.delete(
     "/:id",
     {
+      bodyLimit: BODY_LIMIT,
       preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: ["keyVersion"],
+          properties: {
+            keyVersion: { type: "integer" },
+          },
+        },
+      },
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       validateKeyEntryId(id);
 
+      const body = request.body as { keyVersion: number };
       const occurredAt = new Date().toISOString();
       const sessionId = request.vaultSession!.id;
 
@@ -469,7 +482,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
           action: "deleted",
           occurredAt,
         });
-        deleteKeyEntry(db, id);
+        deleteKeyEntry(db, id, body.keyVersion);
       })();
 
       return reply.status(204).send();

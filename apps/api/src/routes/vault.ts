@@ -428,15 +428,29 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         revokeSession(db, currentSession.session.id);
       }
 
+      // Re-read after the await: a rotation may have committed during verifyAuthKey,
+      // leaving a stale in-memory verifier that still matches the old password.
+      const currentVault = getVaultAuth(db);
+      if (!currentVault) {
+        throw new HttpSetupRequired();
+      }
+
+      const stillValid = await verifyAuthKey(
+        body.authKeyB64,
+        currentVault.auth_verifier,
+      );
+      if (!stillValid) {
+        const attemptsRemaining = recordFailure(db, "login");
+        throw new HttpInvalidCredentials(
+          "Incorrect Master Password",
+          attemptsRemaining,
+        );
+      }
+
       const { token, info } = createSession(db, request, idleSeconds);
       setSessionCookie(reply, request, token);
 
-      // Deliberately the version read alongside the verifier that was just
-      // checked, not a fresh read. If a rotation committed during the await
-      // above, the caller authenticated with the superseded password and holds
-      // the superseded key, so it must be told the superseded version and have
-      // its first write rejected.
-      return { keyVersion: vault.key_version, session: info };
+      return { keyVersion: currentVault.key_version, session: info };
     },
   );
 

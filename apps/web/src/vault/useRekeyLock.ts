@@ -26,7 +26,7 @@ export function useRekeyLock(): RekeyGuard {
           error instanceof ApiError &&
           error.code === "key_version_mismatch"
         ) {
-          await actions.lock("rekeyed");
+          await actions.lockLocal("rekeyed");
         }
         throw error;
       }

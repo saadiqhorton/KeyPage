@@ -41,6 +41,8 @@ export type VaultActions = {
   submitSetup(password: string): Promise<void>;
   unlock(password: string): Promise<void>;
   lock(reason: LockReason): Promise<void>;
+  /** Lock this tab only — does not broadcast to other tabs or revoke the session. */
+  lockLocal(reason: LockReason): Promise<void>;
   startRecovery(): void;
   claimRecoveryCode(code: string): Promise<void>;
   completeRecovery(newPassword: string): Promise<void>;

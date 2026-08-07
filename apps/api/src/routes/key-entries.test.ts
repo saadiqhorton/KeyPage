@@ -193,6 +193,7 @@ describe("Key Entry writes across a key reset", () => {
       url: `/api/keys/${ENTRY_ID}`,
       headers: { cookie },
       payload: {
+        keyVersion: 1,
         label: "Renamed",
         serviceId: "openai",
         tags: [],
@@ -223,13 +224,66 @@ describe("Key Entry writes across a key reset", () => {
       method: "PATCH",
       url: `/api/keys/${ENTRY_ID}`,
       headers: { cookie },
-      payload: { label: "Renamed", serviceId: "openai", tags: [] },
+      payload: {
+        keyVersion: 2,
+        label: "Renamed",
+        serviceId: "openai",
+        tags: [],
+      },
     });
 
-    // No ciphertext is submitted, so nothing can be mislabelled and the stored
-    // entry keeps the key version it was actually encrypted under.
     assert.equal(response.statusCode, 200);
     assert.equal(readRow(db, ENTRY_ID)?.key_version, 1);
+  });
+
+  it("rejects a metadata-only update with a superseded key version", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/keys",
+      headers: { cookie },
+      payload: createBody(ENTRY_ID, 1),
+    });
+    assert.equal(created.statusCode, 201);
+
+    bumpVaultKeyVersion(db);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/keys/${ENTRY_ID}`,
+      headers: { cookie },
+      payload: {
+        keyVersion: 1,
+        label: "Renamed",
+        serviceId: "openai",
+        tags: [],
+      },
+    });
+
+    assert.equal(response.statusCode, 409);
+    assert.equal(response.json().error, "key_version_mismatch");
+  });
+
+  it("rejects delete with a superseded key version", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/keys",
+      headers: { cookie },
+      payload: createBody(ENTRY_ID, 1),
+    });
+    assert.equal(created.statusCode, 201);
+
+    bumpVaultKeyVersion(db);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/api/keys/${ENTRY_ID}`,
+      headers: { cookie },
+      payload: { keyVersion: 1 },
+    });
+
+    assert.equal(response.statusCode, 409);
+    assert.equal(response.json().error, "key_version_mismatch");
+    assert.ok(readRow(db, ENTRY_ID));
   });
 
   it("imports nothing when any entry declares a superseded key version", async () => {
@@ -273,6 +327,7 @@ describe("Key Entry writes across a key reset", () => {
       method: "DELETE",
       url: `/api/keys/${ENTRY_ID}`,
       headers: { cookie },
+      payload: { keyVersion: 1 },
     });
 
     assert.equal(response.statusCode, 401);
