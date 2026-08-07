@@ -91,6 +91,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       reason: lockReasonRef.current,
       idleTimeoutSeconds: status.session.idleTimeoutSeconds,
       kdf: status.kdf,
+      keyVersion: status.keyVersion,
       lockout: status.lockout,
       recoveryCodesRemaining: status.recoveryCodesRemaining,
       recoveryLockout: status.recoveryLockout,
@@ -165,7 +166,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
         recoveryCodes: envelopes,
       });
 
-      setEncryptionKey(derived.encryptionKey);
+      setEncryptionKey(derived.encryptionKey, response.keyVersion);
       downloadRecoveryCodes(codes);
       setWizard({ kind: "setup", step: 2, codes });
       setState({
@@ -199,7 +200,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       zeroize(derived.masterKey);
 
       const response = await postVaultLogin({ authKeyB64: derived.authKeyB64 });
-      setEncryptionKey(derived.encryptionKey);
+      setEncryptionKey(derived.encryptionKey, response.keyVersion);
       lockReasonRef.current = "initial";
       setState({
         phase: "unlocked",
@@ -218,6 +219,14 @@ export function VaultProvider({ children }: VaultProviderProps) {
     lockReasonRef.current = reason;
     broadcastLock(reason);
     void postVaultLock().catch(() => {});
+    await refreshStatus();
+  }, [refreshStatus]);
+
+  const lockLocal = useCallback(async (reason: LockReason) => {
+    clearEncryptionKey();
+    clearRecoveredMasterKey();
+    clearRecoveryTicket();
+    lockReasonRef.current = reason;
     await refreshStatus();
   }, [refreshStatus]);
 
@@ -347,6 +356,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       submitSetup,
       unlock,
       lock,
+      lockLocal,
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
@@ -360,6 +370,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       submitSetup,
       unlock,
       lock,
+      lockLocal,
       startRecovery,
       claimRecoveryCode,
       completeRecovery,

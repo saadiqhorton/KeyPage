@@ -12,15 +12,28 @@ export const DEFAULT_CLIPBOARD_CLEAR_SECONDS = 30;
 export const CLIPBOARD_CLEAR_SECONDS_MIN = 5;
 export const CLIPBOARD_CLEAR_SECONDS_MAX = 300;
 
-export type KeyEntryCipherInput = {
+/**
+ * Raw AES-GCM output, used on the paths where the server — not the client —
+ * decides which key version the ciphertext belongs to (recovery reset and
+ * Master Password change both mint the next version inside their own
+ * transaction).
+ */
+export type KeyEntryCipherPayload = {
   algorithm: "aes-256-gcm";
   ivB64: string;
   ciphertextB64: string;
 };
 
-export type KeyEntryCipher = KeyEntryCipherInput & {
+/**
+ * What a client submits for an ordinary write. `keyVersion` names the vault key
+ * version the ciphertext was produced under, so the server can refuse ciphertext
+ * from a client whose key material is stale.
+ */
+export type KeyEntryCipherInput = KeyEntryCipherPayload & {
   keyVersion: number;
 };
+
+export type KeyEntryCipher = KeyEntryCipherInput;
 
 export type KeyEntry = {
   id: string;
@@ -60,12 +73,18 @@ export type KeyEntryCreateResponse = {
 };
 
 export type KeyEntryUpdateRequest = {
+  /** Vault key version this tab encrypted under (required even for metadata-only edits). */
+  keyVersion: number;
   label: string;
   serviceId: string;
   customServiceName?: string;
   description?: string;
   tags: string[];
   cipher?: KeyEntryCipherInput;
+};
+
+export type KeyEntryDeleteRequest = {
+  keyVersion: number;
 };
 
 export type KeyEntryUpdateResponse = {

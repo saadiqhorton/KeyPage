@@ -61,7 +61,9 @@ export function UnlockScreen() {
       ? `Locked after ${formatIdleLockMinutes(state.idleTimeoutSeconds)} of inactivity.`
       : locked && state.reason === "session_expired"
         ? "Your session expired."
-        : null;
+        : locked && state.reason === "rekeyed"
+          ? "Your Master Password was changed somewhere else. Unlock with the new one."
+          : null;
 
   return (
     <AuthShell chip="VAULT LOCKED" title="Enter your Master Password to unlock.">

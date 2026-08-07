@@ -5,6 +5,7 @@ import type {
   AppSettingsUpdateRequest,
   KeyEntryCreateRequest,
   KeyEntryCreateResponse,
+  KeyEntryDeleteRequest,
   KeyEntryUpdateRequest,
   KeyEntryUpdateResponse,
   KeyEntryImportRequest,
@@ -182,9 +183,13 @@ export function patchKeyEntry(
   );
 }
 
-export function deleteKeyEntry(id: string): Promise<void> {
+export function deleteKeyEntry(
+  id: string,
+  body: KeyEntryDeleteRequest,
+): Promise<void> {
   return apiFetch<void>(`/api/keys/${encodeURIComponent(id)}`, {
     method: "DELETE",
+    body: JSON.stringify(body),
   });
 }
 

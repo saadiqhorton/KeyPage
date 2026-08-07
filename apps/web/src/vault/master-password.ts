@@ -184,7 +184,7 @@ export async function changeMasterPassword(
     rethrowInvalidCredentials(error);
   }
 
-  replaceEncryptionKey(next.encryptionKey);
+  replaceEncryptionKey(next.encryptionKey, response.keyVersion);
   downloadRecoveryCodes(codes);
 
   if (response.reEncrypted !== reencrypted.length) {
@@ -288,7 +288,7 @@ export async function completeVaultRecovery(
       });
 
       zeroize(recoveredMasterKey);
-      replaceEncryptionKey(next.encryptionKey);
+      replaceEncryptionKey(next.encryptionKey, response.keyVersion);
       downloadRecoveryCodes(codes);
 
       if (response.reEncrypted !== reencrypted.length) {
@@ -329,6 +329,10 @@ export async function regenerateRecoveryCodes(
   try {
     await postRecoveryCodesRegenerate({
       authKeyB64: derived.authKeyB64,
+      // Pinned to the same status read that supplied the KDF params these
+      // envelopes were built from, so a rotation in between is rejected rather
+      // than persisted as codes wrapping a superseded master key.
+      keyVersion: status.keyVersion,
       recoveryCodes: envelopes,
     });
   } catch (error) {

@@ -50,11 +50,12 @@ export type KeyEntryRouteOptions = {
 
 const cipherSchema = {
   type: "object",
-  required: ["algorithm", "ivB64", "ciphertextB64"],
+  required: ["algorithm", "ivB64", "ciphertextB64", "keyVersion"],
   properties: {
     algorithm: { type: "string", enum: ["aes-256-gcm"] },
     ivB64: { type: "string" },
     ciphertextB64: { type: "string" },
+    keyVersion: { type: "integer" },
   },
 } as const;
 
@@ -340,6 +341,12 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
         },
       },
     },
+    /**
+     * Deliberately outside the key-version invariant: this writes only
+     * `last_used_at` plus an activity row, never ciphertext, so a rotation
+     * cannot mislabel anything here. Recovery claim revokes every session, so
+     * `requireSession` already blocks it for the lifetime of a ticket.
+     */
     async (request): Promise<KeyEntryUseResponse> => {
       const { id } = request.params as { id: string };
       validateKeyEntryId(id);
@@ -374,8 +381,9 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       schema: {
         body: {
           type: "object",
-          required: ["label", "serviceId", "tags"],
+          required: ["label", "serviceId", "tags", "keyVersion"],
           properties: {
+            keyVersion: { type: "integer" },
             label: { type: "string" },
             serviceId: { type: "string" },
             customServiceName: { type: "string" },
@@ -412,6 +420,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
         assertKeyEntryMutationsAllowed(db, sessionId);
         const updated = updateKeyEntry(db, {
           id,
+          keyVersion: body.keyVersion,
           label,
           serviceId: body.serviceId,
           customServiceName,
@@ -440,12 +449,23 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
   app.delete(
     "/:id",
     {
+      bodyLimit: BODY_LIMIT,
       preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: ["keyVersion"],
+          properties: {
+            keyVersion: { type: "integer" },
+          },
+        },
+      },
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       validateKeyEntryId(id);
 
+      const body = request.body as { keyVersion: number };
       const occurredAt = new Date().toISOString();
       const sessionId = request.vaultSession!.id;
 
@@ -462,7 +482,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
           action: "deleted",
           occurredAt,
         });
-        deleteKeyEntry(db, id);
+        deleteKeyEntry(db, id, body.keyVersion);
       })();
 
       return reply.status(204).send();

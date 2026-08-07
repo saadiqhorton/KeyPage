@@ -12,6 +12,7 @@ import {
   normalizeTags,
   normalizeImportTimestamp,
   validateCipherInput,
+  validateCipherPayload,
   validateService,
 } from "./validate.js";
 
@@ -28,14 +29,22 @@ function assertInvalidRequest(fn: () => void, field: string): void {
   }
 }
 
+function validPayload() {
+  return {
+    algorithm: "aes-256-gcm" as const,
+    ivB64: Buffer.alloc(AES_GCM_IV_BYTES).toString("base64"),
+    ciphertextB64: Buffer.alloc(17).toString("base64"),
+  };
+}
+
 describe("key entry validate", () => {
   it("rejects iv of wrong byte length", () => {
     assertInvalidRequest(
       () =>
         validateCipherInput({
-          algorithm: "aes-256-gcm",
+          ...validPayload(),
           ivB64: Buffer.alloc(8).toString("base64"),
-          ciphertextB64: Buffer.alloc(17).toString("base64"),
+          keyVersion: 1,
         }),
       "cipher.ivB64",
     );
@@ -45,9 +54,9 @@ describe("key entry validate", () => {
     assertInvalidRequest(
       () =>
         validateCipherInput({
-          algorithm: "aes-256-gcm",
-          ivB64: Buffer.alloc(AES_GCM_IV_BYTES).toString("base64"),
+          ...validPayload(),
           ciphertextB64: Buffer.alloc(16).toString("base64"),
+          keyVersion: 1,
         }),
       "cipher.ciphertextB64",
     );
@@ -57,14 +66,31 @@ describe("key entry validate", () => {
     assertInvalidRequest(
       () =>
         validateCipherInput({
-          algorithm: "aes-256-gcm",
-          ivB64: Buffer.alloc(AES_GCM_IV_BYTES).toString("base64"),
+          ...validPayload(),
           ciphertextB64: Buffer.alloc(KEY_ENTRY_CIPHERTEXT_B64_MAX + 1).toString(
             "base64",
           ),
+          keyVersion: 1,
         }),
       "cipher.ciphertextB64",
     );
+  });
+
+  it("rejects a non-positive or fractional key version", () => {
+    for (const keyVersion of [0, -1, 1.5, Number.NaN]) {
+      assertInvalidRequest(
+        () => validateCipherInput({ ...validPayload(), keyVersion }),
+        "cipher.keyVersion",
+      );
+    }
+  });
+
+  it("accepts a well-formed client cipher", () => {
+    validateCipherInput({ ...validPayload(), keyVersion: 3 });
+  });
+
+  it("accepts a rotation payload that carries no key version", () => {
+    validateCipherPayload(validPayload());
   });
 
   it("rejects unknown serviceId", () => {

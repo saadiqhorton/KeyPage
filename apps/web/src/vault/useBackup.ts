@@ -22,6 +22,7 @@ import {
 import { zeroize } from "@/crypto/provider.js";
 import { getKeyEntries, getVaultStatus, postKeyEntryImport } from "@/lib/api.js";
 import { downloadTextFile } from "@/lib/download.js";
+import { useRekeyLock } from "@/vault/useRekeyLock.js";
 
 export type ExportOutcome = { fileName: string; entryCount: number };
 export type ImportOutcome = { imported: number; skipped: number };
@@ -52,6 +53,7 @@ export function useBackup(): {
   exportBackup(password: string): Promise<ExportOutcome>;
   importBackup(fileText: string, password: string): Promise<ImportOutcome>;
 } {
+  const guardRekey = useRekeyLock();
   const [exportBusy, setExportBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
 
@@ -143,7 +145,9 @@ export function useBackup(): {
           });
         }
 
-        const response = await postKeyEntryImport({ entries: importItems });
+        const response = await guardRekey(
+          postKeyEntryImport({ entries: importItems }),
+        );
 
         return {
           imported: response.imported,
@@ -156,7 +160,7 @@ export function useBackup(): {
         setImportBusy(false);
       }
     },
-    [],
+    [guardRekey],
   );
 
   return {

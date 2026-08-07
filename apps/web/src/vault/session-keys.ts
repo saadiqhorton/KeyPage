@@ -27,23 +27,35 @@ function getTabId(): string {
 }
 
 let encryptionKey: AesKey | null = null;
+/**
+ * Vault key version the in-memory key belongs to. Stored here rather than in
+ * React state so it cannot drift from the key itself: every write stamps it, and
+ * the server rejects ciphertext whose declared version is no longer current.
+ */
+let encryptionKeyVersion: number | null = null;
 let recoveredMasterKey: Uint8Array | null = null;
 
 const keyClearedListeners = new Set<() => void>();
 
-export function setEncryptionKey(key: AesKey): void {
+export function setEncryptionKey(key: AesKey, keyVersion: number): void {
   encryptionKey = key;
+  encryptionKeyVersion = keyVersion;
 }
 
-export function replaceEncryptionKey(key: AesKey): void {
+export function replaceEncryptionKey(key: AesKey, keyVersion: number): void {
   if (encryptionKey) {
     zeroizeAesKey(encryptionKey);
   }
   encryptionKey = key;
+  encryptionKeyVersion = keyVersion;
 }
 
 export function getEncryptionKey(): AesKey | null {
   return encryptionKey;
+}
+
+export function getEncryptionKeyVersion(): number | null {
+  return encryptionKeyVersion;
 }
 
 export function clearEncryptionKey(): void {
@@ -51,6 +63,7 @@ export function clearEncryptionKey(): void {
     zeroize(encryptionKey.bytes);
   }
   encryptionKey = null;
+  encryptionKeyVersion = null;
   for (const listener of keyClearedListeners) {
     listener();
   }

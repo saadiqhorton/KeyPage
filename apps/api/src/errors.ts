@@ -78,6 +78,25 @@ export class HttpInvalidRecoveryCode extends HttpError {
   }
 }
 
+/**
+ * The client submitted key material tied to a vault key version that is no
+ * longer current, which means its in-memory encryption key is stale. Distinct
+ * from a validation error: the request was well-formed, the vault simply moved
+ * on, and the client has to unlock again before it can write.
+ */
+export class HttpKeyVersionMismatch extends HttpError {
+  constructor(options: { field: string; expected: number; received: number }) {
+    super(409, "key_version_mismatch", "Vault key version has changed", {
+      details: [
+        {
+          field: options.field,
+          message: `expected ${options.expected}, received ${options.received}`,
+        },
+      ],
+    });
+  }
+}
+
 export class HttpInvalidRecoveryTicket extends HttpError {
   constructor(message = "Recovery ticket is invalid or expired") {
     super(401, "invalid_recovery_ticket", message);

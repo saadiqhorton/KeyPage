@@ -133,7 +133,7 @@ describe("migration v3 activity_events", () => {
       action: "deleted",
       occurredAt,
     });
-    deleteKeyEntry(db, entryId);
+    deleteKeyEntry(db, entryId, 1);
 
     const event = db
       .prepare(`SELECT key_entry_id, action FROM activity_events`)

@@ -9,6 +9,7 @@ import {
   type RecoveryClaimResponse,
   type RecoveryCodesRegenerateResponse,
   type RecoveryResetResponse,
+  type SessionInfo,
   type VaultLoginResponse,
   type VaultPasswordChangeResponse,
   type VaultSessionResponse,
@@ -53,7 +54,7 @@ import {
   vaultAuthToKdfParams,
 } from "../auth/vault-repo.js";
 import { listKeyEntries } from "../keys/key-entry-repo.js";
-import { validateCipherInput } from "../keys/validate.js";
+import { validateCipherPayload } from "../keys/validate.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
 import type { RecoveryCodeRow, VaultAuthRow } from "../db/rows.js";
 import {
@@ -375,6 +376,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       return reply.status(201).send({
         state: "ready",
+        keyVersion: getVaultAuth(db)!.key_version,
         session: info,
       });
     },
@@ -410,7 +412,9 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         throw new HttpSetupRequired();
       }
 
-      const valid = await verifyAuthKey(body.authKeyB64, vault.auth_verifier);
+      const verifiedVerifier = vault.auth_verifier;
+
+      const valid = await verifyAuthKey(body.authKeyB64, verifiedVerifier);
       if (!valid) {
         const attemptsRemaining = recordFailure(db, "login");
         throw new HttpInvalidCredentials(
@@ -422,15 +426,39 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       resetThrottle(db, "login");
 
       const idleSeconds = idleTimeoutSeconds(db);
-      const currentSession = resolveSession(db, request, idleSeconds);
-      if (currentSession.ok) {
-        revokeSession(db, currentSession.session.id);
+
+      // Pin session creation to the verifier that was checked — synchronously,
+      // inside the writer transaction, so a rotation cannot commit in a gap.
+      let loginResult: { token: string; info: SessionInfo; keyVersion: number };
+      try {
+        loginResult = db.transaction(() => {
+          const currentVault = getVaultAuth(db);
+          if (!currentVault || currentVault.auth_verifier !== verifiedVerifier) {
+            throw new HttpInvalidCredentials("Incorrect Master Password", 0);
+          }
+
+          const currentSession = resolveSession(db, request, idleSeconds);
+          if (currentSession.ok) {
+            revokeSession(db, currentSession.session.id);
+          }
+
+          const { token, info } = createSession(db, request, idleSeconds);
+          return { token, info, keyVersion: currentVault.key_version };
+        })();
+      } catch (error) {
+        if (error instanceof HttpInvalidCredentials) {
+          const attemptsRemaining = recordFailure(db, "login");
+          throw new HttpInvalidCredentials(
+            "Incorrect Master Password",
+            attemptsRemaining,
+          );
+        }
+        throw error;
       }
 
-      const { token, info } = createSession(db, request, idleSeconds);
-      setSessionCookie(reply, request, token);
+      setSessionCookie(reply, request, loginResult.token);
 
-      return { session: info };
+      return { keyVersion: loginResult.keyVersion, session: loginResult.info };
     },
   );
 
@@ -541,7 +569,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         entries: Array<{
           id: string;
           baseIvB64: string;
-          cipher: Parameters<typeof validateCipherInput>[0];
+          cipher: Parameters<typeof validateCipherPayload>[0];
         }>;
       };
 
@@ -551,7 +579,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       body.entries.forEach((entry, index) => {
         withEntryFieldPrefix(index, () => {
-          validateCipherInput(entry.cipher);
+          validateCipherPayload(entry.cipher);
         });
       });
 
@@ -626,7 +654,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         entries: Array<{
           id: string;
           baseIvB64: string;
-          cipher: Parameters<typeof validateCipherInput>[0];
+          cipher: Parameters<typeof validateCipherPayload>[0];
         }>;
       };
 
@@ -637,7 +665,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       body.entries.forEach((entry, index) => {
         withEntryFieldPrefix(index, () => {
-          validateCipherInput(entry.cipher);
+          validateCipherPayload(entry.cipher);
         });
       });
 
@@ -677,9 +705,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       schema: {
         body: {
           type: "object",
-          required: ["authKeyB64", "recoveryCodes"],
+          required: ["authKeyB64", "keyVersion", "recoveryCodes"],
           properties: {
             authKeyB64: { type: "string" },
+            keyVersion: { type: "integer" },
             recoveryCodes: {
               type: "array",
               minItems: RECOVERY_CODE_COUNT,
@@ -695,6 +724,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       const body = request.body as {
         authKeyB64: string;
+        keyVersion: number;
         recoveryCodes: Parameters<typeof validateRecoveryEnvelopes>[0];
       };
 
@@ -705,7 +735,11 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       resetThrottle(db, "login");
 
-      return regenerateRecoveryCodes(db, body.recoveryCodes);
+      return regenerateRecoveryCodes(db, {
+        sessionId: request.vaultSession!.id,
+        keyVersion: body.keyVersion,
+        recoveryCodes: body.recoveryCodes,
+      });
     },
   );
 };
