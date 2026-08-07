@@ -9,6 +9,7 @@ import {
   type RecoveryClaimResponse,
   type RecoveryCodesRegenerateResponse,
   type RecoveryResetResponse,
+  type SessionInfo,
   type VaultLoginResponse,
   type VaultPasswordChangeResponse,
   type VaultSessionResponse,
@@ -411,7 +412,9 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         throw new HttpSetupRequired();
       }
 
-      const valid = await verifyAuthKey(body.authKeyB64, vault.auth_verifier);
+      const verifiedVerifier = vault.auth_verifier;
+
+      const valid = await verifyAuthKey(body.authKeyB64, verifiedVerifier);
       if (!valid) {
         const attemptsRemaining = recordFailure(db, "login");
         throw new HttpInvalidCredentials(
@@ -423,34 +426,39 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       resetThrottle(db, "login");
 
       const idleSeconds = idleTimeoutSeconds(db);
-      const currentSession = resolveSession(db, request, idleSeconds);
-      if (currentSession.ok) {
-        revokeSession(db, currentSession.session.id);
+
+      // Pin session creation to the verifier that was checked — synchronously,
+      // inside the writer transaction, so a rotation cannot commit in a gap.
+      let loginResult: { token: string; info: SessionInfo; keyVersion: number };
+      try {
+        loginResult = db.transaction(() => {
+          const currentVault = getVaultAuth(db);
+          if (!currentVault || currentVault.auth_verifier !== verifiedVerifier) {
+            throw new HttpInvalidCredentials("Incorrect Master Password", 0);
+          }
+
+          const currentSession = resolveSession(db, request, idleSeconds);
+          if (currentSession.ok) {
+            revokeSession(db, currentSession.session.id);
+          }
+
+          const { token, info } = createSession(db, request, idleSeconds);
+          return { token, info, keyVersion: currentVault.key_version };
+        })();
+      } catch (error) {
+        if (error instanceof HttpInvalidCredentials) {
+          const attemptsRemaining = recordFailure(db, "login");
+          throw new HttpInvalidCredentials(
+            "Incorrect Master Password",
+            attemptsRemaining,
+          );
+        }
+        throw error;
       }
 
-      // Re-read after the await: a rotation may have committed during verifyAuthKey,
-      // leaving a stale in-memory verifier that still matches the old password.
-      const currentVault = getVaultAuth(db);
-      if (!currentVault) {
-        throw new HttpSetupRequired();
-      }
+      setSessionCookie(reply, request, loginResult.token);
 
-      const stillValid = await verifyAuthKey(
-        body.authKeyB64,
-        currentVault.auth_verifier,
-      );
-      if (!stillValid) {
-        const attemptsRemaining = recordFailure(db, "login");
-        throw new HttpInvalidCredentials(
-          "Incorrect Master Password",
-          attemptsRemaining,
-        );
-      }
-
-      const { token, info } = createSession(db, request, idleSeconds);
-      setSessionCookie(reply, request, token);
-
-      return { keyVersion: currentVault.key_version, session: info };
+      return { keyVersion: loginResult.keyVersion, session: loginResult.info };
     },
   );
 
