@@ -175,3 +175,14 @@ export function revokeAllSessions(db: Database.Database): void {
     `UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL`,
   ).run(nowIso);
 }
+
+/** Re-check inside a write transaction so mid-flight handlers fail after revoke. */
+export function isSessionActive(db: Database.Database, sessionId: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT revoked_at FROM sessions WHERE id = ?`,
+    )
+    .get(sessionId) as { revoked_at: string | null } | undefined;
+
+  return row !== undefined && row.revoked_at === null;
+}

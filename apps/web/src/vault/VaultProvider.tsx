@@ -14,10 +14,14 @@ import {
   unwrapMasterKey,
 } from "@/crypto/recovery.js";
 import { zeroize } from "@/crypto/provider.js";
-import { ApiError, getVaultStatus, postRecoveryClaim, postRecoveryReset, postVaultLock, postVaultLogin, postVaultSetup } from "@/lib/api.js";
+import { ApiError, getVaultStatus, postRecoveryClaim, postVaultLock, postVaultLogin, postVaultSetup } from "@/lib/api.js";
 import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
-import { normalizeRecoveryCode } from "@keypage/shared";
+import { normalizeRecoveryCode, type KeyEntry } from "@keypage/shared";
 
+import {
+  completeVaultRecovery,
+  formatPasswordError,
+} from "./master-password.js";
 import {
   VaultContext,
   type LockReason,
@@ -35,12 +39,15 @@ import {
   setEncryptionKey,
   setRecoveredMasterKey,
   subscribeLockBroadcast,
+  takeRecoveredMasterKey,
 } from "./session-keys.js";
 
 let recoveryTicket: string | null = null;
+let recoveryEntries: KeyEntry[] = [];
 
 function clearRecoveryTicket(): void {
   recoveryTicket = null;
+  recoveryEntries = [];
 }
 
 function isUnlocked(): boolean {
@@ -243,6 +250,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       );
       setRecoveredMasterKey(masterKey);
       recoveryTicket = claim.recoveryTicket;
+      recoveryEntries = claim.entries;
       setWizard({ kind: "recovery", step: 2, codes: null });
       await refreshStatus();
     } catch (error) {
@@ -259,34 +267,52 @@ export function VaultProvider({ children }: VaultProviderProps) {
       });
     }
 
-    clearRecoveredMasterKey();
+    const ticket = recoveryTicket;
+    const entries = recoveryEntries;
+    const recoveredMasterKey = takeRecoveredMasterKey();
+    if (!recoveredMasterKey) {
+      clearRecoveryTicket();
+      throw new ApiError({
+        error: "invalid_recovery_ticket",
+        message: "Recovery session expired. Start again with a recovery code.",
+      });
+    }
 
     setState({ phase: "working", label: "Setting up your new Master Password…" });
     try {
-      const kdf = await pickKdfParams();
-      const derived = await deriveVaultKeys(newPassword, kdf);
-      const { codes, envelopes } = await buildRecoveryCodeEnvelopes(derived.masterKey);
-      zeroize(derived.masterKey);
-
-      const response = await postRecoveryReset({
-        recoveryTicket,
-        kdf,
-        authKeyB64: derived.authKeyB64,
-        recoveryCodes: envelopes,
-      });
+      const { codes, session } = await completeVaultRecovery(
+        ticket,
+        recoveredMasterKey,
+        entries,
+        newPassword,
+        (label) => setState({ phase: "working", label }),
+      );
 
       clearRecoveryTicket();
-      setEncryptionKey(derived.encryptionKey);
-      downloadRecoveryCodes(codes);
       setWizard({ kind: "recovery", step: 3, codes });
       lockReasonRef.current = "initial";
       setState({
         phase: "unlocked",
-        idleTimeoutSeconds: response.session.idleTimeoutSeconds,
+        idleTimeoutSeconds: session.idleTimeoutSeconds,
       });
     } catch (error) {
+      // Ticket + recovered key kept when possible so the user can retry without
+      // burning another recovery code (claim already consumed one).
+      if (recoveredMasterKey.length > 0) {
+        setRecoveredMasterKey(recoveredMasterKey);
+      }
+      recoveryTicket = ticket;
+      recoveryEntries = entries;
       await refreshStatus();
-      throw error;
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError({
+        error: "invalid_request",
+        message: formatPasswordError(error, {
+          fallback: "Recovery failed. Start again with a recovery code.",
+        }),
+      });
     }
   }, [refreshStatus]);
 

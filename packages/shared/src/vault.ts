@@ -1,4 +1,4 @@
-import type { KeyEntryCipherInput } from "./key-entries.js";
+import type { KeyEntry, KeyEntryCipherInput } from "./key-entries.js";
 
 export const ARGON2ID_VAULT_PARAMS = {
   memoryKiB: 65536,
@@ -115,6 +115,8 @@ export type RecoveryClaimResponse = {
   wrappedMasterKeyB64: string;
   keyVersion: number;
   codesRemaining: number;
+  /** Opaque Key Entry ciphertexts so the client can re-encrypt without a session. */
+  entries: KeyEntry[];
 };
 
 export type RecoveryResetRequest = {
@@ -122,9 +124,15 @@ export type RecoveryResetRequest = {
   kdf: KdfParams;
   authKeyB64: string;
   recoveryCodes: RecoveryCodeEnvelope[];
+  entries: ReencryptedKeyEntry[];
 };
 
-export type RecoveryResetResponse = { state: "ready"; session: SessionInfo };
+export type RecoveryResetResponse = {
+  state: "ready";
+  keyVersion: number;
+  reEncrypted: number;
+  session: SessionInfo;
+};
 
 export type ReencryptedKeyEntry = {
   id: string;

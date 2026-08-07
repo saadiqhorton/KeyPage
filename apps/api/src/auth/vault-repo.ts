@@ -9,6 +9,7 @@ import type {
 import {
   HttpInvalidRecoveryTicket,
   HttpInvalidRequest,
+  HttpSessionExpired,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
 import type {
@@ -25,6 +26,7 @@ import {
 import { resetThrottle } from "./throttle.js";
 import {
   createSession,
+  isSessionActive,
   revokeAllSessions,
   type SessionRequest,
 } from "./sessions.js";
@@ -84,6 +86,47 @@ export function findRecoveryTicketByTokenHash(
   return db
     .prepare(`SELECT * FROM recovery_tickets WHERE token_hash = ?`)
     .get(tokenHash) as RecoveryTicketRow | undefined;
+}
+
+export function hasOpenRecoveryTicket(db: Database.Database): boolean {
+  const nowIso = new Date().toISOString();
+  const row = db
+    .prepare(
+      `SELECT 1 AS ok
+       FROM recovery_tickets
+       WHERE consumed_at IS NULL AND expires_at > ?
+       LIMIT 1`,
+    )
+    .get(nowIso) as { ok: number } | undefined;
+
+  return row !== undefined;
+}
+
+/**
+ * Call at the start of Key Entry mutation transactions.
+ * Blocks writes after session revoke (recovery/password reset) and while a
+ * recovery ticket is open so claim snapshots cannot go stale.
+ */
+export function assertKeyEntryMutationsAllowed(
+  db: Database.Database,
+  sessionId: string,
+): void {
+  if (!isSessionActive(db, sessionId)) {
+    throw new HttpSessionExpired();
+  }
+
+  if (hasOpenRecoveryTicket(db)) {
+    throw new HttpInvalidRequest(
+      "Vault recovery in progress",
+      [
+        {
+          field: "recovery",
+          message:
+            "key entry changes are blocked until recovery reset completes or the ticket expires",
+        },
+      ],
+    );
+  }
 }
 
 export type InitializeVaultInput = {
@@ -191,6 +234,7 @@ export type ResetVaultFromRecoveryInput = {
   kdf: KdfParams;
   authVerifier: string;
   recoveryCodes: RecoveryCodeEnvelope[];
+  entries: ReencryptedEntryInput[];
 };
 
 export function resetVaultFromRecovery(
@@ -198,7 +242,7 @@ export function resetVaultFromRecovery(
   input: ResetVaultFromRecoveryInput,
   req: SessionRequest,
   idleTimeoutSeconds: number,
-): { token: string; info: SessionInfo } {
+): { token: string; info: SessionInfo; keyVersion: number; reEncrypted: number } {
   const tokenHash = sha256Hex(input.recoveryTicket);
   const now = new Date();
   const nowIso = now.toISOString();
@@ -217,6 +261,12 @@ export function resetVaultFromRecovery(
     if (!vault) {
       throw new HttpInvalidRecoveryTicket();
     }
+
+    assertEntriesMatchVault(db, input.entries);
+
+    // Revoke before ciphertext rotation so in-flight session writes re-check
+    // and fail instead of storing old-key material under the new key_version.
+    revokeAllSessions(db);
 
     const nextKeyVersion = vault.key_version + 1;
 
@@ -242,18 +292,28 @@ export function resetVaultFromRecovery(
       nowIso,
     );
 
-    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
+    const reEncrypted = replaceKeyEntryCiphers(
+      db,
+      input.entries,
+      nextKeyVersion,
+    );
 
     db.prepare(
       `UPDATE recovery_tickets SET consumed_at = ? WHERE id = ?`,
     ).run(nowIso, ticket.id);
 
+    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
+
     resetThrottle(db, "login");
     resetThrottle(db, "recovery");
 
-    revokeAllSessions(db);
+    const session = createSession(db, req, idleTimeoutSeconds);
 
-    return createSession(db, req, idleTimeoutSeconds);
+    return {
+      ...session,
+      keyVersion: nextKeyVersion,
+      reEncrypted,
+    };
   });
 
   return apply();
@@ -316,6 +376,8 @@ export function changeMasterPassword(
 
     assertEntriesMatchVault(db, input.entries);
 
+    revokeAllSessions(db);
+
     const nextKeyVersion = vault.key_version + 1;
 
     db.prepare(
@@ -350,8 +412,6 @@ export function changeMasterPassword(
 
     resetThrottle(db, "login");
     resetThrottle(db, "recovery");
-
-    revokeAllSessions(db);
 
     const session = createSession(db, req, idleTimeoutSeconds);
 
