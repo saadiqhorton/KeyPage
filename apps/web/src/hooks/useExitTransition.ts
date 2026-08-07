@@ -4,6 +4,12 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/**
+ * Keeps the last non-null `value` mounted through an exit window after it
+ * becomes null. Callers must pass a referentially stable `value` while the
+ * content is showing (e.g. memoize object payloads) — a new object each
+ * render retriggers the effect and can loop setState.
+ */
 export function useExitTransition<T>(
   value: T | null,
   exitMs: number,
@@ -28,8 +34,8 @@ export function useExitTransition<T>(
     clearTimer();
 
     if (value !== null) {
-      setRendered(value);
-      setClosing(false);
+      setRendered((prev) => (Object.is(prev, value) ? prev : value));
+      setClosing((wasClosing) => (wasClosing ? false : wasClosing));
       return clearTimer;
     }
 

@@ -1,5 +1,6 @@
-import { cn } from "@/lib/cn";
+import { useMemo } from "react";
 
+import { cn } from "@/lib/cn";
 import { useExitTransition } from "@/hooks/useExitTransition";
 
 type ToastTone = "default" | "danger";
@@ -17,8 +18,12 @@ type ToastContent = {
 const TOAST_OUT_MS = 140;
 
 export function Toast({ message, tone = "default" }: ToastProps) {
-  const value: ToastContent | null =
-    message !== null ? { message, tone } : null;
+  // Stable identity while message/tone are unchanged — a fresh object each
+  // render would retrigger useExitTransition's effect and loop setState.
+  const value = useMemo<ToastContent | null>(
+    () => (message !== null ? { message, tone } : null),
+    [message, tone],
+  );
   const { rendered, closing } = useExitTransition(value, TOAST_OUT_MS);
 
   if (rendered === null) {
