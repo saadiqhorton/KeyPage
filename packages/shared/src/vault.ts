@@ -1,4 +1,4 @@
-import type { KeyEntry, KeyEntryCipherInput } from "./key-entries.js";
+import type { KeyEntry, KeyEntryCipherPayload } from "./key-entries.js";
 
 export const ARGON2ID_VAULT_PARAMS = {
   memoryKiB: 65536,
@@ -46,6 +46,7 @@ export type ApiErrorCode =
   | "session_expired"
   | "invalid_recovery_code"
   | "invalid_recovery_ticket"
+  | "key_version_mismatch"
   | "internal_error";
 
 export type ApiErrorBody = {
@@ -96,10 +97,14 @@ export type VaultSetupRequest = {
   recoveryCodes: RecoveryCodeEnvelope[];
 };
 
-export type VaultSetupResponse = { state: "ready"; session: SessionInfo };
+export type VaultSetupResponse = {
+  state: "ready";
+  keyVersion: number;
+  session: SessionInfo;
+};
 
 export type VaultLoginRequest = { authKeyB64: string };
-export type VaultLoginResponse = { session: SessionInfo };
+export type VaultLoginResponse = { keyVersion: number; session: SessionInfo };
 
 export type VaultSessionResponse = {
   authenticated: boolean;
@@ -138,7 +143,8 @@ export type ReencryptedKeyEntry = {
   id: string;
   /** `ivB64` of the ciphertext this re-encryption replaces (optimistic concurrency token). */
   baseIvB64: string;
-  cipher: KeyEntryCipherInput;
+  /** No `keyVersion`: rotation mints the next version server-side, in the same transaction. */
+  cipher: KeyEntryCipherPayload;
 };
 
 export type VaultPasswordChangeRequest = {
@@ -158,6 +164,8 @@ export type VaultPasswordChangeResponse = {
 
 export type RecoveryCodesRegenerateRequest = {
   authKeyB64: string;
+  /** Vault key version the envelopes wrap, so a rotation mid-request is rejected. */
+  keyVersion: number;
   recoveryCodes: RecoveryCodeEnvelope[];
 };
 

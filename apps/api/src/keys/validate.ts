@@ -8,6 +8,7 @@ import {
   KEY_ENTRY_TAGS_MAX,
   SERVICE_CATALOG,
   type KeyEntryCipherInput,
+  type KeyEntryCipherPayload,
 } from "@keypage/shared";
 
 import { HttpInvalidRequest } from "../errors.js";
@@ -32,7 +33,9 @@ export function decodeBase64Length(b64: string): number | null {
   }
 }
 
-export function validateCipherInput(cipher: KeyEntryCipherInput): void {
+function cipherPayloadDetails(
+  cipher: KeyEntryCipherPayload,
+): Array<{ field: string; message: string }> {
   const details: Array<{ field: string; message: string }> = [];
 
   if (cipher.algorithm !== "aes-256-gcm") {
@@ -74,6 +77,29 @@ export function validateCipherInput(cipher: KeyEntryCipherInput): void {
         message: `must decode to at most ${KEY_ENTRY_CIPHERTEXT_B64_MAX} bytes`,
       });
     }
+  }
+
+  return details;
+}
+
+/** Shape-only check for the rotation paths, where the server sets the key version. */
+export function validateCipherPayload(cipher: KeyEntryCipherPayload): void {
+  const details = cipherPayloadDetails(cipher);
+
+  if (details.length > 0) {
+    throw new HttpInvalidRequest("Invalid cipher", details);
+  }
+}
+
+/** Full check for client-authored writes, which must also declare a key version. */
+export function validateCipherInput(cipher: KeyEntryCipherInput): void {
+  const details = cipherPayloadDetails(cipher);
+
+  if (!Number.isInteger(cipher.keyVersion) || cipher.keyVersion < 1) {
+    details.push({
+      field: "cipher.keyVersion",
+      message: "must be a positive integer",
+    });
   }
 
   if (details.length > 0) {

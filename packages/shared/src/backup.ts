@@ -1,5 +1,5 @@
 import type { KdfParams } from "./vault.js";
-import type { KeyEntryCipherInput } from "./key-entries.js";
+import type { KeyEntryCipherPayload } from "./key-entries.js";
 
 export const BACKUP_MAGIC = "keypage-backup";
 export const BACKUP_FORMAT_VERSION = 1;
@@ -14,7 +14,8 @@ export type BackupFile = {
   formatVersion: number;
   createdAt: string;
   kdf: KdfParams;
-  cipher: KeyEntryCipherInput;
+  /** Sealed with the backup password, not the vault key, so no `keyVersion` applies. */
+  cipher: KeyEntryCipherPayload;
 };
 
 /** Only ever exists in browser memory or inside BackupFile.cipher. */

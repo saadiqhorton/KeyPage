@@ -16,7 +16,11 @@ import { createSession, isSessionActive, revokeAllSessions } from "./sessions.js
 import { validateKdfParams, validateRecoveryEnvelopes } from "./kdf-params.js";
 import { runMigrations } from "../db/migrations.js";
 import { insertKeyEntry } from "../keys/key-entry-repo.js";
-import { HttpInvalidRequest, HttpSessionExpired } from "../errors.js";
+import {
+  HttpInvalidRequest,
+  HttpKeyVersionMismatch,
+  HttpSessionExpired,
+} from "../errors.js";
 import { sha256Hex } from "./tokens.js";
 
 function openMemoryDb(): Database.Database {
@@ -43,7 +47,8 @@ function sampleRecoveryCodes() {
   }));
 }
 
-function sampleCipher() {
+/** Rotation payload: no key version, because the server mints it. */
+function samplePayload() {
   return {
     algorithm: "aes-256-gcm" as const,
     ivB64: Buffer.alloc(12, 3).toString("base64"),
@@ -51,10 +56,19 @@ function sampleCipher() {
   };
 }
 
+/** Client-authored write: declares the key version it was encrypted under. */
+function sampleCipher(keyVersion = 1) {
+  return { ...samplePayload(), keyVersion };
+}
+
 const ENTRY_ID = "11111111-1111-4111-8111-111111111111";
 const SECOND_ENTRY_ID = "22222222-2222-4222-8222-222222222222";
 
-function insertSampleEntry(db: Database.Database, id: string): void {
+function insertSampleEntry(
+  db: Database.Database,
+  id: string,
+  keyVersion = 1,
+): void {
   insertKeyEntry(db, {
     id,
     label: "Test",
@@ -62,8 +76,16 @@ function insertSampleEntry(db: Database.Database, id: string): void {
     customServiceName: null,
     description: null,
     tags: [],
-    cipher: sampleCipher(),
+    cipher: sampleCipher(keyVersion),
   });
+}
+
+function sessionIdFor(db: Database.Database, token: string): string {
+  return (
+    db.prepare(`SELECT id FROM sessions WHERE token_hash = ?`).get(
+      sha256Hex(token),
+    ) as { id: string }
+  ).id;
 }
 
 function readKeyVersion(db: Database.Database): number {
@@ -76,8 +98,8 @@ function readKeyVersion(db: Database.Database): number {
 
 function entryPayload(
   id: string,
-  cipher = sampleCipher(),
-  baseIvB64 = sampleCipher().ivB64,
+  cipher = samplePayload(),
+  baseIvB64 = samplePayload().ivB64,
 ) {
   return { id, baseIvB64, cipher };
 }
@@ -265,7 +287,7 @@ describe("changeMasterPassword", () => {
       .prepare(`SELECT cipher_iv, key_version FROM key_entries WHERE id = ?`)
       .get(ENTRY_ID) as { cipher_iv: string; key_version: number };
 
-    assert.equal(entryRow.cipher_iv, sampleCipher().ivB64);
+    assert.equal(entryRow.cipher_iv, samplePayload().ivB64);
     assert.equal(entryRow.key_version, beforeVersion);
 
     const codeLabels = (
@@ -335,24 +357,79 @@ describe("regenerateRecoveryCodes", () => {
     db?.close();
   });
 
-  it("replaces codes at current key version", () => {
-    const newCodes = sampleRecoveryCodes().map((code, index) => ({
+  function newCodeSet() {
+    return sampleRecoveryCodes().map((code, index) => ({
       ...code,
       label: `new-${index + 1}`,
     }));
+  }
 
-    const result = regenerateRecoveryCodes(db, newCodes);
-
-    assert.equal(result.keyVersion, 1);
-    assert.equal(result.recoveryCodesRemaining, 10);
-
-    const labels = (
+  function storedLabels(): string[] {
+    return (
       db
         .prepare(`SELECT label FROM recovery_codes ORDER BY label`)
         .all() as Array<{ label: string }>
     ).map((row) => row.label);
+  }
 
-    assert.deepEqual(labels, newCodes.map((code) => code.label).sort());
+  it("replaces codes at current key version", () => {
+    const { token } = createSession(db, {}, 1200);
+    const newCodes = newCodeSet();
+
+    const result = regenerateRecoveryCodes(db, {
+      sessionId: sessionIdFor(db, token),
+      keyVersion: 1,
+      recoveryCodes: newCodes,
+    });
+
+    assert.equal(result.keyVersion, 1);
+    assert.equal(result.recoveryCodesRemaining, 10);
+    assert.deepEqual(storedLabels(), newCodes.map((code) => code.label).sort());
+  });
+
+  // The route awaits Argon2id verification before this call, so a rotation can
+  // land in between. Envelopes wrap the master key, so persisting them against
+  // the newer key version would hand the user recovery codes that unwrap the
+  // *previous* master key and silently destroy every Key Entry.
+  it("rejects envelopes pinned to a superseded key version", () => {
+    const { token } = createSession(db, {}, 1200);
+    const sessionId = sessionIdFor(db, token);
+    const before = storedLabels();
+
+    db.prepare(`UPDATE vault_auth SET key_version = 2 WHERE id = 1`).run();
+
+    assert.throws(
+      () =>
+        regenerateRecoveryCodes(db, {
+          sessionId,
+          keyVersion: 1,
+          recoveryCodes: newCodeSet(),
+        }),
+      (error: unknown) =>
+        error instanceof HttpKeyVersionMismatch && error.statusCode === 409,
+    );
+
+    assert.deepEqual(storedLabels(), before);
+  });
+
+  it("rejects a session revoked mid-flight", () => {
+    const { token } = createSession(db, {}, 1200);
+    const sessionId = sessionIdFor(db, token);
+    const before = storedLabels();
+
+    revokeAllSessions(db);
+
+    assert.throws(
+      () =>
+        regenerateRecoveryCodes(db, {
+          sessionId,
+          keyVersion: 1,
+          recoveryCodes: newCodeSet(),
+        }),
+      (error: unknown) => error instanceof HttpSessionExpired,
+    );
+
+    assert.deepEqual(storedLabels(), before);
   });
 });
 
@@ -492,6 +569,111 @@ describe("resetVaultFromRecovery", () => {
 
     assert.equal(isSessionActive(db, sessionId), false);
     assert.equal(hasOpenRecoveryTicket(db), false);
+  });
+
+  // The claim snapshot the client re-encrypts is taken before the reset lands.
+  // These pin the property that any drift between the two aborts the whole
+  // rotation, rather than silently rotating around the change.
+  it("rejects a snapshot missing an entry added after the claim", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+
+    const snapshot = [entryPayload(ENTRY_ID)];
+    insertSampleEntry(db, SECOND_ENTRY_ID);
+
+    await assert.rejects(
+      async () =>
+        resetVaultFromRecovery(
+          db,
+          {
+            recoveryTicket: "recovery-ticket-token",
+            kdf: sampleKdf(),
+            authVerifier: await hashAuthKey(
+              Buffer.alloc(32, 5).toString("base64"),
+            ),
+            recoveryCodes: sampleRecoveryCodes(),
+            entries: snapshot,
+          },
+          {},
+          1200,
+        ),
+      (error: unknown) =>
+        error instanceof HttpInvalidRequest &&
+        error.message === "Entry set does not match vault",
+    );
+
+    assert.equal(readKeyVersion(db), 1);
+  });
+
+  it("rejects a snapshot naming an entry deleted after the claim", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertSampleEntry(db, SECOND_ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+
+    const snapshot = [entryPayload(ENTRY_ID), entryPayload(SECOND_ENTRY_ID)];
+    db.prepare(`DELETE FROM key_entries WHERE id = ?`).run(SECOND_ENTRY_ID);
+
+    await assert.rejects(
+      async () =>
+        resetVaultFromRecovery(
+          db,
+          {
+            recoveryTicket: "recovery-ticket-token",
+            kdf: sampleKdf(),
+            authVerifier: await hashAuthKey(
+              Buffer.alloc(32, 5).toString("base64"),
+            ),
+            recoveryCodes: sampleRecoveryCodes(),
+            entries: snapshot,
+          },
+          {},
+          1200,
+        ),
+      (error: unknown) =>
+        error instanceof HttpInvalidRequest &&
+        error.message === "Entry set does not match vault",
+    );
+
+    assert.equal(readKeyVersion(db), 1);
+  });
+
+  it("rejects a snapshot whose ciphertext changed after the claim", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+
+    const snapshot = [entryPayload(ENTRY_ID)];
+    const movedIv = Buffer.alloc(12, 42).toString("base64");
+    db.prepare(`UPDATE key_entries SET cipher_iv = ? WHERE id = ?`).run(
+      movedIv,
+      ENTRY_ID,
+    );
+
+    await assert.rejects(
+      async () =>
+        resetVaultFromRecovery(
+          db,
+          {
+            recoveryTicket: "recovery-ticket-token",
+            kdf: sampleKdf(),
+            authVerifier: await hashAuthKey(
+              Buffer.alloc(32, 5).toString("base64"),
+            ),
+            recoveryCodes: sampleRecoveryCodes(),
+            entries: snapshot,
+          },
+          {},
+          1200,
+        ),
+      (error: unknown) =>
+        error instanceof HttpInvalidRequest &&
+        error.message === "Entry set does not match vault",
+    );
+
+    assert.equal(readKeyVersion(db), 1);
+    const row = db
+      .prepare(`SELECT cipher_iv FROM key_entries WHERE id = ?`)
+      .get(ENTRY_ID) as { cipher_iv: string };
+    assert.equal(row.cipher_iv, movedIv);
   });
 });
 

@@ -2,7 +2,13 @@ import { createContext, useContext } from "react";
 
 import type { KdfParams, LockoutState } from "@keypage/shared";
 
-export type LockReason = "initial" | "idle" | "manual" | "session_expired";
+export type LockReason =
+  | "initial"
+  | "idle"
+  | "manual"
+  | "session_expired"
+  /** The vault was re-keyed elsewhere, so this tab's key can no longer be used. */
+  | "rekeyed";
 
 export type VaultState =
   | { phase: "loading" }
@@ -13,6 +19,7 @@ export type VaultState =
       reason: LockReason;
       idleTimeoutSeconds: number;
       kdf: KdfParams;
+      keyVersion: number;
       lockout: LockoutState;
       recoveryCodesRemaining: number;
       recoveryLockout: LockoutState;

@@ -39,6 +39,7 @@ Open source project — each deployment is single-user, but the code is public f
 - Encryption key derived client-side via Argon2id (or Web Crypto PBKDF2 fallback)
 - Server stores only ciphertext, metadata, and a password verification hash
 - Session-based authentication with inactivity timeout (15-30 minutes)
+- Key version pinning: every client-authored Key Entry write declares the vault key version its ciphertext was produced under, and the server rejects a mismatch with `key_version_mismatch` (409). Session cookies are shared across browser tabs while the encryption key is per-tab, so revoking sessions on rotation cannot by itself stop a tab that missed a Master Password change or recovery reset from storing ciphertext under a key version that can never decrypt it. Recovery-code regeneration is pinned the same way, because its envelopes wrap the master key
 - Keys decrypted on-demand in the browser for viewing/copying
 - Prefer HTTPS when exposed beyond LAN (Cloudflare Tunnel covers this)
 - Clipboard auto-clear after configurable timeout (default 30s)

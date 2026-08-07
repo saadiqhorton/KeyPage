@@ -48,6 +48,7 @@ import {
 } from "@/lib/api.js";
 import { resolveClipboardClearMs } from "@/lib/clipboard-timeout.js";
 import { onKeyCleared } from "@/vault/session-keys.js";
+import { useRekeyLock } from "@/vault/useRekeyLock.js";
 
 export type NewKeyEntryInput = {
   label: string;
@@ -80,6 +81,7 @@ export type UseKeyEntriesResult = {
 };
 
 export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
+  const guardRekey = useRekeyLock();
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -139,8 +141,8 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     async (input: NewKeyEntryInput): Promise<KeyEntry> => {
       const id = newKeyEntryId();
       const cipher = await encryptKeyValue(id, input.keyValue);
-      try {
-        const response = await postKeyEntry({
+      const response = await guardRekey(
+        postKeyEntry({
           id,
           label: input.label,
           serviceId: input.serviceId,
@@ -148,17 +150,12 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
           description: input.description,
           tags: input.tags,
           cipher,
-        });
-        setEntries((previous) => [response.entry, ...previous]);
-        return response.entry;
-      } catch (err) {
-        if (err instanceof ApiError) {
-          throw err;
-        }
-        throw err;
-      }
+        }),
+      );
+      setEntries((previous) => [response.entry, ...previous]);
+      return response.entry;
     },
-    [],
+    [guardRekey],
   );
 
   const updateKeyEntry = useCallback(
@@ -175,7 +172,7 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
         body.cipher = await encryptKeyValue(id, input.keyValue);
       }
 
-      const response = await patchKeyEntry(id, body);
+      const response = await guardRekey(patchKeyEntry(id, body));
       setEntries((previous) =>
         previous.map((entry) =>
           entry.id === id ? response.entry : entry,
@@ -183,7 +180,7 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
       );
       return response.entry;
     },
-    [],
+    [guardRekey],
   );
 
   const deleteKeyEntry = useCallback(async (id: string): Promise<void> => {

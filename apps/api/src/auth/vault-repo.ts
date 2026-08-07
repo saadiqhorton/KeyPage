@@ -9,6 +9,7 @@ import type {
 import {
   HttpInvalidRecoveryTicket,
   HttpInvalidRequest,
+  HttpKeyVersionMismatch,
   HttpSessionExpired,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
@@ -425,9 +426,27 @@ export function changeMasterPassword(
   return apply();
 }
 
+export type RegenerateRecoveryCodesInput = {
+  sessionId: string;
+  /** Vault key version whose master key the client wrapped into `recoveryCodes`. */
+  keyVersion: number;
+  recoveryCodes: RecoveryCodeEnvelope[];
+};
+
+/**
+ * Recovery envelopes wrap the master key, so they are only meaningful for the
+ * key version they were built against.
+ *
+ * Both checks below are re-run inside the transaction because the route awaits
+ * Argon2id verification before calling in, and an await yields the event loop:
+ * a concurrent password change or recovery reset can commit a rotation in that
+ * gap. Persisting the envelopes anyway would store codes that unwrap the
+ * *previous* master key while claiming the current version, which turns every
+ * Key Entry undecryptable the next time recovery is used (SAA-134).
+ */
 export function regenerateRecoveryCodes(
   db: Database.Database,
-  envelopes: RecoveryCodeEnvelope[],
+  input: RegenerateRecoveryCodesInput,
 ): { recoveryCodesRemaining: number; keyVersion: number } {
   const nowIso = new Date().toISOString();
 
@@ -437,7 +456,19 @@ export function regenerateRecoveryCodes(
       throw new HttpInvalidRequest("Vault is not initialized");
     }
 
-    replaceRecoveryCodes(db, envelopes, vault.key_version, nowIso);
+    if (!isSessionActive(db, input.sessionId)) {
+      throw new HttpSessionExpired();
+    }
+
+    if (input.keyVersion !== vault.key_version) {
+      throw new HttpKeyVersionMismatch({
+        field: "keyVersion",
+        expected: vault.key_version,
+        received: input.keyVersion,
+      });
+    }
+
+    replaceRecoveryCodes(db, input.recoveryCodes, vault.key_version, nowIso);
 
     return {
       recoveryCodesRemaining: countUnusedRecoveryCodes(db),

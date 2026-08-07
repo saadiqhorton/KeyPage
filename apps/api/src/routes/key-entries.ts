@@ -50,11 +50,12 @@ export type KeyEntryRouteOptions = {
 
 const cipherSchema = {
   type: "object",
-  required: ["algorithm", "ivB64", "ciphertextB64"],
+  required: ["algorithm", "ivB64", "ciphertextB64", "keyVersion"],
   properties: {
     algorithm: { type: "string", enum: ["aes-256-gcm"] },
     ivB64: { type: "string" },
     ciphertextB64: { type: "string" },
+    keyVersion: { type: "integer" },
   },
 } as const;
 
@@ -340,6 +341,12 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
         },
       },
     },
+    /**
+     * Deliberately outside the key-version invariant: this writes only
+     * `last_used_at` plus an activity row, never ciphertext, so a rotation
+     * cannot mislabel anything here. Recovery claim revokes every session, so
+     * `requireSession` already blocks it for the lifetime of a ticket.
+     */
     async (request): Promise<KeyEntryUseResponse> => {
       const { id } = request.params as { id: string };
       validateKeyEntryId(id);

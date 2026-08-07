@@ -3,13 +3,46 @@ import type Database from "better-sqlite3";
 import type {
   KeyEntry,
   KeyEntryCipherInput,
+  KeyEntryCipherPayload,
   KeyEntryCreateRequest,
   KeyEntryUpdateRequest,
 } from "@keypage/shared";
 
 import { getVaultAuth } from "../auth/vault-repo.js";
 import type { KeyEntryRow } from "../db/rows.js";
-import { HttpSetupRequired } from "../errors.js";
+import { HttpKeyVersionMismatch, HttpSetupRequired } from "../errors.js";
+
+/**
+ * A client-authored write must name the key version its ciphertext was produced
+ * under, and that version must still be current.
+ *
+ * The check lives here, next to the only statements that write `key_version`,
+ * so every present and future write path inherits it rather than having to
+ * remember a guard call.
+ *
+ * Without it the server infers the version from `vault_auth` at write time,
+ * which silently mislabels ciphertext from a client whose key is stale. The
+ * session cookie cannot stand in for this: it is per-origin and shared by every
+ * browser tab, while the AES key is per-tab in-memory state, so a tab that
+ * missed a rotation still presents a perfectly valid session (SAA-134).
+ *
+ * This is an integrity guard against a stale client, not an authentication
+ * control — a caller holding a session can always submit bytes of its choosing.
+ * What it removes is the silent failure: ciphertext stamped with a key version
+ * that cannot decrypt it.
+ */
+function assertCipherKeyVersion(
+  vaultKeyVersion: number,
+  cipher: KeyEntryCipherInput,
+): void {
+  if (cipher.keyVersion !== vaultKeyVersion) {
+    throw new HttpKeyVersionMismatch({
+      field: "cipher.keyVersion",
+      expected: vaultKeyVersion,
+      received: cipher.keyVersion,
+    });
+  }
+}
 
 function parseTagsJson(tagsJson: string): string[] {
   try {
@@ -128,6 +161,8 @@ export function insertKeyEntry(
     throw new HttpSetupRequired();
   }
 
+  assertCipherKeyVersion(vault.key_version, input.cipher);
+
   const now = new Date().toISOString();
 
   db.prepare(
@@ -146,7 +181,7 @@ export function insertKeyEntry(
     input.cipher.algorithm,
     input.cipher.ivB64,
     input.cipher.ciphertextB64,
-    vault.key_version,
+    input.cipher.keyVersion,
     input.createdAt ?? now,
     input.updatedAt ?? now,
     input.lastUsedAt ?? null,
@@ -199,6 +234,8 @@ export function updateKeyEntry(
       throw new HttpSetupRequired();
     }
 
+    assertCipherKeyVersion(vault.key_version, input.cipher);
+
     assignments.push(
       "cipher_algorithm = ?",
       "cipher_iv = ?",
@@ -209,7 +246,7 @@ export function updateKeyEntry(
       input.cipher.algorithm,
       input.cipher.ivB64,
       input.cipher.ciphertextB64,
-      vault.key_version,
+      input.cipher.keyVersion,
     );
   }
 
@@ -240,7 +277,7 @@ export function deleteKeyEntry(db: Database.Database, id: string): boolean {
 export type ReencryptedEntryInput = {
   id: string;
   baseIvB64: string;
-  cipher: KeyEntryCipherInput;
+  cipher: KeyEntryCipherPayload;
 };
 
 export function replaceKeyEntryCiphers(

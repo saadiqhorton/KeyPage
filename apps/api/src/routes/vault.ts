@@ -53,7 +53,7 @@ import {
   vaultAuthToKdfParams,
 } from "../auth/vault-repo.js";
 import { listKeyEntries } from "../keys/key-entry-repo.js";
-import { validateCipherInput } from "../keys/validate.js";
+import { validateCipherPayload } from "../keys/validate.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
 import type { RecoveryCodeRow, VaultAuthRow } from "../db/rows.js";
 import {
@@ -375,6 +375,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       return reply.status(201).send({
         state: "ready",
+        keyVersion: getVaultAuth(db)!.key_version,
         session: info,
       });
     },
@@ -430,7 +431,12 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       const { token, info } = createSession(db, request, idleSeconds);
       setSessionCookie(reply, request, token);
 
-      return { session: info };
+      // Deliberately the version read alongside the verifier that was just
+      // checked, not a fresh read. If a rotation committed during the await
+      // above, the caller authenticated with the superseded password and holds
+      // the superseded key, so it must be told the superseded version and have
+      // its first write rejected.
+      return { keyVersion: vault.key_version, session: info };
     },
   );
 
@@ -541,7 +547,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         entries: Array<{
           id: string;
           baseIvB64: string;
-          cipher: Parameters<typeof validateCipherInput>[0];
+          cipher: Parameters<typeof validateCipherPayload>[0];
         }>;
       };
 
@@ -551,7 +557,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       body.entries.forEach((entry, index) => {
         withEntryFieldPrefix(index, () => {
-          validateCipherInput(entry.cipher);
+          validateCipherPayload(entry.cipher);
         });
       });
 
@@ -626,7 +632,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         entries: Array<{
           id: string;
           baseIvB64: string;
-          cipher: Parameters<typeof validateCipherInput>[0];
+          cipher: Parameters<typeof validateCipherPayload>[0];
         }>;
       };
 
@@ -637,7 +643,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       body.entries.forEach((entry, index) => {
         withEntryFieldPrefix(index, () => {
-          validateCipherInput(entry.cipher);
+          validateCipherPayload(entry.cipher);
         });
       });
 
@@ -677,9 +683,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       schema: {
         body: {
           type: "object",
-          required: ["authKeyB64", "recoveryCodes"],
+          required: ["authKeyB64", "keyVersion", "recoveryCodes"],
           properties: {
             authKeyB64: { type: "string" },
+            keyVersion: { type: "integer" },
             recoveryCodes: {
               type: "array",
               minItems: RECOVERY_CODE_COUNT,
@@ -695,6 +702,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       const body = request.body as {
         authKeyB64: string;
+        keyVersion: number;
         recoveryCodes: Parameters<typeof validateRecoveryEnvelopes>[0];
       };
 
@@ -705,7 +713,11 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       resetThrottle(db, "login");
 
-      return regenerateRecoveryCodes(db, body.recoveryCodes);
+      return regenerateRecoveryCodes(db, {
+        sessionId: request.vaultSession!.id,
+        keyVersion: body.keyVersion,
+        recoveryCodes: body.recoveryCodes,
+      });
     },
   );
 };

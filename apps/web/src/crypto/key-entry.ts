@@ -3,6 +3,7 @@ import {
   KEY_ENTRY_AAD_PREFIX,
   type KeyEntry,
   type KeyEntryCipherInput,
+  type KeyEntryCipherPayload,
 } from "@keypage/shared";
 
 import { base64Decode, base64Encode, hexEncode, utf8Bytes } from "./encoding.js";
@@ -13,7 +14,10 @@ import {
   zeroize,
   type AesKey,
 } from "./provider.js";
-import { getEncryptionKey } from "@/vault/session-keys.js";
+import {
+  getEncryptionKey,
+  getEncryptionKeyVersion,
+} from "@/vault/session-keys.js";
 
 export function newKeyEntryId(): string {
   const bytes = randomBytes(16);
@@ -27,11 +31,15 @@ export function keyEntryAad(id: string): Uint8Array {
   return utf8Bytes(`${KEY_ENTRY_AAD_PREFIX}${id}`);
 }
 
+/**
+ * Version-free: used by rotation, where the server mints the new key version in
+ * the same transaction that stores the ciphertext.
+ */
 export async function encryptKeyValueWith(
   key: AesKey,
   id: string,
   keyValue: string,
-): Promise<KeyEntryCipherInput> {
+): Promise<KeyEntryCipherPayload> {
   const plaintextBytes = utf8Bytes(keyValue);
   const iv = randomBytes(AES_GCM_IV_BYTES);
   try {
@@ -70,16 +78,21 @@ export async function decryptKeyValueWith(
   }
 }
 
+/**
+ * Ordinary writes declare the key version the unlocked key belongs to, so the
+ * server can reject ciphertext from a tab that missed a rotation.
+ */
 export async function encryptKeyValue(
   id: string,
   keyValue: string,
 ): Promise<KeyEntryCipherInput> {
   const key = getEncryptionKey();
-  if (key === null) {
+  const keyVersion = getEncryptionKeyVersion();
+  if (key === null || keyVersion === null) {
     throw new Error("Vault is locked");
   }
 
-  return encryptKeyValueWith(key, id, keyValue);
+  return { ...(await encryptKeyValueWith(key, id, keyValue)), keyVersion };
 }
 
 export async function decryptKeyValue(entry: KeyEntry): Promise<string> {
