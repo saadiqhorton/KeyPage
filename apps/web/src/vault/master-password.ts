@@ -1,9 +1,11 @@
 import type {
+  KeyEntry,
   ReencryptedKeyEntry,
+  SessionInfo,
   VaultPasswordChangeResponse,
 } from "@keypage/shared";
 
-import { deriveVaultKeys, pickKdfParams } from "@/crypto/derive.js";
+import { deriveVaultKeys, keysFromMasterKey, pickKdfParams } from "@/crypto/derive.js";
 import {
   decryptKeyValueWith,
   encryptKeyValueWith,
@@ -15,6 +17,7 @@ import {
   getKeyEntries,
   getVaultStatus,
   postRecoveryCodesRegenerate,
+  postRecoveryReset,
   postVaultLogin,
   postVaultPasswordChange,
 } from "@/lib/api.js";
@@ -191,6 +194,122 @@ export async function changeMasterPassword(
   }
 
   return codes;
+}
+
+/**
+ * Recovery reset: decrypt Key Entries with the recovered master key, re-encrypt
+ * under the new Master Password, and submit them with the recovery ticket.
+ * Mirrors `changeMasterPassword` (ADR 0001 — all crypto in the browser).
+ */
+export async function completeVaultRecovery(
+  recoveryTicket: string,
+  recoveredMasterKey: Uint8Array,
+  entries: KeyEntry[],
+  newPassword: string,
+  onProgress?: PasswordChangeProgress,
+): Promise<{ codes: string[]; session: SessionInfo; reEncrypted: number }> {
+  onProgress?.("Checking vault status…");
+  const status = await getVaultStatus();
+  if (!status.kdf) {
+    throw new Error("Vault is not initialized.");
+  }
+
+  onProgress?.("Unlocking key entries…");
+  const previous = await keysFromMasterKey(
+    recoveredMasterKey,
+    status.kdf.saltB64,
+  );
+
+  const decrypted: Array<{ id: string; plaintext: string; baseIvB64: string }> =
+    [];
+  try {
+    if (entries.length > 0) {
+      onProgress?.("Decrypting key entries…");
+      let firstFailedEntry: { label: string; id: string } | undefined;
+      for (const entry of entries) {
+        try {
+          const plaintext = await decryptKeyValueWith(
+            previous.encryptionKey,
+            entry,
+          );
+          decrypted.push({
+            id: entry.id,
+            plaintext,
+            baseIvB64: entry.cipher.ivB64,
+          });
+        } catch {
+          if (!firstFailedEntry) {
+            firstFailedEntry = { label: entry.label, id: entry.id };
+          }
+        }
+      }
+
+      if (decrypted.length === 0) {
+        throw new MasterPasswordError(
+          `None of your key entries could be decrypted, so recovery was not completed. First failure: “${firstFailedEntry!.label}” (${firstFailedEntry!.id}).`,
+        );
+      }
+      if (firstFailedEntry) {
+        throw new MasterPasswordError(
+          `“${firstFailedEntry.label}” (${firstFailedEntry.id}) could not be decrypted, so recovery was not completed. Check that key entry and try again.`,
+        );
+      }
+    }
+
+    onProgress?.("Deriving new encryption key…");
+    const kdf = await pickKdfParams();
+    const next = await deriveVaultKeys(newPassword, kdf);
+
+    onProgress?.("Re-encrypting key entries…");
+    const reencrypted: ReencryptedKeyEntry[] = [];
+    try {
+      for (const item of decrypted) {
+        const cipher = await encryptKeyValueWith(
+          next.encryptionKey,
+          item.id,
+          item.plaintext,
+        );
+        reencrypted.push({ id: item.id, baseIvB64: item.baseIvB64, cipher });
+      }
+
+      onProgress?.("Generating recovery codes…");
+      const { codes, envelopes } = await buildRecoveryCodeEnvelopes(
+        next.masterKey,
+      );
+      zeroize(next.masterKey);
+
+      onProgress?.("Saving new Master Password…");
+      const response = await postRecoveryReset({
+        recoveryTicket,
+        kdf,
+        authKeyB64: next.authKeyB64,
+        recoveryCodes: envelopes,
+        entries: reencrypted,
+      });
+
+      zeroize(recoveredMasterKey);
+      replaceEncryptionKey(next.encryptionKey);
+      downloadRecoveryCodes(codes);
+
+      if (response.reEncrypted !== reencrypted.length) {
+        throw new MasterPasswordError(
+          `Your Master Password was reset, but the server re-encrypted ${response.reEncrypted} of ${reencrypted.length} key entries. Your new recovery codes were downloaded to this device — keep that file and check your key entries.`,
+        );
+      }
+
+      return {
+        codes,
+        session: response.session,
+        reEncrypted: response.reEncrypted,
+      };
+    } catch (error) {
+      zeroizeAesKey(next.encryptionKey);
+      zeroize(next.masterKey);
+      throw error;
+    }
+  } finally {
+    zeroizeAesKey(previous.encryptionKey);
+  }
 }
 
 export async function regenerateRecoveryCodes(

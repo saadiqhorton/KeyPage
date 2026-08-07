@@ -51,6 +51,7 @@ import {
   resetVaultFromRecovery,
   vaultAuthToKdfParams,
 } from "../auth/vault-repo.js";
+import { listKeyEntries } from "../keys/key-entry-repo.js";
 import { validateCipherInput } from "../keys/validate.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
 import type { RecoveryCodeRow, VaultAuthRow } from "../db/rows.js";
@@ -275,6 +276,7 @@ function claimRecoveryCode(
     wrappedMasterKeyB64: code.wrapped_master_key,
     keyVersion: vault.key_version,
     codesRemaining,
+    entries: listKeyEntries(db),
   };
 }
 
@@ -496,12 +498,18 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
   app.post(
     "/recovery/reset",
     {
-      bodyLimit: BODY_LIMIT,
+      bodyLimit: PASSWORD_CHANGE_BODY_LIMIT,
       preHandler: checkOrigin,
       schema: {
         body: {
           type: "object",
-          required: ["recoveryTicket", "kdf", "authKeyB64", "recoveryCodes"],
+          required: [
+            "recoveryTicket",
+            "kdf",
+            "authKeyB64",
+            "recoveryCodes",
+            "entries",
+          ],
           properties: {
             recoveryTicket: { type: "string" },
             kdf: kdfSchema,
@@ -511,6 +519,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
               minItems: RECOVERY_CODE_COUNT,
               maxItems: RECOVERY_CODE_COUNT,
               items: recoveryEnvelopeSchema,
+            },
+            entries: {
+              type: "array",
+              items: reencryptedEntrySchema,
             },
           },
         },
@@ -522,22 +534,34 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         kdf: KdfParams;
         authKeyB64: string;
         recoveryCodes: Parameters<typeof validateRecoveryEnvelopes>[0];
+        entries: Array<{
+          id: string;
+          baseIvB64: string;
+          cipher: Parameters<typeof validateCipherInput>[0];
+        }>;
       };
 
       validateKdfParams(body.kdf);
       validateAuthKeyB64(body.authKeyB64);
       validateRecoveryEnvelopes(body.recoveryCodes);
 
+      body.entries.forEach((entry, index) => {
+        withEntryFieldPrefix(index, () => {
+          validateCipherInput(entry.cipher);
+        });
+      });
+
       const authVerifier = await hashAuthKey(body.authKeyB64);
       const idleSeconds = idleTimeoutSeconds(db);
 
-      const { token, info } = resetVaultFromRecovery(
+      const { token, info, keyVersion, reEncrypted } = resetVaultFromRecovery(
         db,
         {
           recoveryTicket: body.recoveryTicket,
           kdf: body.kdf,
           authVerifier,
           recoveryCodes: body.recoveryCodes,
+          entries: body.entries,
         },
         request,
         idleSeconds,
@@ -547,6 +571,8 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
 
       return {
         state: "ready",
+        keyVersion,
+        reEncrypted,
         session: info,
       };
     },

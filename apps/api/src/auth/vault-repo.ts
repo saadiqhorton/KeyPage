@@ -191,6 +191,7 @@ export type ResetVaultFromRecoveryInput = {
   kdf: KdfParams;
   authVerifier: string;
   recoveryCodes: RecoveryCodeEnvelope[];
+  entries: ReencryptedEntryInput[];
 };
 
 export function resetVaultFromRecovery(
@@ -198,7 +199,7 @@ export function resetVaultFromRecovery(
   input: ResetVaultFromRecoveryInput,
   req: SessionRequest,
   idleTimeoutSeconds: number,
-): { token: string; info: SessionInfo } {
+): { token: string; info: SessionInfo; keyVersion: number; reEncrypted: number } {
   const tokenHash = sha256Hex(input.recoveryTicket);
   const now = new Date();
   const nowIso = now.toISOString();
@@ -217,6 +218,8 @@ export function resetVaultFromRecovery(
     if (!vault) {
       throw new HttpInvalidRecoveryTicket();
     }
+
+    assertEntriesMatchVault(db, input.entries);
 
     const nextKeyVersion = vault.key_version + 1;
 
@@ -242,18 +245,30 @@ export function resetVaultFromRecovery(
       nowIso,
     );
 
-    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
+    const reEncrypted = replaceKeyEntryCiphers(
+      db,
+      input.entries,
+      nextKeyVersion,
+    );
 
     db.prepare(
       `UPDATE recovery_tickets SET consumed_at = ? WHERE id = ?`,
     ).run(nowIso, ticket.id);
+
+    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
 
     resetThrottle(db, "login");
     resetThrottle(db, "recovery");
 
     revokeAllSessions(db);
 
-    return createSession(db, req, idleTimeoutSeconds);
+    const session = createSession(db, req, idleTimeoutSeconds);
+
+    return {
+      ...session,
+      keyVersion: nextKeyVersion,
+      reEncrypted,
+    };
   });
 
   return apply();

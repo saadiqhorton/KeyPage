@@ -8,10 +8,12 @@ import {
   changeMasterPassword,
   initializeVault,
   regenerateRecoveryCodes,
+  resetVaultFromRecovery,
 } from "./vault-repo.js";
 import { validateKdfParams, validateRecoveryEnvelopes } from "./kdf-params.js";
 import { runMigrations } from "../db/migrations.js";
 import { insertKeyEntry } from "../keys/key-entry-repo.js";
+import { sha256Hex } from "./tokens.js";
 
 function openMemoryDb(): Database.Database {
   const db = new Database(":memory:");
@@ -347,5 +349,113 @@ describe("regenerateRecoveryCodes", () => {
     ).map((row) => row.label);
 
     assert.deepEqual(labels, newCodes.map((code) => code.label).sort());
+  });
+});
+
+describe("resetVaultFromRecovery", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = openMemoryDb();
+    const kdf = sampleKdf();
+    validateKdfParams(kdf);
+    const recoveryCodes = sampleRecoveryCodes();
+    validateRecoveryEnvelopes(recoveryCodes);
+    const authVerifier = await hashAuthKey(
+      Buffer.alloc(32, 9).toString("base64"),
+    );
+    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+  });
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  function insertOpenTicket(ticketPlain: string): void {
+    const codeId = (
+      db.prepare(`SELECT id FROM recovery_codes LIMIT 1`).get() as { id: string }
+    ).id;
+    const now = new Date();
+    db.prepare(
+      `INSERT INTO recovery_tickets (
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
+       ) VALUES (?, ?, ?, ?, ?, NULL)`,
+    ).run(
+      "ticket-row-1",
+      sha256Hex(ticketPlain),
+      codeId,
+      now.toISOString(),
+      new Date(now.getTime() + 600_000).toISOString(),
+    );
+  }
+
+  it("rejects when entries omit an existing key entry (vault unchanged)", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+    const beforeVersion = readKeyVersion(db);
+
+    await assert.rejects(
+      async () => {
+        resetVaultFromRecovery(
+          db,
+          {
+            recoveryTicket: "recovery-ticket-token",
+            kdf: sampleKdf(),
+            authVerifier: await hashAuthKey(
+              Buffer.alloc(32, 5).toString("base64"),
+            ),
+            recoveryCodes: sampleRecoveryCodes(),
+            entries: [],
+          },
+          {},
+          1200,
+        );
+      },
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === "Entry set does not match vault",
+    );
+
+    assert.equal(readKeyVersion(db), beforeVersion);
+    const entryRow = db
+      .prepare(`SELECT key_version FROM key_entries WHERE id = ?`)
+      .get(ENTRY_ID) as { key_version: number };
+    assert.equal(entryRow.key_version, 1);
+  });
+
+  it("re-encrypts entries and advances vault + entry key_version together", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+
+    const newCipher = {
+      algorithm: "aes-256-gcm" as const,
+      ivB64: Buffer.alloc(12, 7).toString("base64"),
+      ciphertextB64: Buffer.alloc(17, 8).toString("base64"),
+    };
+
+    const result = resetVaultFromRecovery(
+      db,
+      {
+        recoveryTicket: "recovery-ticket-token",
+        kdf: sampleKdf(),
+        authVerifier: await hashAuthKey(
+          Buffer.alloc(32, 5).toString("base64"),
+        ),
+        recoveryCodes: sampleRecoveryCodes(),
+        entries: [entryPayload(ENTRY_ID, newCipher)],
+      },
+      {},
+      1200,
+    );
+
+    assert.equal(result.keyVersion, 2);
+    assert.equal(result.reEncrypted, 1);
+
+    const entryRow = db
+      .prepare(`SELECT cipher_iv, key_version FROM key_entries WHERE id = ?`)
+      .get(ENTRY_ID) as { cipher_iv: string; key_version: number };
+    assert.equal(entryRow.cipher_iv, newCipher.ivB64);
+    assert.equal(entryRow.key_version, 2);
+    assert.equal(readKeyVersion(db), 2);
   });
 });
