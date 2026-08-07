@@ -19,7 +19,6 @@ Self-hosted, single-user API key vault.
 - **Dark-only, desktop-first UI** — polished on 1024px+ screens; mobile gets a basic stacked fallback.
 - **SQLite on a bind mount** — all persistent state lives under `./data` on the host.
 - **Docker on your LAN** — one container on port **9090**; reach it from other devices on your network.
-- **Remote access via Cloudflare Tunnel** — HTTPS at the edge without in-app TLS (see [Remote access](#remote-access-cloudflare-tunnel)).
 
 ## Quick start (Docker)
 
@@ -55,7 +54,7 @@ The image includes a Docker `HEALTHCHECK` that hits `/api/health` on port 9090 i
 
 1. **Setup** — Open the app. If the vault is new, you are redirected to `/setup`. Choose a Master Password (minimum 12 characters). KeyPage derives your encryption key in the browser and sends only a login verifier to the server.
 2. **Recovery codes** — After setup, 10 one-time recovery codes are shown and a `keypage-recovery-codes-*.txt` file downloads automatically. Save this file offline before continuing. Any single unused code can reset your Master Password later.
-3. **Unlock** — After a page reload (or when the vault locks from inactivity), enter your Master Password on `/unlock` to decrypt keys in the browser. A valid session cookie alone does not unlock the vault — the encryption key lives only in memory until you log in again.
+3. **Unlock** — After a page reload (or when the vault locks from inactivity), enter your Master Password on `/unlock` to decrypt keys in the browser. A valid session cookie alone does not unlock the vault - the encryption key lives only in memory until you log in again.
 4. **Dashboard** — Add Key Entries (label, Service, description, tags, key value). Switch between Card Grid, Table, and List views. Search and filter by tags. Keys are masked by default; use reveal and copy (clipboard auto-clears after a timeout).
 5. **Settings** — Change Master Password (re-encrypts all entries client-side), view or regenerate recovery codes, adjust session inactivity timeout (15/20/25/30 minutes), and export or import an encrypted backup file.
 
@@ -76,7 +75,7 @@ SQLite and all runtime state live under **`./data`** at the repository root. Doc
 | `keypage.db` | Main SQLite database (encrypted key blobs, metadata, sessions, settings) |
 | `keypage.db-wal`, `keypage.db-shm` | SQLite WAL sidecar files (present while the DB is open) |
 
-The `data/` directory is listed in `.gitignore` — never commit your vault.
+The `data/` directory is listed in `.gitignore` - never commit your vault.
 
 ### Permissions (UID 1000)
 
@@ -95,27 +94,13 @@ sudo chown -R 1000:1000 ./data
 
 `docker compose up -d --build` rebuilds the image but keeps the `./data` bind mount. Your vault survives image and container updates as long as you do not delete `./data`.
 
-## Remote access (Cloudflare Tunnel)
-
-KeyPage serves plain HTTP inside the container. For access outside your LAN, terminate TLS at the edge with a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (or another reverse proxy you already run).
-
-1. Run KeyPage locally: `docker compose up -d --build`.
-2. Point your tunnel ingress at **`http://localhost:9090`** (or `http://127.0.0.1:9090`). Do not change the app port.
-3. Set **`KEYPAGE_TRUST_PROXY=true`** in `.env` (or your compose environment). KeyPage then trusts `X-Forwarded-Proto` and `X-Forwarded-Host` from the proxy so session cookies get the `Secure` flag and CSRF origin checks match your public hostname.
-4. Access the app at your tunnel hostname over HTTPS. Cloudflare terminates TLS; KeyPage does not manage certificates.
-
-No tunnel configuration ships in this repo — use your existing Cloudflare Zero Trust / `cloudflared` setup and ingress rules.
-
-**Recommendations**
-
-- Put **[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)** (or equivalent) in front of the tunnel so the login page is not world-visible.
-- Prefer the tunnel hostname for daily use: it is a **secure context** for Web Crypto (see below). Plain HTTP to a LAN IP is not.
-
 ## Secure context (Web Crypto vs fallback)
 
-`crypto.subtle` (Web Crypto) is only available in a **secure context**. Use `http://localhost:9090` on the same machine, or HTTPS via a Cloudflare Tunnel (or another reverse proxy) for remote access.
+`crypto.subtle` (Web Crypto) is only available in a **secure context**. Use `http://localhost:9090` on the same machine, or HTTPS via a reverse proxy if you expose the app beyond localhost.
 
 Plain HTTP to a LAN IP (e.g. `http://192.168.1.x:9090`) is **not** a secure context. KeyPage automatically falls back to a JavaScript crypto backend (`@noble/*`) so setup and login still work; vaults created in either mode remain compatible.
+
+If you put KeyPage behind a reverse proxy that rewrites `Host` or terminates TLS, set `KEYPAGE_TRUST_PROXY=true` so session cookies and CSRF origin checks follow the forwarded headers.
 
 ## Environment variables
 
@@ -128,7 +113,7 @@ Copy `.env.example` to `.env` and adjust as needed. Compose loads `.env` when pr
 | `KEYPAGE_DATA_DIR` | `./data` (local); `/app/data` (Docker image) | Persistent data directory (SQLite, etc.) |
 | `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package); `/app/web` (Docker image) | Path to the built web UI served as static files |
 | `LOG_LEVEL` | `info` | Fastify log level |
-| `KEYPAGE_TRUST_PROXY` | `false` | Set to `true` behind Cloudflare Tunnel or another reverse proxy that sets `X-Forwarded-Proto` / `X-Forwarded-Host` |
+| `KEYPAGE_TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy that sets `X-Forwarded-Proto` / `X-Forwarded-Host` |
 | `KEYPAGE_SESSION_IDLE_MINUTES` | *(unset)* | Lock the vault after this many minutes without activity (valid range 15–30; Settings options are 15, 20, 25, 30). When set, pins the timeout: the Settings control becomes read-only and `PATCH /api/settings` is rejected. Leave unset to manage timeout from Settings |
 | `KEYPAGE_SESSION_ABSOLUTE_HOURS` | `12` | Maximum session lifetime regardless of activity |
 | `KEYPAGE_CLIPBOARD_CLEAR_SECONDS` | `30` | Seconds before copied key material is cleared from the clipboard (valid range 5–300) |
