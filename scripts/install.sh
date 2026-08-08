@@ -61,6 +61,21 @@ compose() {
   fi
 }
 
+# Normalize a git remote URL to host/owner/repo (lowercase, no .git).
+normalize_repo_url() {
+  local u
+  u=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  u="${u%.git}"
+  u="${u%/}"
+  u="${u#https://}"
+  u="${u#http://}"
+  u="${u#ssh://git@}"
+  u="${u#ssh://}"
+  u="${u#git@}"
+  u="${u/://}"
+  printf '%s' "$u"
+}
+
 printf '\n%s%s  KeyPage installer%s\n' "$BOLD" "$BLUE" "$RESET"
 note "${TOTAL_STAGES} stages · install dir ${KEYPAGE_DIR}"
 note "Needs Git + Docker. No Node/pnpm on the host."
@@ -88,13 +103,35 @@ ok "docker compose"
 # ── 2. Clone or update ────────────────────────────────────────────────────
 stage "Clone repository → ${KEYPAGE_DIR}"
 
+EXPECTED_REPO="$(normalize_repo_url "${KEYPAGE_REPO}")"
+
 if [[ -d "${KEYPAGE_DIR}/.git" ]]; then
-  note "existing checkout found — fetching ${KEYPAGE_REF}"
-  git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"
-  git -C "${KEYPAGE_DIR}" checkout -q "${KEYPAGE_REF}"
-  git -C "${KEYPAGE_DIR}" pull --ff-only origin "${KEYPAGE_REF}" || \
-    warn "pull skipped (local changes or diverged) — using current tree"
-  ok "updated ${KEYPAGE_DIR}"
+  note "existing checkout found — verifying it is KeyPage"
+  ORIGIN_URL="$(git -C "${KEYPAGE_DIR}" remote get-url origin 2>/dev/null || true)"
+  if [[ -z "${ORIGIN_URL}" ]]; then
+    git -C "${KEYPAGE_DIR}" remote add origin "${KEYPAGE_REPO}"
+    ORIGIN_URL="${KEYPAGE_REPO}"
+    note "set missing origin → ${KEYPAGE_REPO}"
+  fi
+  ACTUAL_REPO="$(normalize_repo_url "${ORIGIN_URL}")"
+  if [[ "${ACTUAL_REPO}" != "${EXPECTED_REPO}" ]]; then
+    fail "${KEYPAGE_DIR} origin is ${ORIGIN_URL} (expected ${KEYPAGE_REPO}) — move it aside or set KEYPAGE_DIR / KEYPAGE_REPO"
+  fi
+
+  note "fetching ${KEYPAGE_REF}"
+  if git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
+    if git -C "${KEYPAGE_DIR}" checkout -q "${KEYPAGE_REF}" 2>/dev/null \
+      || git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" "FETCH_HEAD" 2>/dev/null; then
+      if ! git -C "${KEYPAGE_DIR}" pull --ff-only origin "${KEYPAGE_REF}"; then
+        warn "pull skipped (local changes or diverged) — using current tree"
+      fi
+      ok "updated ${KEYPAGE_DIR}"
+    else
+      warn "checkout of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
+    fi
+  else
+    warn "fetch of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
+  fi
 elif [[ -e "${KEYPAGE_DIR}" ]]; then
   fail "${KEYPAGE_DIR} exists but is not a git repo — move it aside or set KEYPAGE_DIR"
 else
@@ -103,6 +140,10 @@ else
 fi
 
 cd "${KEYPAGE_DIR}"
+
+if [[ ! -f docker-compose.yml ]]; then
+  fail "${KEYPAGE_DIR} is missing docker-compose.yml — not a KeyPage checkout"
+fi
 
 # ── 3. Env + data dir ─────────────────────────────────────────────────────
 stage "Prepare .env and data volume"
