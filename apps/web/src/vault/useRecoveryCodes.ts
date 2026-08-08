@@ -46,7 +46,7 @@ export function useRecoveryCodes(): {
       const result = await run({
         fallback: "Recovery code regeneration failed.",
         formatError: formatPasswordError,
-        run: () => regenerateRecoveryCodes(password),
+        run: (onProgress) => regenerateRecoveryCodes(password, onProgress),
       });
       setRemaining(result.length);
       return result;

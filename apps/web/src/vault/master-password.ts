@@ -265,20 +265,25 @@ export async function completeVaultRecovery(
 
 export async function regenerateRecoveryCodes(
   password: string,
+  onProgress?: PasswordChangeProgress,
 ): Promise<string[]> {
+  onProgress?.("Checking vault status…");
   const status = await getVaultStatus();
   if (!status.kdf) {
     throw new Error("Vault is not initialized.");
   }
 
+  onProgress?.("Verifying Master Password…");
   const derived = await deriveVaultKeys(password, status.kdf);
   zeroizeAesKey(derived.encryptionKey);
 
   const { codes, envelopes } = await buildRekeyRecoveryEnvelopes(
     derived.masterKey,
+    onProgress,
   );
   zeroize(derived.masterKey);
 
+  onProgress?.("Saving recovery codes…");
   try {
     await postRecoveryCodesRegenerate({
       authKeyB64: derived.authKeyB64,

@@ -105,6 +105,7 @@ export function SettingsScreen() {
                 loadingRemaining={recoveryCodes.loadingRemaining}
                 busy={recoveryCodes.busy}
                 error={recoveryCodes.error}
+                progress={recoveryCodes.progress}
                 onRegenerate={handleRegenerateRecoveryCodes}
               />
             </SettingsSection>
