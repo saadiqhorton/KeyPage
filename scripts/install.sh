@@ -62,8 +62,9 @@ compose() {
 }
 
 # Normalize a git remote URL to host/owner/repo (lowercase, no .git).
+# Treats HTTPS, ssh://, and SCP-style (git@host:owner/repo) as equivalent.
 normalize_repo_url() {
-  local u
+  local u host path
   u=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
   u="${u%.git}"
   u="${u%/}"
@@ -72,7 +73,16 @@ normalize_repo_url() {
   u="${u#ssh://git@}"
   u="${u#ssh://}"
   u="${u#git@}"
-  u="${u/://}"
+  # SCP-style host:owner/repo → host/owner/repo
+  if [[ "$u" == *:* ]]; then
+    host="${u%%:*}"
+    path="${u#*:}"
+    u="${host}/${path}"
+  fi
+  # Collapse accidental double slashes in the path
+  while [[ "$u" == *//* ]]; do
+    u="${u//\/\//\/}"
+  done
   printf '%s' "$u"
 }
 
