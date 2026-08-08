@@ -7,6 +7,7 @@ import { hashAuthKey } from "./verifier.js";
 import {
   assertKeyEntryMutationsAllowed,
   changeMasterPassword,
+  claimRecoveryCode,
   hasOpenRecoveryTicket,
   initializeVault,
   regenerateRecoveryCodes,
@@ -17,6 +18,7 @@ import { validateKdfParams, validateRecoveryEnvelopes } from "./kdf-params.js";
 import { runMigrations } from "../db/migrations.js";
 import { insertKeyEntry } from "../keys/key-entry-repo.js";
 import {
+  HttpInvalidRecoveryTicket,
   HttpInvalidRequest,
   HttpKeyVersionMismatch,
   HttpSessionExpired,
@@ -674,6 +676,162 @@ describe("resetVaultFromRecovery", () => {
       .prepare(`SELECT cipher_iv FROM key_entries WHERE id = ?`)
       .get(ENTRY_ID) as { cipher_iv: string };
     assert.equal(row.cipher_iv, movedIv);
+  });
+
+  it("a recovery ticket is single-use", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+
+    const newCipher = {
+      algorithm: "aes-256-gcm" as const,
+      ivB64: Buffer.alloc(12, 7).toString("base64"),
+      ciphertextB64: Buffer.alloc(17, 8).toString("base64"),
+    };
+
+    resetVaultFromRecovery(
+      db,
+      {
+        recoveryTicket: "recovery-ticket-token",
+        kdf: sampleKdf(),
+        authVerifier: await hashAuthKey(
+          Buffer.alloc(32, 5).toString("base64"),
+        ),
+        recoveryCodes: sampleRecoveryCodes(),
+        entries: [entryPayload(ENTRY_ID, newCipher)],
+      },
+      {},
+      1200,
+    );
+
+    assert.equal(readKeyVersion(db), 2);
+
+    await assert.rejects(
+      async () =>
+        resetVaultFromRecovery(
+          db,
+          {
+            recoveryTicket: "recovery-ticket-token",
+            kdf: sampleKdf(),
+            authVerifier: await hashAuthKey(
+              Buffer.alloc(32, 6).toString("base64"),
+            ),
+            recoveryCodes: sampleRecoveryCodes(),
+            entries: [entryPayload(ENTRY_ID, newCipher)],
+          },
+          {},
+          1200,
+        ),
+      (error: unknown) => error instanceof HttpInvalidRecoveryTicket,
+    );
+
+    assert.equal(readKeyVersion(db), 2);
+  });
+
+  it("a successful reset leaves no ticket rows", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+
+    const newCipher = {
+      algorithm: "aes-256-gcm" as const,
+      ivB64: Buffer.alloc(12, 7).toString("base64"),
+      ciphertextB64: Buffer.alloc(17, 8).toString("base64"),
+    };
+
+    resetVaultFromRecovery(
+      db,
+      {
+        recoveryTicket: "recovery-ticket-token",
+        kdf: sampleKdf(),
+        authVerifier: await hashAuthKey(
+          Buffer.alloc(32, 5).toString("base64"),
+        ),
+        recoveryCodes: sampleRecoveryCodes(),
+        entries: [entryPayload(ENTRY_ID, newCipher)],
+      },
+      {},
+      1200,
+    );
+
+    // replaceRecoveryCodes cascade-deletes recovery_tickets via recovery_code_id FK.
+    const ticketCount = (
+      db.prepare(`SELECT COUNT(*) AS count FROM recovery_tickets`).get() as {
+        count: number;
+      }
+    ).count;
+    assert.equal(ticketCount, 0);
+    assert.equal(hasOpenRecoveryTicket(db), false);
+  });
+});
+
+describe("claimRecoveryCode", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = openMemoryDb();
+    const kdf = sampleKdf();
+    validateKdfParams(kdf);
+    const recoveryCodes = sampleRecoveryCodes();
+    validateRecoveryEnvelopes(recoveryCodes);
+    const authVerifier = await hashAuthKey(
+      Buffer.alloc(32, 9).toString("base64"),
+    );
+    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+  });
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  it("claims a valid code, revokes sessions, and rejects reuse", () => {
+    insertSampleEntry(db, ENTRY_ID);
+    const { token } = createSession(db, {}, 1200);
+    const sessionId = sessionIdFor(db, token);
+    assert.equal(isSessionActive(db, sessionId), true);
+
+    const lookupHash = sampleRecoveryCodes()[0]!.lookupHash;
+    const throttleBefore = (
+      db.prepare(`SELECT COUNT(*) AS count FROM auth_throttle`).get() as {
+        count: number;
+      }
+    ).count;
+
+    const result = claimRecoveryCode(db, lookupHash);
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+
+    assert.equal(result.claim.keyVersion, 1);
+    assert.equal(result.claim.codesRemaining, 9);
+    assert.equal(result.claim.entries.length, 1);
+    assert.equal(hasOpenRecoveryTicket(db), true);
+    assert.equal(isSessionActive(db, sessionId), false);
+
+    const usedRow = db
+      .prepare(`SELECT used_at FROM recovery_codes WHERE lookup_hash = ?`)
+      .get(lookupHash) as { used_at: string | null };
+    assert.notEqual(usedRow.used_at, null);
+
+    const throttleAfter = (
+      db.prepare(`SELECT COUNT(*) AS count FROM auth_throttle`).get() as {
+        count: number;
+      }
+    ).count;
+    assert.equal(throttleAfter, throttleBefore);
+
+    const secondClaim = claimRecoveryCode(db, lookupHash);
+    assert.deepEqual(secondClaim, { ok: false });
+
+    const unknownClaim = claimRecoveryCode(db, "f".repeat(64));
+    assert.deepEqual(unknownClaim, { ok: false });
+
+    const ticketCount = (
+      db.prepare(`SELECT COUNT(*) AS count FROM recovery_tickets`).get() as {
+        count: number;
+      }
+    ).count;
+    assert.equal(ticketCount, 1);
   });
 });
 
