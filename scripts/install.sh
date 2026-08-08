@@ -109,9 +109,7 @@ if [[ -d "${KEYPAGE_DIR}/.git" ]]; then
   note "existing checkout found — verifying it is KeyPage"
   ORIGIN_URL="$(git -C "${KEYPAGE_DIR}" remote get-url origin 2>/dev/null || true)"
   if [[ -z "${ORIGIN_URL}" ]]; then
-    git -C "${KEYPAGE_DIR}" remote add origin "${KEYPAGE_REPO}"
-    ORIGIN_URL="${KEYPAGE_REPO}"
-    note "set missing origin → ${KEYPAGE_REPO}"
+    fail "${KEYPAGE_DIR} has no origin to verify — move it aside or set KEYPAGE_DIR"
   fi
   ACTUAL_REPO="$(normalize_repo_url "${ORIGIN_URL}")"
   if [[ "${ACTUAL_REPO}" != "${EXPECTED_REPO}" ]]; then
