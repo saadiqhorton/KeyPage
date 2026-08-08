@@ -1,7 +1,9 @@
 import type Database from "better-sqlite3";
 
+import { RECOVERY_TICKET_TTL_SECONDS } from "@keypage/shared";
 import type {
   KdfParams,
+  RecoveryClaimResponse,
   RecoveryCodeEnvelope,
   SessionInfo,
 } from "@keypage/shared";
@@ -11,14 +13,17 @@ import {
   HttpInvalidRequest,
   HttpKeyVersionMismatch,
   HttpSessionExpired,
+  HttpSetupRequired,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
 import type {
+  KdfColumns,
   RecoveryCodeRow,
   RecoveryTicketRow,
   VaultAuthRow,
 } from "../db/rows.js";
 import {
+  listKeyEntries,
   listKeyEntryCipherIvs,
   listKeyEntryIds,
   replaceKeyEntryCiphers,
@@ -31,7 +36,7 @@ import {
   revokeAllSessions,
   type SessionRequest,
 } from "./sessions.js";
-import { newId, sha256Hex } from "./tokens.js";
+import { newId, randomToken, sha256Hex } from "./tokens.js";
 
 export function getVaultAuth(
   db: Database.Database,
@@ -45,7 +50,8 @@ export function isVaultInitialized(db: Database.Database): boolean {
   return getVaultAuth(db) !== undefined;
 }
 
-export function vaultAuthToKdfParams(row: VaultAuthRow): KdfParams {
+/** Map the kdf_* columns of `vault_auth` or a `recovery_codes` row to KdfParams. */
+export function rowToKdfParams(row: KdfColumns): KdfParams {
   if (row.kdf_algorithm === "argon2id") {
     return {
       algorithm: "argon2id",
@@ -101,6 +107,81 @@ export function hasOpenRecoveryTicket(db: Database.Database): boolean {
     .get(nowIso) as { ok: number } | undefined;
 
   return row !== undefined;
+}
+
+export type RecoveryClaimResult =
+  | { ok: true; claim: RecoveryClaimResponse }
+  | { ok: false };
+
+/**
+ * Claim a recovery code: burn it, mint a short-lived ticket, and freeze other
+ * sessions so they cannot mutate the snapshot the client is about to
+ * re-encrypt.
+ *
+ * Returns `{ ok: false }` for an unknown, already-used, or concurrently-claimed
+ * code. Recording the throttle failure is the caller's job, because it must
+ * survive outside this function's transaction.
+ */
+export function claimRecoveryCode(
+  db: Database.Database,
+  lookupHash: string,
+): RecoveryClaimResult {
+  const code = findRecoveryCodeByLookupHash(db, lookupHash);
+  if (!code || code.used_at !== null) {
+    return { ok: false };
+  }
+
+  const vault = getVaultAuth(db);
+  if (!vault) {
+    throw new HttpSetupRequired();
+  }
+
+  const ticket = randomToken();
+  const tokenHash = sha256Hex(ticket);
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(
+    now.getTime() + RECOVERY_TICKET_TTL_SECONDS * 1000,
+  ).toISOString();
+
+  const apply = db.transaction(() => {
+    const update = db
+      .prepare(
+        `UPDATE recovery_codes SET used_at = ? WHERE id = ? AND used_at IS NULL`,
+      )
+      .run(nowIso, code.id);
+
+    if (update.changes === 0) {
+      return false;
+    }
+
+    db.prepare(
+      `INSERT INTO recovery_tickets (
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
+       ) VALUES (?, ?, ?, ?, ?, NULL)`,
+    ).run(newId(), tokenHash, code.id, nowIso, expiresAt);
+
+    // Freeze other sessions so they cannot mutate the claim snapshot.
+    revokeAllSessions(db);
+
+    return true;
+  });
+
+  if (!apply()) {
+    return { ok: false };
+  }
+
+  return {
+    ok: true,
+    claim: {
+      recoveryTicket: ticket,
+      kdf: rowToKdfParams(code),
+      wrappedMasterKeyB64: code.wrapped_master_key,
+      keyVersion: vault.key_version,
+      codesRemaining: countUnusedRecoveryCodes(db),
+      entries: listKeyEntries(db),
+    },
+  };
 }
 
 /**
@@ -200,6 +281,36 @@ function insertVaultAuth(
   );
 }
 
+function updateVaultAuth(
+  db: Database.Database,
+  kdf: KdfParams,
+  authVerifier: string,
+  keyVersion: number,
+  timestamp: string,
+): void {
+  db.prepare(
+    `UPDATE vault_auth
+     SET kdf_algorithm = ?,
+         kdf_memory_kib = ?,
+         kdf_iterations = ?,
+         kdf_parallelism = ?,
+         kdf_salt = ?,
+         auth_verifier = ?,
+         key_version = ?,
+         updated_at = ?
+     WHERE id = 1`,
+  ).run(
+    kdf.algorithm,
+    kdf.memoryKiB ?? null,
+    kdf.iterations,
+    kdf.parallelism ?? null,
+    kdf.saltB64,
+    authVerifier,
+    keyVersion,
+    timestamp,
+  );
+}
+
 export function initializeVault(
   db: Database.Database,
   input: InitializeVaultInput,
@@ -238,93 +349,31 @@ export type ResetVaultFromRecoveryInput = {
   entries: ReencryptedEntryInput[];
 };
 
-export function resetVaultFromRecovery(
-  db: Database.Database,
-  input: ResetVaultFromRecoveryInput,
-  req: SessionRequest,
-  idleTimeoutSeconds: number,
-): { token: string; info: SessionInfo; keyVersion: number; reEncrypted: number } {
-  const tokenHash = sha256Hex(input.recoveryTicket);
-  const now = new Date();
-  const nowIso = now.toISOString();
+export type VaultRotationResult = {
+  token: string;
+  info: SessionInfo;
+  keyVersion: number;
+  reEncrypted: number;
+};
 
-  const apply = db.transaction(() => {
-    const ticket = findRecoveryTicketByTokenHash(db, tokenHash);
-    if (
-      !ticket ||
-      ticket.consumed_at !== null ||
-      Date.parse(ticket.expires_at) <= now.getTime()
-    ) {
-      throw new HttpInvalidRecoveryTicket();
-    }
-
-    const vault = getVaultAuth(db);
-    if (!vault) {
-      throw new HttpInvalidRecoveryTicket();
-    }
-
-    assertEntriesMatchVault(db, input.entries);
-
-    // Revoke before ciphertext rotation so in-flight session writes re-check
-    // and fail instead of storing old-key material under the new key_version.
-    revokeAllSessions(db);
-
-    const nextKeyVersion = vault.key_version + 1;
-
-    db.prepare(
-      `UPDATE vault_auth
-       SET kdf_algorithm = ?,
-           kdf_memory_kib = ?,
-           kdf_iterations = ?,
-           kdf_parallelism = ?,
-           kdf_salt = ?,
-           auth_verifier = ?,
-           key_version = ?,
-           updated_at = ?
-       WHERE id = 1`,
-    ).run(
-      input.kdf.algorithm,
-      input.kdf.memoryKiB ?? null,
-      input.kdf.iterations,
-      input.kdf.parallelism ?? null,
-      input.kdf.saltB64,
-      input.authVerifier,
-      nextKeyVersion,
-      nowIso,
-    );
-
-    const reEncrypted = replaceKeyEntryCiphers(
-      db,
-      input.entries,
-      nextKeyVersion,
-    );
-
-    db.prepare(
-      `UPDATE recovery_tickets SET consumed_at = ? WHERE id = ?`,
-    ).run(nowIso, ticket.id);
-
-    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
-
-    resetThrottle(db, "login");
-    resetThrottle(db, "recovery");
-
-    const session = createSession(db, req, idleTimeoutSeconds);
-
-    return {
-      ...session,
-      keyVersion: nextKeyVersion,
-      reEncrypted,
-    };
-  });
-
-  return apply();
-}
-
-export type ChangeMasterPasswordInput = {
+type RotateVaultMaterialArgs = {
+  /** Read by the caller inside the same transaction; supplies the pre-rotation key_version. */
+  vault: VaultAuthRow;
   kdf: KdfParams;
   authVerifier: string;
   recoveryCodes: RecoveryCodeEnvelope[];
   entries: ReencryptedEntryInput[];
+  /**
+   * Recovery reset only. Consumed between the cipher rotation and
+   * `replaceRecoveryCodes`, never after: `recovery_tickets.recovery_code_id`
+   * is `REFERENCES recovery_codes(id) ON DELETE CASCADE`, so replacing the
+   * codes deletes the ticket row and a later UPDATE would silently match
+   * nothing.
+   */
+  consumeRecoveryTicketId?: string;
+  req: SessionRequest;
+  idleTimeoutSeconds: number;
+  nowIso: string;
 };
 
 function assertEntriesMatchVault(
@@ -361,12 +410,131 @@ function assertEntriesMatchVault(
   }
 }
 
+/**
+ * The one server-side vault rotation: Master Password change and recovery
+ * reset differ only in how the caller is gated, so they share this body.
+ *
+ * Call from inside a `db.transaction(...)`; this function deliberately does
+ * not open one, so the whole rotation stays a single rollback unit.
+ *
+ * Two orderings here are load-bearing:
+ *  - sessions are revoked before any ciphertext moves, so an in-flight write
+ *    re-checks and fails instead of storing old-key material under the new
+ *    key_version (SAA-133/SAA-134);
+ *  - the recovery ticket is consumed before the recovery codes are replaced,
+ *    because replacing them cascade-deletes the ticket row.
+ */
+function rotateVaultMaterial(
+  db: Database.Database,
+  args: RotateVaultMaterialArgs,
+): VaultRotationResult {
+  assertEntriesMatchVault(db, args.entries);
+
+  // Revoke before ciphertext rotation so in-flight session writes re-check
+  // and fail instead of storing old-key material under the new key_version.
+  revokeAllSessions(db);
+
+  const nextKeyVersion = args.vault.key_version + 1;
+
+  updateVaultAuth(
+    db,
+    args.kdf,
+    args.authVerifier,
+    nextKeyVersion,
+    args.nowIso,
+  );
+
+  const reEncrypted = replaceKeyEntryCiphers(
+    db,
+    args.entries,
+    nextKeyVersion,
+  );
+
+  if (args.consumeRecoveryTicketId !== undefined) {
+    const consumed = db
+      .prepare(
+        `UPDATE recovery_tickets
+         SET consumed_at = ?
+         WHERE id = ? AND consumed_at IS NULL`,
+      )
+      .run(args.nowIso, args.consumeRecoveryTicketId);
+
+    // Must still be here to consume: replaceRecoveryCodes below cascade-deletes
+    // this row, so a zero-row update means the order was broken.
+    if (consumed.changes === 0) {
+      throw new HttpInvalidRecoveryTicket();
+    }
+  }
+
+  replaceRecoveryCodes(
+    db,
+    args.recoveryCodes,
+    nextKeyVersion,
+    args.nowIso,
+  );
+
+  resetThrottle(db, "login");
+  resetThrottle(db, "recovery");
+
+  const session = createSession(db, args.req, args.idleTimeoutSeconds);
+
+  return { ...session, keyVersion: nextKeyVersion, reEncrypted };
+}
+
+export function resetVaultFromRecovery(
+  db: Database.Database,
+  input: ResetVaultFromRecoveryInput,
+  req: SessionRequest,
+  idleTimeoutSeconds: number,
+): VaultRotationResult {
+  const tokenHash = sha256Hex(input.recoveryTicket);
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const apply = db.transaction(() => {
+    const ticket = findRecoveryTicketByTokenHash(db, tokenHash);
+    if (
+      !ticket ||
+      ticket.consumed_at !== null ||
+      Date.parse(ticket.expires_at) <= now.getTime()
+    ) {
+      throw new HttpInvalidRecoveryTicket();
+    }
+
+    const vault = getVaultAuth(db);
+    if (!vault) {
+      throw new HttpInvalidRecoveryTicket();
+    }
+
+    return rotateVaultMaterial(db, {
+      vault,
+      kdf: input.kdf,
+      authVerifier: input.authVerifier,
+      recoveryCodes: input.recoveryCodes,
+      entries: input.entries,
+      consumeRecoveryTicketId: ticket.id,
+      req,
+      idleTimeoutSeconds,
+      nowIso,
+    });
+  });
+
+  return apply();
+}
+
+export type ChangeMasterPasswordInput = {
+  kdf: KdfParams;
+  authVerifier: string;
+  recoveryCodes: RecoveryCodeEnvelope[];
+  entries: ReencryptedEntryInput[];
+};
+
 export function changeMasterPassword(
   db: Database.Database,
   input: ChangeMasterPasswordInput,
   req: SessionRequest,
   idleTimeoutSeconds: number,
-): { token: string; info: SessionInfo; keyVersion: number; reEncrypted: number } {
+): VaultRotationResult {
   const nowIso = new Date().toISOString();
 
   const apply = db.transaction(() => {
@@ -375,52 +543,16 @@ export function changeMasterPassword(
       throw new HttpInvalidRequest("Vault is not initialized");
     }
 
-    assertEntriesMatchVault(db, input.entries);
-
-    revokeAllSessions(db);
-
-    const nextKeyVersion = vault.key_version + 1;
-
-    db.prepare(
-      `UPDATE vault_auth
-       SET kdf_algorithm = ?,
-           kdf_memory_kib = ?,
-           kdf_iterations = ?,
-           kdf_parallelism = ?,
-           kdf_salt = ?,
-           auth_verifier = ?,
-           key_version = ?,
-           updated_at = ?
-       WHERE id = 1`,
-    ).run(
-      input.kdf.algorithm,
-      input.kdf.memoryKiB ?? null,
-      input.kdf.iterations,
-      input.kdf.parallelism ?? null,
-      input.kdf.saltB64,
-      input.authVerifier,
-      nextKeyVersion,
+    return rotateVaultMaterial(db, {
+      vault,
+      kdf: input.kdf,
+      authVerifier: input.authVerifier,
+      recoveryCodes: input.recoveryCodes,
+      entries: input.entries,
+      req,
+      idleTimeoutSeconds,
       nowIso,
-    );
-
-    const reEncrypted = replaceKeyEntryCiphers(
-      db,
-      input.entries,
-      nextKeyVersion,
-    );
-
-    replaceRecoveryCodes(db, input.recoveryCodes, nextKeyVersion, nowIso);
-
-    resetThrottle(db, "login");
-    resetThrottle(db, "recovery");
-
-    const session = createSession(db, req, idleTimeoutSeconds);
-
-    return {
-      ...session,
-      keyVersion: nextKeyVersion,
-      reEncrypted,
-    };
+    });
   });
 
   return apply();

@@ -2,28 +2,27 @@ import type { KdfAlgorithm } from "@keypage/shared";
 
 export type ThrottleScope = "login" | "recovery";
 
-export type VaultAuthRow = {
-  id: 1;
+/** The kdf_* columns shared by `vault_auth` and `recovery_codes`. */
+export type KdfColumns = {
   kdf_algorithm: KdfAlgorithm;
   kdf_memory_kib: number | null;
   kdf_iterations: number;
   kdf_parallelism: number | null;
   kdf_salt: string;
+};
+
+export type VaultAuthRow = KdfColumns & {
+  id: 1;
   auth_verifier: string;
   key_version: number;
   created_at: string;
   updated_at: string;
 };
 
-export type RecoveryCodeRow = {
+export type RecoveryCodeRow = KdfColumns & {
   id: string;
   label: string;
   lookup_hash: string;
-  kdf_algorithm: KdfAlgorithm;
-  kdf_memory_kib: number | null;
-  kdf_iterations: number;
-  kdf_parallelism: number | null;
-  kdf_salt: string;
   wrapped_master_key: string;
   key_version: number;
   created_at: string;

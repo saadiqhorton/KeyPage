@@ -3,7 +3,6 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   RECOVERY_CODE_COUNT,
-  RECOVERY_TICKET_TTL_SECONDS,
   SESSION_COOKIE_NAME,
   type KdfParams,
   type RecoveryClaimResponse,
@@ -24,7 +23,6 @@ import {
 import {
   createSession,
   resolveSession,
-  revokeAllSessions,
   revokeSession,
   touchSession,
 } from "../auth/sessions.js";
@@ -34,7 +32,6 @@ import {
   recordFailure,
   resetThrottle,
 } from "../auth/throttle.js";
-import { newId, randomToken, sha256Hex } from "../auth/tokens.js";
 import { hashAuthKey, verifyAuthKey } from "../auth/verifier.js";
 import {
   kdfSchema,
@@ -44,19 +41,18 @@ import {
 } from "../auth/vault-request.js";
 import {
   changeMasterPassword,
+  claimRecoveryCode,
   countUnusedRecoveryCodes,
-  findRecoveryCodeByLookupHash,
   getVaultAuth,
   initializeVault,
   isVaultInitialized,
   regenerateRecoveryCodes,
   resetVaultFromRecovery,
-  vaultAuthToKdfParams,
+  rowToKdfParams,
 } from "../auth/vault-repo.js";
-import { listKeyEntries } from "../keys/key-entry-repo.js";
 import { validateCipherPayload } from "../keys/validate.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
-import type { RecoveryCodeRow, VaultAuthRow } from "../db/rows.js";
+import type { VaultAuthRow } from "../db/rows.js";
 import {
   HttpInvalidCredentials,
   HttpInvalidRecoveryCode,
@@ -98,24 +94,6 @@ function withEntryFieldPrefix<T>(index: number, fn: () => T): T {
   }
 }
 
-function recoveryCodeRowToKdfParams(row: RecoveryCodeRow): KdfParams {
-  if (row.kdf_algorithm === "argon2id") {
-    return {
-      algorithm: "argon2id",
-      saltB64: row.kdf_salt,
-      iterations: row.kdf_iterations,
-      memoryKiB: row.kdf_memory_kib ?? undefined,
-      parallelism: row.kdf_parallelism ?? undefined,
-    };
-  }
-
-  return {
-    algorithm: "pbkdf2-sha256",
-    saltB64: row.kdf_salt,
-    iterations: row.kdf_iterations,
-  };
-}
-
 function buildStatusResponse(
   db: Database.Database,
   request: FastifyRequest,
@@ -147,7 +125,7 @@ function buildStatusResponse(
 
   return {
     state: "ready",
-    kdf: vaultAuthToKdfParams(vault),
+    kdf: rowToKdfParams(vault),
     recoveryCodesRemaining: countUnusedRecoveryCodes(db),
     keyVersion: vault.key_version,
     lockout: readLockout(db, "login"),
@@ -212,77 +190,6 @@ async function verifyMasterPassword(
   }
 
   return vault;
-}
-
-function claimRecoveryCode(
-  db: Database.Database,
-  lookupHash: string,
-): RecoveryClaimResponse {
-  const code = findRecoveryCodeByLookupHash(db, lookupHash);
-  if (!code || code.used_at !== null) {
-    const attemptsRemaining = recordFailure(db, "recovery");
-    throw new HttpInvalidRecoveryCode(
-      "That recovery code isn't valid",
-      attemptsRemaining,
-    );
-  }
-
-  const vault = getVaultAuth(db);
-  if (!vault) {
-    throw new HttpSetupRequired();
-  }
-
-  const ticket = randomToken();
-  const tokenHash = sha256Hex(ticket);
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const expiresAt = new Date(
-    now.getTime() + RECOVERY_TICKET_TTL_SECONDS * 1000,
-  ).toISOString();
-
-  let raced = false;
-  const apply = db.transaction(() => {
-    const update = db
-      .prepare(
-        `UPDATE recovery_codes SET used_at = ? WHERE id = ? AND used_at IS NULL`,
-      )
-      .run(nowIso, code.id);
-
-    if (update.changes === 0) {
-      raced = true;
-      return;
-    }
-
-    db.prepare(
-      `INSERT INTO recovery_tickets (
-         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
-       ) VALUES (?, ?, ?, ?, ?, NULL)`,
-    ).run(newId(), tokenHash, code.id, nowIso, expiresAt);
-
-    // Freeze other sessions so they cannot mutate the claim snapshot.
-    revokeAllSessions(db);
-  });
-
-  apply();
-
-  if (raced) {
-    const attemptsRemaining = recordFailure(db, "recovery");
-    throw new HttpInvalidRecoveryCode(
-      "That recovery code isn't valid",
-      attemptsRemaining,
-    );
-  }
-
-  const codesRemaining = countUnusedRecoveryCodes(db);
-
-  return {
-    recoveryTicket: ticket,
-    kdf: recoveryCodeRowToKdfParams(code),
-    wrappedMasterKeyB64: code.wrapped_master_key,
-    keyVersion: vault.key_version,
-    codesRemaining,
-    entries: listKeyEntries(db),
-  };
 }
 
 export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
@@ -523,7 +430,16 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         ]);
       }
 
-      return claimRecoveryCode(db, body.lookupHash);
+      const result = claimRecoveryCode(db, body.lookupHash);
+      if (!result.ok) {
+        const attemptsRemaining = recordFailure(db, "recovery");
+        throw new HttpInvalidRecoveryCode(
+          "That recovery code isn't valid",
+          attemptsRemaining,
+        );
+      }
+
+      return result.claim;
     },
   );
 
