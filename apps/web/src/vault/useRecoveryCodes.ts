@@ -5,6 +5,7 @@ import {
   formatPasswordError,
   regenerateRecoveryCodes,
 } from "@/vault/master-password.js";
+import { useRekeyBusy } from "@/vault/useRekeyBusy.js";
 
 /**
  * Returns a freshly generated set rather than holding it: the codes belong in
@@ -15,14 +16,14 @@ export function useRecoveryCodes(): {
   loadingRemaining: boolean;
   busy: boolean;
   error: string | null;
+  progress: string | null;
   refreshRemaining(): Promise<void>;
   regenerate(password: string): Promise<string[]>;
   clearError(): void;
 } {
   const [remaining, setRemaining] = useState<number | null>(null);
   const [loadingRemaining, setLoadingRemaining] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, progress, clearError, run } = useRekeyBusy();
 
   const refreshRemaining = useCallback(async () => {
     setLoadingRemaining(true);
@@ -40,33 +41,25 @@ export function useRecoveryCodes(): {
     void refreshRemaining();
   }, [refreshRemaining]);
 
-  const regenerate = useCallback(async (password: string): Promise<string[]> => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await regenerateRecoveryCodes(password);
+  const regenerate = useCallback(
+    async (password: string): Promise<string[]> => {
+      const result = await run({
+        fallback: "Recovery code regeneration failed.",
+        formatError: formatPasswordError,
+        run: () => regenerateRecoveryCodes(password),
+      });
       setRemaining(result.length);
       return result;
-    } catch (err) {
-      const message = formatPasswordError(err, {
-        fallback: "Recovery code regeneration failed.",
-      });
-      setError(message);
-      throw err;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+    },
+    [run],
+  );
 
   return {
     remaining,
     loadingRemaining,
     busy,
     error,
+    progress,
     refreshRemaining,
     regenerate,
     clearError,

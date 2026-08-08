@@ -1,9 +1,10 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
 import {
   changeMasterPassword,
   formatPasswordError,
 } from "@/vault/master-password.js";
+import { useRekeyBusy } from "@/vault/useRekeyBusy.js";
 
 const ENTRY_SET_MISMATCH_MESSAGE =
   "Your key entries changed while the password was being updated. Nothing was saved — please try again.";
@@ -19,40 +20,19 @@ export function useChangeMasterPassword(): {
   changePassword(currentPassword: string, newPassword: string): Promise<string[]>;
   clearError(): void;
 } {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<string | null>(null);
+  const { busy, error, progress, clearError, run } = useRekeyBusy();
 
   const changePassword = useCallback(
-    async (currentPassword: string, newPassword: string): Promise<string[]> => {
-      setBusy(true);
-      setError(null);
-      setProgress(null);
-      try {
-        const result = await changeMasterPassword(
-          currentPassword,
-          newPassword,
-          setProgress,
-        );
-        return result;
-      } catch (err) {
-        const message = formatPasswordError(err, {
-          fallback: "Password change failed.",
-          onEntryMismatch: ENTRY_SET_MISMATCH_MESSAGE,
-        });
-        setError(message);
-        throw err;
-      } finally {
-        setBusy(false);
-        setProgress(null);
-      }
-    },
-    [],
+    async (currentPassword: string, newPassword: string): Promise<string[]> =>
+      run({
+        fallback: "Password change failed.",
+        onEntryMismatch: ENTRY_SET_MISMATCH_MESSAGE,
+        formatError: formatPasswordError,
+        run: (onProgress) =>
+          changeMasterPassword(currentPassword, newPassword, onProgress),
+      }),
+    [run],
   );
-
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
 
   return {
     busy,
