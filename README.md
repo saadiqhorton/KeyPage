@@ -22,11 +22,21 @@ Self-hosted, single-user API key vault.
 
 ## Quick start (Docker)
 
+One-shot install (clones into `~/keypage`, builds, and starts):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/install.sh | bash
+```
+
+Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. Re-running the same command updates the checkout when possible and brings the stack back up.
+
+Already have the repo checked out?
+
 ```bash
 docker compose up -d --build
 ```
 
-Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. Port **9090** is the supported listen port everywhere in this project.
+Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. Port **9090** is the supported listen port everywhere in this project. Installer default directory: `~/keypage` (override with `KEYPAGE_DIR`).
 
 ### What `docker compose` does
 
