@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { Modal } from "@/components/ui/Modal";
 import { PasswordField } from "@/components/ui/PasswordField";
-import { TagInput } from "@/components/ui/TagInput";
+import { TagInput, tagDraftError } from "@/components/ui/TagInput";
 import { TextArea } from "@/components/ui/TextArea";
 import { TextField } from "@/components/ui/TextField";
 import { decryptKeyValue } from "@/crypto/key-entry.js";
@@ -100,9 +100,15 @@ function validateForm(
   customServiceName: string,
   description: string,
   tags: string[],
+  tagDraft: string,
   keyValue: string,
 ): FieldErrors {
   const errors: FieldErrors = {};
+
+  const draftIssue = tagDraftError(tagDraft);
+  if (draftIssue) {
+    errors.tags = draftIssue;
+  }
 
   try {
     normalizeKeyEntryWriteFields({
@@ -172,6 +178,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
   );
   const [description, setDescription] = useState(INITIAL_FORM.description);
   const [tags, setTags] = useState<string[]>(INITIAL_FORM.tags);
+  const [tagDraft, setTagDraft] = useState("");
   const [keyValue, setKeyValue] = useState(INITIAL_FORM.keyValue);
   const [prefillState, setPrefillState] = useState<PrefillState>("idle");
   const [decryptWarning, setDecryptWarning] = useState(false);
@@ -211,6 +218,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     setFieldErrors({});
     setSubmitError(null);
     setSubmitting(false);
+    setTagDraft("");
 
     if (mode === "create") {
       setLabel(INITIAL_FORM.label);
@@ -286,6 +294,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
       customServiceName,
       description,
       tags,
+      tagDraft,
       keyValue,
     );
 
@@ -445,6 +454,8 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
             label="Tags"
             value={tags}
             onChange={setTags}
+            draft={tagDraft}
+            onDraftChange={setTagDraft}
             max={KEY_ENTRY_TAGS_MAX}
             disabled={submitting}
             error={fieldErrors.tags}
