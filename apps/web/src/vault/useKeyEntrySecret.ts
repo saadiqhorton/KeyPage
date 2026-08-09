@@ -1,9 +1,7 @@
 import type { KeyEntry } from "@keypage/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  clearScheduledClipboardClear,
-} from "@/lib/clipboard.js";
+import { clearScheduledClipboardClear } from "@/lib/clipboard.js";
 import { onKeyCleared } from "@/vault/session-keys.js";
 import { useKeyEntryOperations } from "@/vault/useKeyEntryOperations.js";
 

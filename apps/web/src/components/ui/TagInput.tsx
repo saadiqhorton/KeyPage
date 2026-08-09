@@ -80,9 +80,7 @@ export function TagInput({
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter" || event.key === ",") {
       event.preventDefault();
-      if (!commitDraft(draft) && draft.trim().length > KEY_ENTRY_TAG_MAX) {
-        // Keep the draft so the parent can surface the length error on submit.
-      }
+      commitDraft(draft);
       return;
     }
 

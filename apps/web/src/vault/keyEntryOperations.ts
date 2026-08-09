@@ -4,21 +4,20 @@ import {
   resolveServiceForImport,
   type BackupEntry,
   type KeyEntry,
+  type KeyEntryCipherInput,
+  type KeyEntryCreateRequest,
+  type KeyEntryCreateResponse,
   type KeyEntryImportItem,
+  type KeyEntryImportRequest,
+  type KeyEntryImportResponse,
+  type KeyEntryUpdateRequest,
+  type KeyEntryUpdateResponse,
   type KeyEntryUseAction,
+  type KeyEntryUseResponse,
 } from "@keypage/shared";
 
-import { decryptKeyValue, encryptKeyValue, newKeyEntryId } from "@/crypto/key-entry.js";
-import {
-  ApiError,
-  deleteKeyEntry as apiDeleteKeyEntry,
-  patchKeyEntry,
-  postKeyEntry,
-  postKeyEntryImport,
-  postKeyEntryUse,
-} from "@/lib/api.js";
-import { copyTextWithAutoClear } from "@/lib/clipboard.js";
-import { getEncryptionKeyVersion } from "@/vault/session-keys.js";
+import type { ClipboardAutoClearHandle } from "@/lib/clipboard.js";
+import type { ApiError } from "@/lib/api.js";
 import type { RekeyGuard } from "@/vault/useRekeyLock.js";
 
 export type NewKeyEntryInput = {
@@ -59,6 +58,29 @@ export type CopySecretResult =
     }
   | { ok: false; reason: "decrypt" | "clipboard" };
 
+export type KeyEntryOperationsPorts = {
+  guardRekey: RekeyGuard;
+  getEncryptionKeyVersion(): number | null;
+  newKeyEntryId(): string;
+  encryptKeyValue(id: string, keyValue: string): Promise<KeyEntryCipherInput>;
+  decryptKeyValue(entry: KeyEntry): Promise<string>;
+  postKeyEntry(body: KeyEntryCreateRequest): Promise<KeyEntryCreateResponse>;
+  patchKeyEntry(
+    id: string,
+    body: KeyEntryUpdateRequest,
+  ): Promise<KeyEntryUpdateResponse>;
+  deleteKeyEntry(id: string, options: { keyVersion: number }): Promise<void>;
+  postKeyEntryUse(
+    id: string,
+    action: KeyEntryUseAction,
+  ): Promise<KeyEntryUseResponse>;
+  postKeyEntryImport(
+    body: KeyEntryImportRequest,
+  ): Promise<KeyEntryImportResponse>;
+  copyTextWithAutoClear(text: string, clearMs: number): Promise<ClipboardAutoClearHandle>;
+  createSessionExpiredError(): ApiError;
+};
+
 export type KeyEntryOperations = {
   create(input: NewKeyEntryInput): Promise<KeyEntry>;
   update(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
@@ -81,17 +103,6 @@ export type KeyEntryOperations = {
     existingIds: ReadonlySet<string>,
   ): Promise<ImportKeyEntriesResult>;
 };
-
-function requireKeyVersion(): number {
-  const keyVersion = getEncryptionKeyVersion();
-  if (keyVersion === null) {
-    throw new ApiError({
-      error: "session_expired",
-      message: "Vault is locked.",
-    });
-  }
-  return keyVersion;
-}
 
 function writeFieldsFromInput(input: {
   label: string;
@@ -120,23 +131,23 @@ function writeFieldsFromInput(input: {
 }
 
 export function createKeyEntryOperations(
-  guardRekey: RekeyGuard,
+  ports: KeyEntryOperationsPorts,
 ): KeyEntryOperations {
   const markUsed = async (
     id: string,
     action: KeyEntryUseAction,
   ): Promise<KeyEntry> => {
-    const response = await postKeyEntryUse(id, action);
+    const response = await ports.postKeyEntryUse(id, action);
     return response.entry;
   };
 
   return {
     async create(input) {
       const fields = writeFieldsFromInput(input);
-      const id = newKeyEntryId();
-      const cipher = await encryptKeyValue(id, input.keyValue);
-      const response = await guardRekey(
-        postKeyEntry({
+      const id = ports.newKeyEntryId();
+      const cipher = await ports.encryptKeyValue(id, input.keyValue);
+      const response = await ports.guardRekey(
+        ports.postKeyEntry({
           id,
           ...fields,
           cipher,
@@ -146,24 +157,30 @@ export function createKeyEntryOperations(
     },
 
     async update(id, input) {
-      const keyVersion = requireKeyVersion();
+      const keyVersion = ports.getEncryptionKeyVersion();
+      if (keyVersion === null) {
+        throw ports.createSessionExpiredError();
+      }
       const fields = writeFieldsFromInput(input);
-      const body: Parameters<typeof patchKeyEntry>[1] = {
+      const body: KeyEntryUpdateRequest = {
         keyVersion,
         ...fields,
       };
 
       if (input.keyValue && input.keyValue.length > 0) {
-        body.cipher = await encryptKeyValue(id, input.keyValue);
+        body.cipher = await ports.encryptKeyValue(id, input.keyValue);
       }
 
-      const response = await guardRekey(patchKeyEntry(id, body));
+      const response = await ports.guardRekey(ports.patchKeyEntry(id, body));
       return response.entry;
     },
 
     async remove(id) {
-      const keyVersion = requireKeyVersion();
-      await guardRekey(apiDeleteKeyEntry(id, { keyVersion }));
+      const keyVersion = ports.getEncryptionKeyVersion();
+      if (keyVersion === null) {
+        throw ports.createSessionExpiredError();
+      }
+      await ports.guardRekey(ports.deleteKeyEntry(id, { keyVersion }));
     },
 
     markUsed,
@@ -171,7 +188,7 @@ export function createKeyEntryOperations(
     async revealSecret(entry) {
       let value: string;
       try {
-        value = await decryptKeyValue(entry);
+        value = await ports.decryptKeyValue(entry);
       } catch {
         return { ok: false, reason: "decrypt" };
       }
@@ -190,14 +207,14 @@ export function createKeyEntryOperations(
         value = options.revealedValue;
       } else {
         try {
-          value = await decryptKeyValue(entry);
+          value = await ports.decryptKeyValue(entry);
         } catch {
           return { ok: false, reason: "decrypt" };
         }
       }
 
       try {
-        await copyTextWithAutoClear(value, options.clipboardClearMs);
+        await ports.copyTextWithAutoClear(value, options.clipboardClearMs);
       } catch {
         return { ok: false, reason: "clipboard" };
       }
@@ -237,7 +254,7 @@ export function createKeyEntryOperations(
           description,
           tags: entry.tags,
         });
-        const cipher = await encryptKeyValue(entry.id, entry.keyValue);
+        const cipher = await ports.encryptKeyValue(entry.id, entry.keyValue);
         importItems.push({
           id: entry.id,
           ...fields,
@@ -248,8 +265,8 @@ export function createKeyEntryOperations(
         });
       }
 
-      const response = await guardRekey(
-        postKeyEntryImport({ entries: importItems }),
+      const response = await ports.guardRekey(
+        ports.postKeyEntryImport({ entries: importItems }),
       );
 
       return {

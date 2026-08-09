@@ -26,7 +26,10 @@ function withFieldHttpError<T>(fn: () => T): T {
     return fn();
   } catch (error) {
     if (error instanceof KeyEntryFieldError) {
-      throw new HttpInvalidRequest(error.message, error.details);
+      throw new HttpInvalidRequest(
+        error.message,
+        error.details.map(({ field, message }) => ({ field, message })),
+      );
     }
     throw error;
   }

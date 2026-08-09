@@ -1,40 +1,4 @@
-/**
- * Workstream C/D integration contract (SAA-118 / SAA-120):
- *
- * ```ts
- * export type NewKeyEntryInput = {
- *   label: string;
- *   serviceId: string;
- *   customServiceName?: string;
- *   description?: string;
- *   tags: string[];
- *   keyValue: string;
- * };
- *
- * export type EditKeyEntryInput = {
- *   label: string;
- *   serviceId: string;
- *   customServiceName?: string;
- *   description?: string;
- *   tags: string[];
- *   keyValue?: string; // non-empty ⇒ replace
- * };
- *
- * export function useKeyEntries(enabled: boolean): {
- *   status: "loading" | "ready" | "error";
- *   entries: KeyEntry[];
- *   error: string | null;
- *   clipboardClearMs: number;
- *   reload(): Promise<void>;
- *   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
- *   updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
- *   deleteKeyEntry(id: string): Promise<void>;
- *   markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
- * };
- * ```
- */
-
-import type { KeyEntry, KeyEntryUseAction } from "@keypage/shared";
+import type { KeyEntry } from "@keypage/shared";
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, getKeyEntries } from "@/lib/api.js";
@@ -57,7 +21,6 @@ export type UseKeyEntriesResult = {
   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
   updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
   deleteKeyEntry(id: string): Promise<void>;
-  markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
   noteLastUsed(id: string, lastUsedAt: string | null): void;
 };
 
@@ -146,20 +109,6 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     [ops],
   );
 
-  const markUsed = useCallback(
-    async (id: string, action: KeyEntryUseAction): Promise<void> => {
-      const entry = await ops.markUsed(id, action);
-      setEntries((previous) =>
-        previous.map((item) =>
-          item.id === id
-            ? { ...item, lastUsedAt: entry.lastUsedAt }
-            : item,
-        ),
-      );
-    },
-    [ops],
-  );
-
   const noteLastUsed = useCallback(
     (id: string, lastUsedAt: string | null): void => {
       setEntries((previous) =>
@@ -180,7 +129,6 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     createKeyEntry,
     updateKeyEntry,
     deleteKeyEntry,
-    markUsed,
     noteLastUsed,
   };
 }

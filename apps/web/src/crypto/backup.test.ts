@@ -210,6 +210,18 @@ describe("backup crypto", () => {
       "keypage-backup-2026-08-01.json",
     );
   });
+
+  it("accepts blank labels and empty tag strings in backup payloads", () => {
+    assert.throws(
+      () =>
+        validateBackupPayload(
+          samplePayload([
+            sampleEntry({ label: "   ", tags: [""] }),
+          ]),
+        ),
+      BackupFormatError,
+    );
+  });
 });
 
 describe("pickKdfParams", () => {

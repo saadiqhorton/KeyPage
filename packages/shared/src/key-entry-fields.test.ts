@@ -10,6 +10,7 @@ import {
 } from "./key-entries.js";
 import {
   KeyEntryFieldError,
+  collectKeyEntryFieldIssues,
   isKnownServiceId,
   normalizeDescription,
   normalizeKeyEntryWriteFields,
@@ -182,6 +183,61 @@ describe("resolveServiceForImport", () => {
         customServiceName: "Friendly",
       },
     );
+  });
+});
+
+describe("collectKeyEntryFieldIssues", () => {
+  it("returns every issue for multi-bad input", () => {
+    const issues = collectKeyEntryFieldIssues({
+      label: "   ",
+      serviceId: "not-a-service",
+      customServiceName: "nope",
+      description: "x".repeat(KEY_ENTRY_DESCRIPTION_MAX + 1),
+      tags: [
+        "x".repeat(KEY_ENTRY_TAG_MAX + 1),
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+      ],
+    });
+
+    const codes = new Set(issues.map((issue) => issue.code));
+    assert.deepEqual(codes, new Set([
+      "label.required",
+      "description.too_long",
+      "tag.too_long",
+      "tags.too_many",
+      "service.unknown",
+    ]));
+  });
+
+  it("normalizeKeyEntryWriteFields throws with the same details", () => {
+    const input = {
+      label: "   ",
+      serviceId: "not-a-service",
+      description: "x".repeat(KEY_ENTRY_DESCRIPTION_MAX + 1),
+      tags: ["x".repeat(KEY_ENTRY_TAG_MAX + 1)],
+    };
+    const collected = collectKeyEntryFieldIssues(input);
+
+    try {
+      normalizeKeyEntryWriteFields(input);
+      assert.fail("expected KeyEntryFieldError");
+    } catch (error) {
+      assert.ok(error instanceof KeyEntryFieldError);
+      assert.deepEqual(
+        new Set(error.details.map((detail) => detail.code)),
+        new Set(collected.map((detail) => detail.code)),
+      );
+    }
   });
 });
 

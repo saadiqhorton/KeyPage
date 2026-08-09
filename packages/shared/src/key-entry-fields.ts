@@ -7,8 +7,27 @@ import {
 } from "./key-entries.js";
 import { SERVICE_CATALOG, type ServiceId } from "./service-catalog.js";
 
+export type KeyEntryFieldCode =
+  | "label.required"
+  | "label.too_long"
+  | "description.too_long"
+  | "tag.too_long"
+  | "tags.too_many"
+  | "service.unknown"
+  | "custom_service_name.required"
+  | "custom_service_name.too_long"
+  | "custom_service_name.not_allowed";
+
+export type KeyEntryFieldField =
+  | "label"
+  | "description"
+  | "tags"
+  | "serviceId"
+  | "customServiceName";
+
 export type KeyEntryFieldIssue = {
-  field: string;
+  field: KeyEntryFieldField;
+  code: KeyEntryFieldCode;
   message: string;
 };
 
@@ -28,41 +47,179 @@ export function isKnownServiceId(serviceId: string): serviceId is ServiceId {
   return SERVICE_IDS.has(serviceId);
 }
 
-export function normalizeLabel(label: string): string {
+function collectLabelIssues(label: string): KeyEntryFieldIssue[] {
   const trimmed = label.trim();
-  if (trimmed.length === 0 || trimmed.length > KEY_ENTRY_LABEL_MAX) {
-    throw new KeyEntryFieldError("Invalid label", [
+  if (trimmed.length === 0) {
+    return [
       {
         field: "label",
+        code: "label.required",
         message: `must be 1..${KEY_ENTRY_LABEL_MAX} characters after trim`,
       },
-    ]);
+    ];
   }
-  return trimmed;
+  if (trimmed.length > KEY_ENTRY_LABEL_MAX) {
+    return [
+      {
+        field: "label",
+        code: "label.too_long",
+        message: `must be 1..${KEY_ENTRY_LABEL_MAX} characters after trim`,
+      },
+    ];
+  }
+  return [];
+}
+
+function collectDescriptionIssues(
+  description: string | undefined,
+): KeyEntryFieldIssue[] {
+  if (description === undefined) {
+    return [];
+  }
+
+  const trimmed = description.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  if (trimmed.length > KEY_ENTRY_DESCRIPTION_MAX) {
+    return [
+      {
+        field: "description",
+        code: "description.too_long",
+        message: `must be at most ${KEY_ENTRY_DESCRIPTION_MAX} characters`,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function collectTagIssues(tags: string[]): KeyEntryFieldIssue[] {
+  const issues: KeyEntryFieldIssue[] = [];
+  const seen = new Set<string>();
+  let uniqueCount = 0;
+
+  for (const tag of tags) {
+    const trimmed = tag.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+
+    if (trimmed.length > KEY_ENTRY_TAG_MAX) {
+      issues.push({
+        field: "tags",
+        code: "tag.too_long",
+        message: `each tag must be 1..${KEY_ENTRY_TAG_MAX} characters`,
+      });
+      continue;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueCount += 1;
+    if (uniqueCount > KEY_ENTRY_TAGS_MAX) {
+      issues.push({
+        field: "tags",
+        code: "tags.too_many",
+        message: `must contain at most ${KEY_ENTRY_TAGS_MAX} tags`,
+      });
+    }
+  }
+
+  return issues;
+}
+
+function collectServiceIssues(
+  serviceId: string,
+  customServiceName: string | undefined,
+): KeyEntryFieldIssue[] {
+  if (!isKnownServiceId(serviceId)) {
+    return [
+      {
+        field: "serviceId",
+        code: "service.unknown",
+        message: "must be a known service id",
+      },
+    ];
+  }
+
+  if (serviceId === "custom") {
+    const trimmed = customServiceName?.trim() ?? "";
+    if (trimmed.length === 0) {
+      return [
+        {
+          field: "customServiceName",
+          code: "custom_service_name.required",
+          message: "is required when serviceId is custom",
+        },
+      ];
+    }
+
+    if (trimmed.length > KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX) {
+      return [
+        {
+          field: "customServiceName",
+          code: "custom_service_name.too_long",
+          message: `must be at most ${KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX} characters`,
+        },
+      ];
+    }
+
+    return [];
+  }
+
+  if (customServiceName !== undefined && customServiceName.trim().length > 0) {
+    return [
+      {
+        field: "customServiceName",
+        code: "custom_service_name.not_allowed",
+        message: "must not be set unless serviceId is custom",
+      },
+    ];
+  }
+
+  return [];
+}
+
+/** Accumulates every field issue without throwing on the first failure. */
+export function collectKeyEntryFieldIssues(
+  input: KeyEntryWriteFieldsInput,
+): KeyEntryFieldIssue[] {
+  return [
+    ...collectLabelIssues(input.label),
+    ...collectDescriptionIssues(input.description),
+    ...collectTagIssues(input.tags),
+    ...collectServiceIssues(input.serviceId, input.customServiceName),
+  ];
+}
+
+export function normalizeLabel(label: string): string {
+  const issues = collectLabelIssues(label);
+  if (issues.length > 0) {
+    throw new KeyEntryFieldError("Invalid label", issues);
+  }
+  return label.trim();
 }
 
 export function normalizeDescription(
   description: string | undefined,
 ): string | null {
+  const issues = collectDescriptionIssues(description);
+  if (issues.length > 0) {
+    throw new KeyEntryFieldError("Invalid description", issues);
+  }
+
   if (description === undefined) {
     return null;
   }
 
   const trimmed = description.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  if (trimmed.length > KEY_ENTRY_DESCRIPTION_MAX) {
-    throw new KeyEntryFieldError("Invalid description", [
-      {
-        field: "description",
-        message: `must be at most ${KEY_ENTRY_DESCRIPTION_MAX} characters`,
-      },
-    ]);
-  }
-
-  return trimmed;
+  return trimmed.length === 0 ? null : trimmed;
 }
 
 /**
@@ -71,6 +228,11 @@ export function normalizeDescription(
  * {@link KEY_ENTRY_TAGS_MAX}.
  */
 export function normalizeTags(tags: string[]): string[] {
+  const issues = collectTagIssues(tags);
+  if (issues.length > 0) {
+    throw new KeyEntryFieldError("Invalid tags", issues);
+  }
+
   const seen = new Set<string>();
   const normalized: string[] = [];
 
@@ -80,15 +242,6 @@ export function normalizeTags(tags: string[]): string[] {
       continue;
     }
 
-    if (trimmed.length > KEY_ENTRY_TAG_MAX) {
-      throw new KeyEntryFieldError("Invalid tags", [
-        {
-          field: "tags",
-          message: `each tag must be 1..${KEY_ENTRY_TAG_MAX} characters`,
-        },
-      ]);
-    }
-
     const key = trimmed.toLowerCase();
     if (seen.has(key)) {
       continue;
@@ -96,15 +249,6 @@ export function normalizeTags(tags: string[]): string[] {
 
     seen.add(key);
     normalized.push(trimmed);
-
-    if (normalized.length > KEY_ENTRY_TAGS_MAX) {
-      throw new KeyEntryFieldError("Invalid tags", [
-        {
-          field: "tags",
-          message: `must contain at most ${KEY_ENTRY_TAGS_MAX} tags`,
-        },
-      ]);
-    }
   }
 
   return normalized;
@@ -132,6 +276,7 @@ export function normalizeTagsCapped(
       throw new KeyEntryFieldError("Invalid tags", [
         {
           field: "tags",
+          code: "tag.too_long",
           message: `each tag must be 1..${KEY_ENTRY_TAG_MAX} characters`,
         },
       ]);
@@ -156,42 +301,18 @@ export function validateService(
   serviceId: string,
   customServiceName: string | undefined,
 ): { customServiceName: string | null } {
-  if (!isKnownServiceId(serviceId)) {
-    throw new KeyEntryFieldError("Invalid serviceId", [
-      { field: "serviceId", message: "must be a known service id" },
-    ]);
+  const issues = collectServiceIssues(serviceId, customServiceName);
+  if (issues.length > 0) {
+    throw new KeyEntryFieldError(
+      issues[0]!.field === "serviceId"
+        ? "Invalid serviceId"
+        : "Invalid customServiceName",
+      issues,
+    );
   }
 
   if (serviceId === "custom") {
-    const trimmed = customServiceName?.trim() ?? "";
-    if (trimmed.length === 0) {
-      throw new KeyEntryFieldError("Invalid customServiceName", [
-        {
-          field: "customServiceName",
-          message: "is required when serviceId is custom",
-        },
-      ]);
-    }
-
-    if (trimmed.length > KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX) {
-      throw new KeyEntryFieldError("Invalid customServiceName", [
-        {
-          field: "customServiceName",
-          message: `must be at most ${KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX} characters`,
-        },
-      ]);
-    }
-
-    return { customServiceName: trimmed };
-  }
-
-  if (customServiceName !== undefined && customServiceName.trim().length > 0) {
-    throw new KeyEntryFieldError("Invalid customServiceName", [
-      {
-        field: "customServiceName",
-        message: "must not be set unless serviceId is custom",
-      },
-    ]);
+    return { customServiceName: customServiceName!.trim() };
   }
 
   return { customServiceName: null };
@@ -241,7 +362,12 @@ export type KeyEntryWriteFields = {
 export function normalizeKeyEntryWriteFields(
   input: KeyEntryWriteFieldsInput,
 ): KeyEntryWriteFields {
-  const label = normalizeLabel(input.label);
+  const issues = collectKeyEntryFieldIssues(input);
+  if (issues.length > 0) {
+    throw new KeyEntryFieldError("Invalid key entry fields", issues);
+  }
+
+  const label = input.label.trim();
   const description = normalizeDescription(input.description);
   const tags = normalizeTags(input.tags);
   const { customServiceName } = validateService(

@@ -5,9 +5,10 @@ import {
   KEY_ENTRY_LABEL_MAX,
   KEY_ENTRY_TAG_MAX,
   KEY_ENTRY_TAGS_MAX,
-  KeyEntryFieldError,
+  collectKeyEntryFieldIssues,
+  type KeyEntryFieldIssue,
+  type KeyEntryWriteFields,
   normalizeKeyEntryWriteFields,
-  normalizeTags,
 } from "@keypage/shared";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
@@ -62,28 +63,36 @@ const INITIAL_FORM = {
   keyValue: "",
 };
 
-function mapSharedFieldErrors(error: KeyEntryFieldError): FieldErrors {
+function mapSharedFieldErrors(issues: KeyEntryFieldIssue[]): FieldErrors {
   const errors: FieldErrors = {};
-  for (const detail of error.details) {
-    switch (detail.field) {
-      case "label":
+  for (const detail of issues) {
+    switch (detail.code) {
+      case "label.required":
         errors.label = "Label is required.";
         break;
-      case "serviceId":
+      case "label.too_long":
+        errors.label = `Label must be at most ${KEY_ENTRY_LABEL_MAX} characters.`;
+        break;
+      case "service.unknown":
         errors.service = "Choose a service.";
         break;
-      case "customServiceName":
-        errors.customServiceName = detail.message.includes("at most")
-          ? `Custom service name must be at most ${KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX} characters.`
-          : "Custom service name is required.";
+      case "custom_service_name.required":
+        errors.customServiceName = "Custom service name is required.";
         break;
-      case "description":
+      case "custom_service_name.too_long":
+        errors.customServiceName = `Custom service name must be at most ${KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX} characters.`;
+        break;
+      case "custom_service_name.not_allowed":
+        errors.customServiceName = "Custom service name is only allowed for custom services.";
+        break;
+      case "description.too_long":
         errors.description = `Description must be at most ${KEY_ENTRY_DESCRIPTION_MAX} characters.`;
         break;
-      case "tags":
-        errors.tags = detail.message.includes("at most")
-          ? `At most ${KEY_ENTRY_TAGS_MAX} tags allowed.`
-          : `Each tag must be 1..${KEY_ENTRY_TAG_MAX} characters.`;
+      case "tag.too_long":
+        errors.tags = `Each tag must be 1..${KEY_ENTRY_TAG_MAX} characters.`;
+        break;
+      case "tags.too_many":
+        errors.tags = `At most ${KEY_ENTRY_TAGS_MAX} tags allowed.`;
         break;
       default:
         break;
@@ -102,7 +111,7 @@ function validateForm(
   tags: string[],
   tagDraft: string,
   keyValue: string,
-): FieldErrors {
+): { errors: FieldErrors; fields: KeyEntryWriteFields | null } {
   const errors: FieldErrors = {};
 
   const draftIssue = tagDraftError(tagDraft);
@@ -110,27 +119,16 @@ function validateForm(
     errors.tags = draftIssue;
   }
 
-  try {
-    normalizeKeyEntryWriteFields({
-      label,
-      serviceId,
-      customServiceName: serviceId === "custom" ? customServiceName : undefined,
-      description: description.trim().length > 0 ? description : undefined,
-      tags,
-    });
-  } catch (error) {
-    if (error instanceof KeyEntryFieldError) {
-      Object.assign(errors, mapSharedFieldErrors(error));
-      const trimmedLabel = label.trim();
-      if (errors.label) {
-        errors.label =
-          trimmedLabel.length === 0
-            ? "Label is required."
-            : `Label must be at most ${KEY_ENTRY_LABEL_MAX} characters.`;
-      }
-    } else {
-      throw error;
-    }
+  const issues = collectKeyEntryFieldIssues({
+    label,
+    serviceId,
+    customServiceName: serviceId === "custom" ? customServiceName : undefined,
+    description: description.trim().length > 0 ? description : undefined,
+    tags,
+  });
+
+  if (issues.length > 0) {
+    Object.assign(errors, mapSharedFieldErrors(issues));
   }
 
   if (mode === "create" && keyValue.trim().length === 0) {
@@ -141,7 +139,19 @@ function validateForm(
     errors.keyValue = "API Key value is required.";
   }
 
-  return errors;
+  if (Object.keys(errors).length > 0) {
+    return { errors, fields: null };
+  }
+
+  const fields = normalizeKeyEntryWriteFields({
+    label,
+    serviceId,
+    customServiceName: serviceId === "custom" ? customServiceName : undefined,
+    description: description.trim().length > 0 ? description : undefined,
+    tags,
+  });
+
+  return { errors, fields };
 }
 
 function seedFromEntry(entry: KeyEntry) {
@@ -286,7 +296,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     event.preventDefault();
     setSubmitError(null);
 
-    const errors = validateForm(
+    const { errors, fields } = validateForm(
       mode,
       prefillState,
       label,
@@ -298,18 +308,10 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
       keyValue,
     );
 
-    if (Object.keys(errors).length > 0) {
+    if (Object.keys(errors).length > 0 || fields === null) {
       setFieldErrors(errors);
       return;
     }
-
-    const fields = normalizeKeyEntryWriteFields({
-      label,
-      serviceId,
-      customServiceName: serviceId === "custom" ? customServiceName : undefined,
-      description: description.trim().length > 0 ? description : undefined,
-      tags: normalizeTags(tags),
-    });
 
     setFieldErrors({});
     setSubmitting(true);
