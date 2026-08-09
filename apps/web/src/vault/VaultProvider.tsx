@@ -16,12 +16,17 @@ import {
 import { zeroize } from "@/crypto/provider.js";
 import { ApiError, getVaultStatus, postRecoveryClaim, postVaultLock, postVaultLogin, postVaultSetup } from "@/lib/api.js";
 import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
-import { normalizeRecoveryCode, type KeyEntry } from "@keypage/shared";
+import { normalizeRecoveryCode } from "@keypage/shared";
 
 import {
   completeVaultRecovery,
   formatPasswordError,
 } from "./master-password.js";
+import {
+  attachRecoverySessionToKeyClear,
+  recoverySession,
+  recoveryWizardAfterKeyCleared,
+} from "./recovery-session.js";
 import {
   VaultContext,
   type LockReason,
@@ -34,21 +39,11 @@ import {
 import {
   broadcastLock,
   clearEncryptionKey,
-  clearRecoveredMasterKey,
   getEncryptionKey,
+  onKeyCleared,
   setEncryptionKey,
-  setRecoveredMasterKey,
   subscribeLockBroadcast,
-  takeRecoveredMasterKey,
 } from "./session-keys.js";
-
-let recoveryTicket: string | null = null;
-let recoveryEntries: KeyEntry[] = [];
-
-function clearRecoveryTicket(): void {
-  recoveryTicket = null;
-  recoveryEntries = [];
-}
 
 function isUnlocked(): boolean {
   return getEncryptionKey() !== null;
@@ -135,16 +130,21 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
     void refreshStatus();
 
-    const unsubscribe = subscribeLockBroadcast((reason) => {
+    const unsubscribeLock = subscribeLockBroadcast((reason) => {
       lockReasonRef.current = reason as LockReason;
       void refreshStatus();
+    });
+    const unsubscribeRecoveryClear = attachRecoverySessionToKeyClear();
+    const unsubscribeWizardReset = onKeyCleared(() => {
+      setWizard((w) => recoveryWizardAfterKeyCleared(w));
     });
 
     return () => {
       mountedRef.current = false;
-      unsubscribe();
-      clearRecoveredMasterKey();
-      clearRecoveryTicket();
+      unsubscribeLock();
+      unsubscribeRecoveryClear();
+      unsubscribeWizardReset();
+      recoverySession.clear();
     };
   }, [refreshStatus]);
 
@@ -214,8 +214,6 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
   const lock = useCallback(async (reason: LockReason) => {
     clearEncryptionKey();
-    clearRecoveredMasterKey();
-    clearRecoveryTicket();
     lockReasonRef.current = reason;
     broadcastLock(reason);
     void postVaultLock().catch(() => {});
@@ -224,8 +222,6 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
   const lockLocal = useCallback(async (reason: LockReason) => {
     clearEncryptionKey();
-    clearRecoveredMasterKey();
-    clearRecoveryTicket();
     lockReasonRef.current = reason;
     await refreshStatus();
   }, [refreshStatus]);
@@ -243,6 +239,8 @@ export function VaultProvider({ children }: VaultProviderProps) {
       });
     }
 
+    recoverySession.clear();
+
     setState({ phase: "working", label: "Verifying recovery code…" });
     try {
       const lookupHash = await computeLookupHash(normalized);
@@ -257,9 +255,11 @@ export function VaultProvider({ children }: VaultProviderProps) {
         },
         normalized,
       );
-      setRecoveredMasterKey(masterKey);
-      recoveryTicket = claim.recoveryTicket;
-      recoveryEntries = claim.entries;
+      recoverySession.start({
+        ticket: claim.recoveryTicket,
+        entries: claim.entries,
+        masterKey,
+      });
       setWizard({ kind: "recovery", step: 2, codes: null });
       await refreshStatus();
     } catch (error) {
@@ -269,18 +269,8 @@ export function VaultProvider({ children }: VaultProviderProps) {
   }, [refreshStatus]);
 
   const completeRecovery = useCallback(async (newPassword: string) => {
-    if (!recoveryTicket) {
-      throw new ApiError({
-        error: "invalid_recovery_ticket",
-        message: "Recovery session expired. Start again with a recovery code.",
-      });
-    }
-
-    const ticket = recoveryTicket;
-    const entries = recoveryEntries;
-    const recoveredMasterKey = takeRecoveredMasterKey();
-    if (!recoveredMasterKey) {
-      clearRecoveryTicket();
+    const attempt = recoverySession.beginComplete();
+    if (!attempt) {
       throw new ApiError({
         error: "invalid_recovery_ticket",
         message: "Recovery session expired. Start again with a recovery code.",
@@ -290,28 +280,32 @@ export function VaultProvider({ children }: VaultProviderProps) {
     setState({ phase: "working", label: "Setting up your new Master Password…" });
     try {
       const { codes, session } = await completeVaultRecovery(
-        ticket,
-        recoveredMasterKey,
-        entries,
+        attempt.ticket,
+        attempt.masterKey,
+        attempt.entries,
         newPassword,
         (label) => setState({ phase: "working", label }),
       );
 
-      clearRecoveryTicket();
+      const accepted = attempt.succeeded();
+      // Park codes before any key clear — step 3 survives recoveryWizardAfterKeyCleared.
       setWizard({ kind: "recovery", step: 3, codes });
+      if (!accepted) {
+        // Reset may have landed on the server, but a concurrent lock invalidated
+        // this attempt. Drop the key completeVaultRecovery installed and stay locked.
+        clearEncryptionKey();
+        await refreshStatus();
+        return;
+      }
       lockReasonRef.current = "initial";
       setState({
         phase: "unlocked",
         idleTimeoutSeconds: session.idleTimeoutSeconds,
       });
     } catch (error) {
-      // Ticket + recovered key kept when possible so the user can retry without
-      // burning another recovery code (claim already consumed one).
-      if (recoveredMasterKey.length > 0) {
-        setRecoveredMasterKey(recoveredMasterKey);
-      }
-      recoveryTicket = ticket;
-      recoveryEntries = entries;
+      // If the server already accepted the reset (e.g. reEncrypted mismatch),
+      // failed() may restore a consumed ticket — server rejects on retry.
+      attempt.failed();
       await refreshStatus();
       if (error instanceof ApiError) {
         throw error;
@@ -343,8 +337,9 @@ export function VaultProvider({ children }: VaultProviderProps) {
   }, []);
 
   const cancelRecovery = useCallback(() => {
-    clearRecoveredMasterKey();
-    clearRecoveryTicket();
+    // Clear the recovery-session owner directly (do not rely on encryption-key
+    // listeners — mid-recovery there is usually no encryption key held).
+    recoverySession.clear();
     setWizard({ kind: "none" });
     void refreshStatus();
   }, [refreshStatus]);

@@ -5,7 +5,8 @@
  * - Never write key material to localStorage, sessionStorage, IndexedDB, cookies, URLs, or React state.
  * - On webcrypto, the CryptoKey is non-extractable; dropping the reference is sufficient.
  * - On fallback, clearEncryptionKey zeroizes raw bytes before dropping the reference.
- * - masterKey and authKeyBytes are zeroized by callers immediately after use.
+ * - masterKey and authKeyBytes are zeroized by callers immediately after use
+ *   (recovery master key lifetime is managed by `recovery-session.ts`).
  * - Cross-tab: BroadcastChannel("keypage-lock") clears keys in every tab on lock.
  */
 
@@ -33,7 +34,6 @@ let encryptionKey: AesKey | null = null;
  * the server rejects ciphertext whose declared version is no longer current.
  */
 let encryptionKeyVersion: number | null = null;
-let recoveredMasterKey: Uint8Array | null = null;
 
 const keyClearedListeners = new Set<() => void>();
 
@@ -72,23 +72,6 @@ export function clearEncryptionKey(): void {
 export function onKeyCleared(listener: () => void): () => void {
   keyClearedListeners.add(listener);
   return () => keyClearedListeners.delete(listener);
-}
-
-export function setRecoveredMasterKey(key: Uint8Array): void {
-  recoveredMasterKey = key;
-}
-
-export function takeRecoveredMasterKey(): Uint8Array | null {
-  const key = recoveredMasterKey;
-  recoveredMasterKey = null;
-  return key;
-}
-
-export function clearRecoveredMasterKey(): void {
-  if (recoveredMasterKey) {
-    zeroize(recoveredMasterKey);
-    recoveredMasterKey = null;
-  }
 }
 
 export function broadcastLock(reason?: string): void {
