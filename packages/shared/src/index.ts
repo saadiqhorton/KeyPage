@@ -4,4 +4,5 @@ export * from "./health.js";
 export * from "./vault.js";
 export * from "./recovery-code.js";
 export * from "./key-entries.js";
+export * from "./key-entry-fields.js";
 export * from "./backup.js";

@@ -27,13 +27,10 @@ import {
   updateKeyEntry,
 } from "../keys/key-entry-repo.js";
 import {
-  normalizeDescription,
   normalizeImportTimestamp,
-  normalizeLabel,
-  normalizeTags,
+  normalizeKeyEntryWriteFields,
   validateCipherInput,
   validateKeyEntryId,
-  validateService,
 } from "../keys/validate.js";
 import { assertKeyEntryMutationsAllowed } from "../auth/vault-repo.js";
 import { checkOrigin } from "../plugins/check-origin.js";
@@ -102,13 +99,13 @@ function validateImportEntry(
 ): ValidatedImportEntry {
   return withEntryFieldPrefix(index, () => {
     validateKeyEntryId(entry.id);
-    const label = normalizeLabel(entry.label);
-    const description = normalizeDescription(entry.description);
-    const tags = normalizeTags(entry.tags);
-    const { customServiceName } = validateService(
-      entry.serviceId,
-      entry.customServiceName,
-    );
+    const fields = normalizeKeyEntryWriteFields({
+      label: entry.label,
+      serviceId: entry.serviceId,
+      customServiceName: entry.customServiceName,
+      description: entry.description,
+      tags: entry.tags,
+    });
     validateCipherInput(entry.cipher);
 
     const createdAt = normalizeImportTimestamp(entry.createdAt, "createdAt");
@@ -117,11 +114,11 @@ function validateImportEntry(
 
     return {
       id: entry.id,
-      label,
-      customServiceName,
-      description,
-      tags,
-      serviceId: entry.serviceId,
+      label: fields.label,
+      customServiceName: fields.customServiceName,
+      description: fields.description,
+      tags: fields.tags,
+      serviceId: fields.serviceId,
       cipher: entry.cipher,
       ...(createdAt !== null ? { createdAt } : {}),
       ...(updatedAt !== null ? { updatedAt } : {}),
@@ -188,13 +185,13 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       const body = request.body as KeyEntryCreateRequest;
 
       validateKeyEntryId(body.id);
-      const label = normalizeLabel(body.label);
-      const description = normalizeDescription(body.description);
-      const tags = normalizeTags(body.tags);
-      const { customServiceName } = validateService(
-        body.serviceId,
-        body.customServiceName,
-      );
+      const fields = normalizeKeyEntryWriteFields({
+        label: body.label,
+        serviceId: body.serviceId,
+        customServiceName: body.customServiceName,
+        description: body.description,
+        tags: body.tags,
+      });
       validateCipherInput(body.cipher);
 
       let entry;
@@ -206,11 +203,11 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
           assertKeyEntryMutationsAllowed(db, sessionId);
           const created = insertKeyEntry(db, {
             id: body.id,
-            label,
-            serviceId: body.serviceId,
-            customServiceName,
-            description,
-            tags,
+            label: fields.label,
+            serviceId: fields.serviceId,
+            customServiceName: fields.customServiceName,
+            description: fields.description,
+            tags: fields.tags,
             cipher: body.cipher,
           });
           recordActivityEvent(db, {
@@ -402,13 +399,13 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       validateKeyEntryId(id);
 
       const body = request.body as KeyEntryUpdateRequest;
-      const label = normalizeLabel(body.label);
-      const description = normalizeDescription(body.description);
-      const tags = normalizeTags(body.tags);
-      const { customServiceName } = validateService(
-        body.serviceId,
-        body.customServiceName,
-      );
+      const fields = normalizeKeyEntryWriteFields({
+        label: body.label,
+        serviceId: body.serviceId,
+        customServiceName: body.customServiceName,
+        description: body.description,
+        tags: body.tags,
+      });
       if (body.cipher !== undefined) {
         validateCipherInput(body.cipher);
       }
@@ -421,11 +418,11 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
         const updated = updateKeyEntry(db, {
           id,
           keyVersion: body.keyVersion,
-          label,
-          serviceId: body.serviceId,
-          customServiceName,
-          description,
-          tags,
+          label: fields.label,
+          serviceId: fields.serviceId,
+          customServiceName: fields.customServiceName,
+          description: fields.description,
+          tags: fields.tags,
           ...(body.cipher !== undefined ? { cipher: body.cipher } : {}),
           updatedAt: occurredAt,
         });

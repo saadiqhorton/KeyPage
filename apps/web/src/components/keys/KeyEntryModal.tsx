@@ -5,6 +5,10 @@ import {
   KEY_ENTRY_LABEL_MAX,
   KEY_ENTRY_TAG_MAX,
   KEY_ENTRY_TAGS_MAX,
+  collectKeyEntryFieldIssues,
+  type KeyEntryFieldIssue,
+  type KeyEntryWriteFields,
+  normalizeKeyEntryWriteFields,
 } from "@keypage/shared";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
@@ -13,13 +17,16 @@ import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { Modal } from "@/components/ui/Modal";
 import { PasswordField } from "@/components/ui/PasswordField";
-import { TagInput } from "@/components/ui/TagInput";
+import { TagInput, tagDraftError } from "@/components/ui/TagInput";
 import { TextArea } from "@/components/ui/TextArea";
 import { TextField } from "@/components/ui/TextField";
 import { decryptKeyValue } from "@/crypto/key-entry.js";
 import { ApiError } from "@/lib/api";
 import { onKeyCleared } from "@/vault/session-keys.js";
-import type { EditKeyEntryInput, NewKeyEntryInput } from "@/vault/useKeyEntries";
+import type {
+  EditKeyEntryInput,
+  NewKeyEntryInput,
+} from "@/vault/keyEntryOperations";
 
 type KeyEntryModalProps =
   | {
@@ -56,23 +63,42 @@ const INITIAL_FORM = {
   keyValue: "",
 };
 
-function normalizeTags(tags: string[]): string[] {
-  const seen = new Set<string>();
-  const next: string[] = [];
-
-  for (const tag of tags) {
-    const trimmed = tag.trim();
-    if (!trimmed) continue;
-
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    next.push(trimmed);
-    if (next.length >= KEY_ENTRY_TAGS_MAX) break;
+function mapSharedFieldErrors(issues: KeyEntryFieldIssue[]): FieldErrors {
+  const errors: FieldErrors = {};
+  for (const detail of issues) {
+    switch (detail.code) {
+      case "label.required":
+        errors.label = "Label is required.";
+        break;
+      case "label.too_long":
+        errors.label = `Label must be at most ${KEY_ENTRY_LABEL_MAX} characters.`;
+        break;
+      case "service.unknown":
+        errors.service = "Choose a service.";
+        break;
+      case "custom_service_name.required":
+        errors.customServiceName = "Custom service name is required.";
+        break;
+      case "custom_service_name.too_long":
+        errors.customServiceName = `Custom service name must be at most ${KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX} characters.`;
+        break;
+      case "custom_service_name.not_allowed":
+        errors.customServiceName = "Custom service name is only allowed for custom services.";
+        break;
+      case "description.too_long":
+        errors.description = `Description must be at most ${KEY_ENTRY_DESCRIPTION_MAX} characters.`;
+        break;
+      case "tag.too_long":
+        errors.tags = `Each tag must be 1..${KEY_ENTRY_TAG_MAX} characters.`;
+        break;
+      case "tags.too_many":
+        errors.tags = `At most ${KEY_ENTRY_TAGS_MAX} tags allowed.`;
+        break;
+      default:
+        break;
+    }
   }
-
-  return next;
+  return errors;
 }
 
 function validateForm(
@@ -83,41 +109,26 @@ function validateForm(
   customServiceName: string,
   description: string,
   tags: string[],
+  tagDraft: string,
   keyValue: string,
-): FieldErrors {
+): { errors: FieldErrors; fields: KeyEntryWriteFields | null } {
   const errors: FieldErrors = {};
-  const trimmedLabel = label.trim();
 
-  if (trimmedLabel.length === 0) {
-    errors.label = "Label is required.";
-  } else if (trimmedLabel.length > KEY_ENTRY_LABEL_MAX) {
-    errors.label = `Label must be at most ${KEY_ENTRY_LABEL_MAX} characters.`;
+  const draftIssue = tagDraftError(tagDraft);
+  if (draftIssue) {
+    errors.tags = draftIssue;
   }
 
-  if (serviceId === "custom") {
-    const trimmedCustom = customServiceName.trim();
-    if (trimmedCustom.length === 0) {
-      errors.customServiceName = "Custom service name is required.";
-    } else if (trimmedCustom.length > KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX) {
-      errors.customServiceName = `Custom service name must be at most ${KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX} characters.`;
-    }
-  }
+  const issues = collectKeyEntryFieldIssues({
+    label,
+    serviceId,
+    customServiceName: serviceId === "custom" ? customServiceName : undefined,
+    description: description.trim().length > 0 ? description : undefined,
+    tags,
+  });
 
-  const trimmedDescription = description.trim();
-  if (trimmedDescription.length > KEY_ENTRY_DESCRIPTION_MAX) {
-    errors.description = `Description must be at most ${KEY_ENTRY_DESCRIPTION_MAX} characters.`;
-  }
-
-  for (const tag of tags) {
-    const trimmed = tag.trim();
-    if (trimmed.length === 0 || trimmed.length > KEY_ENTRY_TAG_MAX) {
-      errors.tags = `Each tag must be 1..${KEY_ENTRY_TAG_MAX} characters.`;
-      break;
-    }
-  }
-
-  if (tags.length > KEY_ENTRY_TAGS_MAX) {
-    errors.tags = `At most ${KEY_ENTRY_TAGS_MAX} tags allowed.`;
+  if (issues.length > 0) {
+    Object.assign(errors, mapSharedFieldErrors(issues));
   }
 
   if (mode === "create" && keyValue.trim().length === 0) {
@@ -128,7 +139,19 @@ function validateForm(
     errors.keyValue = "API Key value is required.";
   }
 
-  return errors;
+  if (Object.keys(errors).length > 0) {
+    return { errors, fields: null };
+  }
+
+  const fields = normalizeKeyEntryWriteFields({
+    label,
+    serviceId,
+    customServiceName: serviceId === "custom" ? customServiceName : undefined,
+    description: description.trim().length > 0 ? description : undefined,
+    tags,
+  });
+
+  return { errors, fields };
 }
 
 function seedFromEntry(entry: KeyEntry) {
@@ -165,6 +188,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
   );
   const [description, setDescription] = useState(INITIAL_FORM.description);
   const [tags, setTags] = useState<string[]>(INITIAL_FORM.tags);
+  const [tagDraft, setTagDraft] = useState("");
   const [keyValue, setKeyValue] = useState(INITIAL_FORM.keyValue);
   const [prefillState, setPrefillState] = useState<PrefillState>("idle");
   const [decryptWarning, setDecryptWarning] = useState(false);
@@ -204,6 +228,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     setFieldErrors({});
     setSubmitError(null);
     setSubmitting(false);
+    setTagDraft("");
 
     if (mode === "create") {
       setLabel(INITIAL_FORM.label);
@@ -271,19 +296,19 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     event.preventDefault();
     setSubmitError(null);
 
-    const normalizedTags = normalizeTags(tags);
-    const errors = validateForm(
+    const { errors, fields } = validateForm(
       mode,
       prefillState,
       label,
       serviceId,
       customServiceName,
       description,
-      normalizedTags,
+      tags,
+      tagDraft,
       keyValue,
     );
 
-    if (Object.keys(errors).length > 0) {
+    if (Object.keys(errors).length > 0 || fields === null) {
       setFieldErrors(errors);
       return;
     }
@@ -294,37 +319,31 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     try {
       if (mode === "create") {
         const values: NewKeyEntryInput = {
-          label: label.trim(),
-          serviceId,
-          tags: normalizedTags,
+          label: fields.label,
+          serviceId: fields.serviceId,
+          tags: fields.tags,
           keyValue: keyValue.trim(),
+          ...(fields.customServiceName !== null
+            ? { customServiceName: fields.customServiceName }
+            : {}),
+          ...(fields.description !== null
+            ? { description: fields.description }
+            : {}),
         };
-
-        if (serviceId === "custom") {
-          values.customServiceName = customServiceName.trim();
-        }
-
-        const trimmedDescription = description.trim();
-        if (trimmedDescription.length > 0) {
-          values.description = trimmedDescription;
-        }
 
         await props.onSubmit(values);
       } else {
         const values: EditKeyEntryInput = {
-          label: label.trim(),
-          serviceId,
-          tags: normalizedTags,
+          label: fields.label,
+          serviceId: fields.serviceId,
+          tags: fields.tags,
+          ...(fields.customServiceName !== null
+            ? { customServiceName: fields.customServiceName }
+            : {}),
+          ...(fields.description !== null
+            ? { description: fields.description }
+            : {}),
         };
-
-        if (serviceId === "custom") {
-          values.customServiceName = customServiceName.trim();
-        }
-
-        const trimmedDescription = description.trim();
-        if (trimmedDescription.length > 0) {
-          values.description = trimmedDescription;
-        }
 
         const trimmedKeyValue = keyValue.trim();
         if (prefillState === "ready") {
@@ -437,6 +456,8 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
             label="Tags"
             value={tags}
             onChange={setTags}
+            draft={tagDraft}
+            onDraftChange={setTagDraft}
             max={KEY_ENTRY_TAGS_MAX}
             disabled={submitting}
             error={fieldErrors.tags}

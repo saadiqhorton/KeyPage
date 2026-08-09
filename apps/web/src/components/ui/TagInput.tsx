@@ -1,9 +1,14 @@
 import {
+  KEY_ENTRY_TAG_MAX,
+  KEY_ENTRY_TAGS_MAX,
+  KeyEntryFieldError,
+  normalizeTagsCapped,
+} from "@keypage/shared";
+import {
   type KeyboardEvent,
   type ReactNode,
   useId,
   useRef,
-  useState,
 } from "react";
 
 import { cn } from "@/lib/cn";
@@ -12,35 +17,21 @@ type TagInputProps = {
   label: string;
   value: string[];
   onChange(next: string[]): void;
+  /** Uncommitted draft text — controlled so parents can block submit on invalid drafts. */
+  draft: string;
+  onDraftChange(next: string): void;
   max?: number;
   hint?: ReactNode;
   error?: ReactNode;
   disabled?: boolean;
 };
 
-function normalizeTags(raw: string[], max?: number): string[] {
-  const seen = new Set<string>();
-  const next: string[] = [];
-
-  for (const tag of raw) {
-    const trimmed = tag.trim();
-    if (!trimmed) continue;
-
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    next.push(trimmed);
-    if (max !== undefined && next.length >= max) break;
-  }
-
-  return next;
-}
-
 export function TagInput({
   label,
   value,
   onChange,
+  draft,
+  onDraftChange,
   max,
   hint,
   error,
@@ -48,20 +39,37 @@ export function TagInput({
 }: TagInputProps) {
   const fieldId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState("");
   const errorId = error ? `${fieldId}-error` : undefined;
   const hintId = hint ? `${fieldId}-hint` : undefined;
   const atMax = max !== undefined && value.length >= max;
 
-  function commitDraft(raw: string) {
+  function commitDraft(raw: string): boolean {
     const trimmed = raw.trim();
-    if (!trimmed || atMax) {
-      setDraft("");
-      return;
+    if (!trimmed) {
+      onDraftChange("");
+      return true;
+    }
+    if (atMax) {
+      onDraftChange("");
+      return true;
     }
 
-    onChange(normalizeTags([...value, trimmed], max));
-    setDraft("");
+    if (trimmed.length > KEY_ENTRY_TAG_MAX) {
+      return false;
+    }
+
+    try {
+      onChange(
+        normalizeTagsCapped([...value, trimmed], max ?? KEY_ENTRY_TAGS_MAX),
+      );
+      onDraftChange("");
+      return true;
+    } catch (err) {
+      if (err instanceof KeyEntryFieldError) {
+        return false;
+      }
+      throw err;
+    }
   }
 
   function removeTag(index: number) {
@@ -132,9 +140,11 @@ export function TagInput({
             "placeholder:text-muted/70",
             "disabled:cursor-not-allowed",
           )}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={handleKeyDown}
-          onBlur={() => commitDraft(draft)}
+          onBlur={() => {
+            void commitDraft(draft);
+          }}
         />
       </div>
       {hint ? (
@@ -149,4 +159,16 @@ export function TagInput({
       ) : null}
     </div>
   );
+}
+
+/** Pure check used by forms that own the TagInput draft. */
+export function tagDraftError(draft: string): string | null {
+  const trimmed = draft.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  if (trimmed.length > KEY_ENTRY_TAG_MAX) {
+    return `Each tag must be 1..${KEY_ENTRY_TAG_MAX} characters.`;
+  }
+  return null;
 }

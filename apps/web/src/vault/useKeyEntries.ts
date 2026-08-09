@@ -1,72 +1,16 @@
-/**
- * Workstream C/D integration contract (SAA-118 / SAA-120):
- *
- * ```ts
- * export type NewKeyEntryInput = {
- *   label: string;
- *   serviceId: string;
- *   customServiceName?: string;
- *   description?: string;
- *   tags: string[];
- *   keyValue: string;
- * };
- *
- * export type EditKeyEntryInput = {
- *   label: string;
- *   serviceId: string;
- *   customServiceName?: string;
- *   description?: string;
- *   tags: string[];
- *   keyValue?: string; // non-empty ⇒ replace
- * };
- *
- * export function useKeyEntries(enabled: boolean): {
- *   status: "loading" | "ready" | "error";
- *   entries: KeyEntry[];
- *   error: string | null;
- *   clipboardClearMs: number;
- *   reload(): Promise<void>;
- *   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
- *   updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
- *   deleteKeyEntry(id: string): Promise<void>;
- *   markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
- * };
- * ```
- */
-
-import type { KeyEntry, KeyEntryUseAction } from "@keypage/shared";
+import type { KeyEntry } from "@keypage/shared";
 import { useCallback, useEffect, useState } from "react";
 
-import { encryptKeyValue, newKeyEntryId } from "@/crypto/key-entry.js";
-import {
-  ApiError,
-  deleteKeyEntry as apiDeleteKeyEntry,
-  getKeyEntries,
-  patchKeyEntry,
-  postKeyEntry,
-  postKeyEntryUse,
-} from "@/lib/api.js";
+import { ApiError, getKeyEntries } from "@/lib/api.js";
 import { resolveClipboardClearMs } from "@/lib/clipboard-timeout.js";
-import { getEncryptionKeyVersion, onKeyCleared } from "@/vault/session-keys.js";
-import { useRekeyLock } from "@/vault/useRekeyLock.js";
+import { onKeyCleared } from "@/vault/session-keys.js";
+import type {
+  EditKeyEntryInput,
+  NewKeyEntryInput,
+} from "@/vault/keyEntryOperations.js";
+import { useKeyEntryOperations } from "@/vault/useKeyEntryOperations.js";
 
-export type NewKeyEntryInput = {
-  label: string;
-  serviceId: string;
-  customServiceName?: string;
-  description?: string;
-  tags: string[];
-  keyValue: string;
-};
-
-export type EditKeyEntryInput = {
-  label: string;
-  serviceId: string;
-  customServiceName?: string;
-  description?: string;
-  tags: string[];
-  keyValue?: string;
-};
+export type { EditKeyEntryInput, NewKeyEntryInput };
 
 export type UseKeyEntriesResult = {
   status: "loading" | "ready" | "error";
@@ -77,11 +21,11 @@ export type UseKeyEntriesResult = {
   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
   updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
   deleteKeyEntry(id: string): Promise<void>;
-  markUsed(id: string, action: KeyEntryUseAction): Promise<void>;
+  noteLastUsed(id: string, lastUsedAt: string | null): void;
 };
 
 export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
-  const guardRekey = useRekeyLock();
+  const ops = useKeyEntryOperations();
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -139,80 +83,37 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
 
   const createKeyEntry = useCallback(
     async (input: NewKeyEntryInput): Promise<KeyEntry> => {
-      const id = newKeyEntryId();
-      const cipher = await encryptKeyValue(id, input.keyValue);
-      const response = await guardRekey(
-        postKeyEntry({
-          id,
-          label: input.label,
-          serviceId: input.serviceId,
-          customServiceName: input.customServiceName,
-          description: input.description,
-          tags: input.tags,
-          cipher,
-        }),
-      );
-      setEntries((previous) => [response.entry, ...previous]);
-      return response.entry;
+      const entry = await ops.create(input);
+      setEntries((previous) => [entry, ...previous]);
+      return entry;
     },
-    [guardRekey],
+    [ops],
   );
 
   const updateKeyEntry = useCallback(
     async (id: string, input: EditKeyEntryInput): Promise<KeyEntry> => {
-      const keyVersion = getEncryptionKeyVersion();
-      if (keyVersion === null) {
-        throw new ApiError({
-          error: "session_expired",
-          message: "Vault is locked.",
-        });
-      }
-
-      const body: Parameters<typeof patchKeyEntry>[1] = {
-        keyVersion,
-        label: input.label,
-        serviceId: input.serviceId,
-        customServiceName: input.customServiceName,
-        description: input.description,
-        tags: input.tags,
-      };
-
-      if (input.keyValue && input.keyValue.length > 0) {
-        body.cipher = await encryptKeyValue(id, input.keyValue);
-      }
-
-      const response = await guardRekey(patchKeyEntry(id, body));
+      const entry = await ops.update(id, input);
       setEntries((previous) =>
-        previous.map((entry) =>
-          entry.id === id ? response.entry : entry,
-        ),
+        previous.map((item) => (item.id === id ? entry : item)),
       );
-      return response.entry;
+      return entry;
     },
-    [guardRekey],
+    [ops],
   );
 
-  const deleteKeyEntry = useCallback(async (id: string): Promise<void> => {
-    const keyVersion = getEncryptionKeyVersion();
-    if (keyVersion === null) {
-      throw new ApiError({
-        error: "session_expired",
-        message: "Vault is locked.",
-      });
-    }
+  const deleteKeyEntry = useCallback(
+    async (id: string): Promise<void> => {
+      await ops.remove(id);
+      setEntries((previous) => previous.filter((entry) => entry.id !== id));
+    },
+    [ops],
+  );
 
-    await guardRekey(apiDeleteKeyEntry(id, { keyVersion }));
-    setEntries((previous) => previous.filter((entry) => entry.id !== id));
-  }, [guardRekey]);
-
-  const markUsed = useCallback(
-    async (id: string, action: KeyEntryUseAction): Promise<void> => {
-      const response = await postKeyEntryUse(id, action);
+  const noteLastUsed = useCallback(
+    (id: string, lastUsedAt: string | null): void => {
       setEntries((previous) =>
-        previous.map((entry) =>
-          entry.id === id
-            ? { ...entry, lastUsedAt: response.entry.lastUsedAt }
-            : entry,
+        previous.map((item) =>
+          item.id === id ? { ...item, lastUsedAt } : item,
         ),
       );
     },
@@ -228,6 +129,6 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     createKeyEntry,
     updateKeyEntry,
     deleteKeyEntry,
-    markUsed,
+    noteLastUsed,
   };
 }

@@ -1,8 +1,6 @@
 import {
   BACKUP_FORMAT_VERSION,
-  SERVICE_CATALOG,
   type BackupEntry,
-  type KeyEntryImportItem,
 } from "@keypage/shared";
 import { useCallback, useState } from "react";
 
@@ -15,37 +13,14 @@ import {
   serializeBackupFile,
 } from "@/crypto/backup.js";
 import { deriveVaultKeys } from "@/crypto/derive.js";
-import {
-  decryptKeyValueWith,
-  encryptKeyValue,
-} from "@/crypto/key-entry.js";
+import { decryptKeyValueWith } from "@/crypto/key-entry.js";
 import { zeroize } from "@/crypto/provider.js";
-import { getKeyEntries, getVaultStatus, postKeyEntryImport } from "@/lib/api.js";
+import { getKeyEntries, getVaultStatus } from "@/lib/api.js";
 import { downloadTextFile } from "@/lib/download.js";
-import { useRekeyLock } from "@/vault/useRekeyLock.js";
+import { useKeyEntryOperations } from "@/vault/useKeyEntryOperations.js";
 
 export type ExportOutcome = { fileName: string; entryCount: number };
 export type ImportOutcome = { imported: number; skipped: number };
-
-const catalogIds = new Set<string>(SERVICE_CATALOG.map((service) => service.id));
-
-function normalizeService(entry: BackupEntry): {
-  serviceId: string;
-  customServiceName?: string;
-} {
-  if (catalogIds.has(entry.serviceId)) {
-    return {
-      serviceId: entry.serviceId,
-      ...(entry.customServiceName
-        ? { customServiceName: entry.customServiceName }
-        : {}),
-    };
-  }
-  return {
-    serviceId: "custom",
-    customServiceName: entry.customServiceName ?? entry.serviceId,
-  };
-}
 
 export function useBackup(): {
   exportBusy: boolean;
@@ -53,7 +28,7 @@ export function useBackup(): {
   exportBackup(password: string): Promise<ExportOutcome>;
   importBackup(fileText: string, password: string): Promise<ImportOutcome>;
 } {
-  const guardRekey = useRekeyLock();
+  const ops = useKeyEntryOperations();
   const [exportBusy, setExportBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
 
@@ -121,46 +96,18 @@ export function useBackup(): {
 
         const { entries: existingEntries } = await getKeyEntries();
         const existing = new Set(existingEntries.map((entry) => entry.id));
-        const candidates = payload.entries.filter((entry) => !existing.has(entry.id));
-
-        if (candidates.length === 0) {
-          return { imported: 0, skipped: payload.entries.length };
-        }
-
-        const importItems: KeyEntryImportItem[] = [];
-        for (const entry of candidates) {
-          const cipher = await encryptKeyValue(entry.id, entry.keyValue);
-          const { serviceId, customServiceName } = normalizeService(entry);
-          importItems.push({
-            id: entry.id,
-            label: entry.label,
-            serviceId,
-            customServiceName,
-            description: entry.description ?? undefined,
-            tags: entry.tags,
-            cipher,
-            createdAt: entry.createdAt,
-            updatedAt: entry.updatedAt,
-            lastUsedAt: entry.lastUsedAt,
-          });
-        }
-
-        const response = await guardRekey(
-          postKeyEntryImport({ entries: importItems }),
-        );
+        const result = await ops.importEntries(payload.entries, existing);
 
         return {
-          imported: response.imported,
+          imported: result.imported,
           skipped:
-            payload.entries.length -
-            candidates.length +
-            response.skippedIds.length,
+            result.clientSkipped + result.skippedIds.length,
         };
       } finally {
         setImportBusy(false);
       }
     },
-    [guardRekey],
+    [ops],
   );
 
   return {

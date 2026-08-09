@@ -335,3 +335,130 @@ describe("Key Entry writes across a key reset", () => {
     assert.ok(readRow(db, ENTRY_ID));
   });
 });
+
+describe("Key Entry import merge-by-id", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+  let cookie: string;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    runMigrations(db);
+    initializeVault(db, {
+      kdf: sampleKdf(),
+      authVerifier: await hashAuthKey(Buffer.alloc(32, 9).toString("base64")),
+      recoveryCodes: sampleRecoveryCodes(),
+    });
+    app = await buildTestApp(db);
+    const { token } = createSession(db, {}, 1200);
+    cookie = `${SESSION_COOKIE_NAME}=${token}`;
+  });
+
+  afterEach(async () => {
+    await app?.close();
+    db?.close();
+  });
+
+  it("skips existing ids, preserves originals, and dedupes duplicate ids in one payload", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/keys",
+      headers: { cookie },
+      payload: createBody(ENTRY_ID, 1, 4),
+    });
+    assert.equal(created.statusCode, 201);
+
+    const originalRow = db
+      .prepare(
+        `SELECT label, cipher_iv, cipher_text FROM key_entries WHERE id = ?`,
+      )
+      .get(ENTRY_ID) as {
+      label: string;
+      cipher_iv: string;
+      cipher_text: string;
+    };
+
+    const firstImport = await app.inject({
+      method: "POST",
+      url: "/api/keys/import",
+      headers: { cookie },
+      payload: {
+        entries: [
+          {
+            ...createBody(ENTRY_ID, 1, 9),
+            label: "Should not overwrite A",
+          },
+          createBody(OTHER_ENTRY_ID, 1, 5),
+        ],
+      },
+    });
+
+    assert.equal(firstImport.statusCode, 200);
+    assert.deepEqual(firstImport.json(), {
+      imported: 1,
+      skippedIds: [ENTRY_ID],
+    });
+
+    const secondImport = await app.inject({
+      method: "POST",
+      url: "/api/keys/import",
+      headers: { cookie },
+      payload: {
+        entries: [
+          createBody(ENTRY_ID, 1, 6),
+          createBody(OTHER_ENTRY_ID, 1, 7),
+        ],
+      },
+    });
+
+    assert.equal(secondImport.statusCode, 200);
+    assert.deepEqual(secondImport.json(), {
+      imported: 0,
+      skippedIds: [ENTRY_ID, OTHER_ENTRY_ID],
+    });
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/keys",
+      headers: { cookie },
+    });
+    assert.equal(list.statusCode, 200);
+    assert.equal(list.json().entries.length, 2);
+
+    const preserved = db
+      .prepare(
+        `SELECT label, cipher_iv, cipher_text FROM key_entries WHERE id = ?`,
+      )
+      .get(ENTRY_ID) as {
+      label: string;
+      cipher_iv: string;
+      cipher_text: string;
+    };
+    assert.deepEqual(preserved, originalRow);
+
+    const duplicatePayload = createBody(OTHER_ENTRY_ID, 1, 8);
+    const duplicateImport = await app.inject({
+      method: "POST",
+      url: "/api/keys/import",
+      headers: { cookie },
+      payload: {
+        entries: [duplicatePayload, duplicatePayload],
+      },
+    });
+
+    assert.equal(duplicateImport.statusCode, 200);
+    assert.deepEqual(duplicateImport.json(), {
+      imported: 0,
+      skippedIds: [OTHER_ENTRY_ID, OTHER_ENTRY_ID],
+    });
+    assert.equal(
+      (
+        db
+          .prepare(`SELECT COUNT(*) AS count FROM key_entries`)
+          .get() as { count: number }
+      ).count,
+      2,
+    );
+  });
+});
