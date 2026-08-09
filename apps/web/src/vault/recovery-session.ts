@@ -15,7 +15,13 @@ export type RecoveryAttempt = {
   readonly ticket: string;
   readonly entries: KeyEntry[];
   readonly masterKey: Uint8Array;
-  succeeded(): void;
+  /**
+   * Settle a successful reset. Always zeroizes the recovered master key.
+   * Returns true only when the session epoch is still the one captured at
+   * checkout — false if a lock/clear/supersede invalidated the attempt while
+   * the reset was in flight (caller must not leave the vault unlocked).
+   */
+  succeeded(): boolean;
   failed(): void;
 };
 
@@ -68,12 +74,13 @@ export function createRecoverySession(): RecoverySession {
         ticket,
         entries,
         masterKey,
-        succeeded(): void {
+        succeeded(): boolean {
           if (settled) {
-            return;
+            return false;
           }
           settled = true;
           zeroize(masterKey);
+          return capturedEpoch === epoch;
         },
         failed(): void {
           if (settled) {

@@ -149,7 +149,7 @@ describe("recovery session slice 2 — beginComplete and succeeded", () => {
     });
     const attempt = session.beginComplete();
     assert.ok(attempt);
-    attempt.succeeded();
+    assert.equal(attempt.succeeded(), true);
 
     assert.equal(isZeroized(key), true);
     assert.equal(session.isActive(), false);
@@ -167,8 +167,8 @@ describe("recovery session slice 2 — beginComplete and succeeded", () => {
     });
     const attempt = session.beginComplete();
     assert.ok(attempt);
-    attempt.succeeded();
-    attempt.succeeded();
+    assert.equal(attempt.succeeded(), true);
+    assert.equal(attempt.succeeded(), false);
 
     assert.equal(isZeroized(key), true);
     assert.equal(session.isActive(), false);
@@ -264,10 +264,30 @@ describe("recovery session slice 4 — epoch invalidation", () => {
     const attempt = session.beginComplete();
     assert.ok(attempt);
     session.clear();
-    attempt.succeeded();
+    assert.equal(attempt.succeeded(), false);
 
     assert.equal(isZeroized(key), true);
     assert.equal(session.isActive(), false);
+  });
+
+  it("succeeded() after a clear returns false so callers cannot unlock past the lock", () => {
+    const session = createRecoverySession();
+    const key = masterKey();
+
+    session.start({
+      ticket: "ticket-a",
+      entries: [makeEntry("entry-1")],
+      masterKey: key,
+    });
+    const attempt = session.beginComplete();
+    assert.ok(attempt);
+
+    // Simulate idle/manual/cross-tab lock while reset is in flight.
+    session.clear();
+
+    assert.equal(attempt.succeeded(), false);
+    assert.equal(session.isActive(), false);
+    assert.equal(isZeroized(key), true);
   });
 
   it("failed() after a new start() does not clobber the newer session", () => {

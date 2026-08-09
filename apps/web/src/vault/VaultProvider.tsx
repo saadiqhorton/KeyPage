@@ -287,8 +287,16 @@ export function VaultProvider({ children }: VaultProviderProps) {
         (label) => setState({ phase: "working", label }),
       );
 
-      attempt.succeeded();
+      const accepted = attempt.succeeded();
+      // Park codes before any key clear — step 3 survives recoveryWizardAfterKeyCleared.
       setWizard({ kind: "recovery", step: 3, codes });
+      if (!accepted) {
+        // Reset may have landed on the server, but a concurrent lock invalidated
+        // this attempt. Drop the key completeVaultRecovery installed and stay locked.
+        clearEncryptionKey();
+        await refreshStatus();
+        return;
+      }
       lockReasonRef.current = "initial";
       setState({
         phase: "unlocked",
