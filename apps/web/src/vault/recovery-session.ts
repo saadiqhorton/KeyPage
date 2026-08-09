@@ -26,22 +26,19 @@ export type RecoverySession = {
   clear(): void;
 };
 
-function zeroizeMasterKey(key: Uint8Array): void {
-  zeroize(key);
-}
-
 export function createRecoverySession(): RecoverySession {
   let held: {
     ticket: string;
     entries: KeyEntry[];
     masterKey: Uint8Array;
   } | null = null;
+  /** Bumped on start/clear so an in-flight attempt cannot restore after supersede/lock. */
   let epoch = 0;
 
   return {
     start(input: RecoverySessionStart): void {
       if (held) {
-        zeroizeMasterKey(held.masterKey);
+        zeroize(held.masterKey);
       }
       epoch += 1;
       held = {
@@ -76,7 +73,7 @@ export function createRecoverySession(): RecoverySession {
             return;
           }
           settled = true;
-          zeroizeMasterKey(masterKey);
+          zeroize(masterKey);
         },
         failed(): void {
           if (settled) {
@@ -86,7 +83,7 @@ export function createRecoverySession(): RecoverySession {
           if (capturedEpoch === epoch) {
             held = { ticket, entries, masterKey };
           } else {
-            zeroizeMasterKey(masterKey);
+            zeroize(masterKey);
           }
         },
       };
@@ -94,7 +91,7 @@ export function createRecoverySession(): RecoverySession {
 
     clear(): void {
       if (held) {
-        zeroizeMasterKey(held.masterKey);
+        zeroize(held.masterKey);
         held = null;
       }
       epoch += 1;

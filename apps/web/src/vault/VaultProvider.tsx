@@ -329,7 +329,9 @@ export function VaultProvider({ children }: VaultProviderProps) {
   }, []);
 
   const cancelRecovery = useCallback(() => {
-    clearEncryptionKey();
+    // Clear the recovery-session owner directly (do not rely on encryption-key
+    // listeners — mid-recovery there is usually no encryption key held).
+    recoverySession.clear();
     setWizard({ kind: "none" });
     void refreshStatus();
   }, [refreshStatus]);
