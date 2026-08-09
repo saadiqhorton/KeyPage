@@ -1,0 +1,10 @@
+{
+  "name": "KeyPage",
+  "install": "pnpm install --frozen-lockfile",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "pnpm dev"
+    }
+  ]
+}
