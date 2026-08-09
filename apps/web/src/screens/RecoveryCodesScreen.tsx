@@ -46,8 +46,9 @@ export function RecoveryCodesScreen() {
           <StepIndicator steps={SETUP_STEPS} currentStep={2} />
         ) : null}
         <Callout tone="warning">
-          These codes replace your previous set and are shown only once. They
-          are not stored anywhere you can read them again.
+          {wizard.reason === "setup"
+            ? "These codes are shown only once. They are not stored anywhere you can read them again."
+            : "These codes replace your previous set and are shown only once. They are not stored anywhere you can read them again."}
         </Callout>
         {unavailable ? (
           <Callout tone="info">
