@@ -1,3 +1,12 @@
+/**
+ * Ordinary-write key-version policy for the unlocked vault.
+ *
+ * Owns require-pin, encrypt-and-stamp, and mismatch→lockLocal so crypto never
+ * reaches into session storage for the version, and every write path shares one
+ * fail-closed stamp + guard. Pin *storage* stays co-located with the AES key in
+ * session-keys; this module is the sole write-path consumer.
+ */
+
 import type { KeyEntryCipherInput, KeyEntryCipherPayload } from "@keypage/shared";
 
 import type { AesKey } from "@/crypto/provider.js";
@@ -23,21 +32,23 @@ export type KeyVersionPin = {
 };
 
 export function createKeyVersionPin(deps: KeyVersionPinDeps): KeyVersionPin {
+  const requireForWrite = (): number => {
+    const version = deps.getVersion();
+    if (version === null) {
+      throw deps.createSessionExpiredError();
+    }
+    return version;
+  };
+
   return {
     current() {
       return deps.getVersion();
     },
 
-    requireForWrite() {
-      const version = deps.getVersion();
-      if (version === null) {
-        throw deps.createSessionExpiredError();
-      }
-      return version;
-    },
+    requireForWrite,
 
     async encryptKeyValue(id, keyValue) {
-      const keyVersion = this.requireForWrite();
+      const keyVersion = requireForWrite();
       const key = deps.getKey();
       if (key === null) {
         throw deps.createSessionExpiredError();
