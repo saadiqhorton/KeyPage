@@ -241,14 +241,22 @@ export async function completeVaultRecovery(
       entries: reencrypted,
     });
 
-    replaceEncryptionKey(nextEncryptionKey, response.keyVersion);
+    // Download before validating so the user still has codes if the count check
+    // fails. Do not install the session key until validation passes — otherwise
+    // VaultProvider's catch + refreshStatus would report unlocked on error.
     downloadRecoveryCodes(codes);
 
     if (response.reEncrypted !== reencrypted.length) {
+      zeroizeAesKey(nextEncryptionKey);
+      nextEncryptionKey = undefined;
       throw new MasterPasswordError(
         `Your Master Password was reset, but the server re-encrypted ${response.reEncrypted} of ${reencrypted.length} key entries. Your new recovery codes were downloaded to this device — keep that file and check your key entries.`,
       );
     }
+
+    replaceEncryptionKey(nextEncryptionKey, response.keyVersion);
+    // Ownership transferred to session-keys; don't zeroize in the catch below.
+    nextEncryptionKey = undefined;
 
     return {
       codes,
