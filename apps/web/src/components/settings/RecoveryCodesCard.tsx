@@ -12,6 +12,7 @@ type RecoveryCodesCardProps = {
   loadingRemaining: boolean;
   busy: boolean;
   error: string | null;
+  progress: string | null;
   onRegenerate(password: string): Promise<void>;
 };
 
@@ -20,6 +21,7 @@ export function RecoveryCodesCard({
   loadingRemaining,
   busy,
   error,
+  progress,
   onRegenerate,
 }: RecoveryCodesCardProps) {
   const [password, setPassword] = useState("");
@@ -77,6 +79,13 @@ export function RecoveryCodesCard({
           autoComplete="current-password"
           error={formError ?? error}
         />
+
+        {busy && progress ? (
+          <div className="flex items-center gap-2 text-sm text-muted">
+            <Spinner size="sm" />
+            <span>{progress}</span>
+          </div>
+        ) : null}
 
         <div>
           <Button type="submit" loading={busy}>
