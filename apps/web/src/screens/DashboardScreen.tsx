@@ -38,8 +38,16 @@ export function DashboardScreen() {
   const { state, actions } = useVault();
   const { warningVisible, secondsRemaining, stayUnlocked } = useIdleLock();
   const vaultUnlocked = state.phase === "unlocked";
-  const { status, entries, error, createKeyEntry, updateKeyEntry, deleteKeyEntry, clipboardClearMs, markUsed } =
-    useKeyEntries(vaultUnlocked);
+  const {
+    status,
+    entries,
+    error,
+    createKeyEntry,
+    updateKeyEntry,
+    deleteKeyEntry,
+    clipboardClearMs,
+    noteLastUsed,
+  } = useKeyEntries(vaultUnlocked);
   const { toast, showToast } = useToast();
   const {
     revealedId,
@@ -50,13 +58,13 @@ export function DashboardScreen() {
     hideAll,
   } = useKeyEntrySecret({
     clipboardClearMs,
-    markUsed,
     onCopied: (message) => {
       showToast(message, "default", 4500);
     },
     onError: (message) => {
       showToast(message, "danger", 4500);
     },
+    onMarkedUsed: noteLastUsed,
   });
   const [addKeyOpen, setAddKeyOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<KeyEntry | null>(null);

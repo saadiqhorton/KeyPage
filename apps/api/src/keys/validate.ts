@@ -1,14 +1,16 @@
 import {
   AES_GCM_IV_BYTES,
   KEY_ENTRY_CIPHERTEXT_B64_MAX,
-  KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX,
-  KEY_ENTRY_DESCRIPTION_MAX,
-  KEY_ENTRY_LABEL_MAX,
-  KEY_ENTRY_TAG_MAX,
-  KEY_ENTRY_TAGS_MAX,
-  SERVICE_CATALOG,
+  KeyEntryFieldError,
+  normalizeDescription as sharedNormalizeDescription,
+  normalizeKeyEntryWriteFields as sharedNormalizeKeyEntryWriteFields,
+  normalizeLabel as sharedNormalizeLabel,
+  normalizeTags as sharedNormalizeTags,
+  validateService as sharedValidateService,
   type KeyEntryCipherInput,
   type KeyEntryCipherPayload,
+  type KeyEntryWriteFields,
+  type KeyEntryWriteFieldsInput,
 } from "@keypage/shared";
 
 import { HttpInvalidRequest } from "../errors.js";
@@ -19,7 +21,16 @@ const UUID_V4_PATTERN =
 const GCM_TAG_BYTES = 16;
 const MIN_CIPHERTEXT_BYTES = 1 + GCM_TAG_BYTES;
 
-const SERVICE_IDS = new Set(SERVICE_CATALOG.map((service) => service.id));
+function withFieldHttpError<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (error) {
+    if (error instanceof KeyEntryFieldError) {
+      throw new HttpInvalidRequest(error.message, error.details);
+    }
+    throw error;
+  }
+}
 
 export function isUuidV4(id: string): boolean {
   return UUID_V4_PATTERN.test(id);
@@ -108,125 +119,33 @@ export function validateCipherInput(cipher: KeyEntryCipherInput): void {
 }
 
 export function normalizeLabel(label: string): string {
-  const trimmed = label.trim();
-  if (trimmed.length === 0 || trimmed.length > KEY_ENTRY_LABEL_MAX) {
-    throw new HttpInvalidRequest("Invalid label", [
-      {
-        field: "label",
-        message: `must be 1..${KEY_ENTRY_LABEL_MAX} characters after trim`,
-      },
-    ]);
-  }
-  return trimmed;
+  return withFieldHttpError(() => sharedNormalizeLabel(label));
 }
 
 export function normalizeDescription(
   description: string | undefined,
 ): string | null {
-  if (description === undefined) {
-    return null;
-  }
-
-  const trimmed = description.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  if (trimmed.length > KEY_ENTRY_DESCRIPTION_MAX) {
-    throw new HttpInvalidRequest("Invalid description", [
-      {
-        field: "description",
-        message: `must be at most ${KEY_ENTRY_DESCRIPTION_MAX} characters`,
-      },
-    ]);
-  }
-
-  return trimmed;
+  return withFieldHttpError(() => sharedNormalizeDescription(description));
 }
 
 export function normalizeTags(tags: string[]): string[] {
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-
-  for (const tag of tags) {
-    const trimmed = tag.trim();
-    if (trimmed.length === 0) {
-      continue;
-    }
-
-    if (trimmed.length > KEY_ENTRY_TAG_MAX) {
-      throw new HttpInvalidRequest("Invalid tags", [
-        {
-          field: "tags",
-          message: `each tag must be 1..${KEY_ENTRY_TAG_MAX} characters`,
-        },
-      ]);
-    }
-
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    normalized.push(trimmed);
-
-    if (normalized.length > KEY_ENTRY_TAGS_MAX) {
-      throw new HttpInvalidRequest("Invalid tags", [
-        {
-          field: "tags",
-          message: `must contain at most ${KEY_ENTRY_TAGS_MAX} tags`,
-        },
-      ]);
-    }
-  }
-
-  return normalized;
+  return withFieldHttpError(() => sharedNormalizeTags(tags));
 }
 
 export function validateService(
   serviceId: string,
   customServiceName: string | undefined,
 ): { customServiceName: string | null } {
-  if (!SERVICE_IDS.has(serviceId as (typeof SERVICE_CATALOG)[number]["id"])) {
-    throw new HttpInvalidRequest("Invalid serviceId", [
-      { field: "serviceId", message: "must be a known service id" },
-    ]);
-  }
+  return withFieldHttpError(() =>
+    sharedValidateService(serviceId, customServiceName),
+  );
+}
 
-  if (serviceId === "custom") {
-    const trimmed = customServiceName?.trim() ?? "";
-    if (trimmed.length === 0) {
-      throw new HttpInvalidRequest("Invalid customServiceName", [
-        {
-          field: "customServiceName",
-          message: "is required when serviceId is custom",
-        },
-      ]);
-    }
-
-    if (trimmed.length > KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX) {
-      throw new HttpInvalidRequest("Invalid customServiceName", [
-        {
-          field: "customServiceName",
-          message: `must be at most ${KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX} characters`,
-        },
-      ]);
-    }
-
-    return { customServiceName: trimmed };
-  }
-
-  if (customServiceName !== undefined && customServiceName.trim().length > 0) {
-    throw new HttpInvalidRequest("Invalid customServiceName", [
-      {
-        field: "customServiceName",
-        message: "must not be set unless serviceId is custom",
-      },
-    ]);
-  }
-
-  return { customServiceName: null };
+/** Shared create/update/import field normalize + validate, mapped to HTTP errors. */
+export function normalizeKeyEntryWriteFields(
+  input: KeyEntryWriteFieldsInput,
+): KeyEntryWriteFields {
+  return withFieldHttpError(() => sharedNormalizeKeyEntryWriteFields(input));
 }
 
 export function validateKeyEntryId(id: string): void {

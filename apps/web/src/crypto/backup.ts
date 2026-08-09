@@ -10,11 +10,12 @@ import {
   DERIVED_KEY_BYTES,
   HKDF_INFO_BACKUP_KEY,
   KDF_SALT_BYTES,
-  KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX,
-  KEY_ENTRY_DESCRIPTION_MAX,
-  KEY_ENTRY_LABEL_MAX,
-  KEY_ENTRY_TAG_MAX,
-  KEY_ENTRY_TAGS_MAX,
+  KeyEntryFieldError,
+  normalizeDescription,
+  normalizeLabel,
+  normalizeTags,
+  resolveServiceForImport,
+  validateService,
   type BackupFile,
   type BackupPayload,
   type KdfParams,
@@ -227,45 +228,46 @@ function validateBackupEntry(entry: unknown, index: number): void {
   if (typeof id !== "string" || !isUuidV4(id)) {
     throw new BackupFormatError(`Entry ${index} has an invalid id`);
   }
-  if (typeof label !== "string" || label.length === 0) {
+  if (typeof label !== "string") {
     throw new BackupFormatError(`Entry ${index} has an invalid label`);
-  }
-  if (label.length > KEY_ENTRY_LABEL_MAX) {
-    throw new BackupFormatError(`Entry ${index} label is too long`);
   }
   if (typeof serviceId !== "string" || serviceId.length === 0) {
     throw new BackupFormatError(`Entry ${index} has an invalid serviceId`);
   }
   if (
     customServiceName !== null &&
-    (typeof customServiceName !== "string" ||
-      customServiceName.length > KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX)
+    typeof customServiceName !== "string"
   ) {
     throw new BackupFormatError(
       `Entry ${index} has an invalid customServiceName`,
     );
   }
-  if (
-    description !== null &&
-    (typeof description !== "string" ||
-      description.length > KEY_ENTRY_DESCRIPTION_MAX)
-  ) {
+  if (description !== null && typeof description !== "string") {
     throw new BackupFormatError(`Entry ${index} has an invalid description`);
   }
-  if (!Array.isArray(tags)) {
+  if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== "string")) {
     throw new BackupFormatError(`Entry ${index} has invalid tags`);
   }
-  if (tags.length > KEY_ENTRY_TAGS_MAX) {
-    throw new BackupFormatError(`Entry ${index} has too many tags`);
-  }
-  for (const tag of tags) {
-    if (typeof tag !== "string" || tag.length === 0) {
-      throw new BackupFormatError(`Entry ${index} has invalid tags`);
+
+  try {
+    normalizeLabel(label);
+    normalizeDescription(description === null ? undefined : description);
+    normalizeTags(tags);
+    const resolved = resolveServiceForImport(
+      serviceId,
+      customServiceName,
+    );
+    validateService(resolved.serviceId, resolved.customServiceName);
+  } catch (error) {
+    if (error instanceof KeyEntryFieldError) {
+      const field = error.details[0]?.field ?? "fields";
+      throw new BackupFormatError(
+        `Entry ${index} has invalid ${field}`,
+      );
     }
-    if (tag.length > KEY_ENTRY_TAG_MAX) {
-      throw new BackupFormatError(`Entry ${index} has an invalid tag length`);
-    }
+    throw error;
   }
+
   if (typeof keyValue !== "string" || keyValue.length === 0) {
     throw new BackupFormatError(`Entry ${index} has an invalid keyValue`);
   }

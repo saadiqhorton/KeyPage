@@ -1,3 +1,4 @@
+import { KEY_ENTRY_TAGS_MAX, normalizeTagsCapped } from "@keypage/shared";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -17,25 +18,6 @@ type TagInputProps = {
   error?: ReactNode;
   disabled?: boolean;
 };
-
-function normalizeTags(raw: string[], max?: number): string[] {
-  const seen = new Set<string>();
-  const next: string[] = [];
-
-  for (const tag of raw) {
-    const trimmed = tag.trim();
-    if (!trimmed) continue;
-
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    next.push(trimmed);
-    if (max !== undefined && next.length >= max) break;
-  }
-
-  return next;
-}
 
 export function TagInput({
   label,
@@ -60,7 +42,9 @@ export function TagInput({
       return;
     }
 
-    onChange(normalizeTags([...value, trimmed], max));
+    onChange(
+      normalizeTagsCapped([...value, trimmed], max ?? KEY_ENTRY_TAGS_MAX),
+    );
     setDraft("");
   }
 
