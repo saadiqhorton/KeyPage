@@ -8,7 +8,6 @@ import {
   KeyEntryFieldError,
   normalizeKeyEntryWriteFields,
   normalizeTags,
-  normalizeTagsCapped,
 } from "@keypage/shared";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
@@ -279,7 +278,6 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     event.preventDefault();
     setSubmitError(null);
 
-    const normalizedTags = normalizeTagsCapped(tags, KEY_ENTRY_TAGS_MAX);
     const errors = validateForm(
       mode,
       prefillState,
@@ -287,7 +285,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
       serviceId,
       customServiceName,
       description,
-      normalizedTags,
+      tags,
       keyValue,
     );
 
@@ -301,7 +299,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
       serviceId,
       customServiceName: serviceId === "custom" ? customServiceName : undefined,
       description: description.trim().length > 0 ? description : undefined,
-      tags: normalizeTags(normalizedTags),
+      tags: normalizeTags(tags),
     });
 
     setFieldErrors({});

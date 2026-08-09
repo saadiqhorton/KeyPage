@@ -111,8 +111,10 @@ export function normalizeTags(tags: string[]): string[] {
 }
 
 /**
- * Soft variant for interactive UI (TagInput): same trim/dedupe rules, but caps
- * at `max` instead of throwing when the unique count would exceed it.
+ * Soft variant for interactive UI (TagInput): same trim/dedupe/length rules as
+ * {@link normalizeTags}, but caps unique count at `max` instead of throwing when
+ * the count would exceed it. Oversized tags still throw so callers cannot
+ * silently discard user input.
  */
 export function normalizeTagsCapped(
   tags: string[],
@@ -127,7 +129,12 @@ export function normalizeTagsCapped(
       continue;
     }
     if (trimmed.length > KEY_ENTRY_TAG_MAX) {
-      continue;
+      throw new KeyEntryFieldError("Invalid tags", [
+        {
+          field: "tags",
+          message: `each tag must be 1..${KEY_ENTRY_TAG_MAX} characters`,
+        },
+      ]);
     }
 
     const key = trimmed.toLowerCase();

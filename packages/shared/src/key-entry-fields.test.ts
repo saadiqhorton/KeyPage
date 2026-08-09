@@ -105,12 +105,20 @@ describe("normalizeTags", () => {
 });
 
 describe("normalizeTagsCapped", () => {
-  it("caps instead of throwing", () => {
-    const tags = normalizeTagsCapped(
-      ["a", "b", "c", "d"],
-      3,
-    );
+  it("caps count instead of throwing", () => {
+    const tags = normalizeTagsCapped(["a", "b", "c", "d"], 3);
     assert.deepEqual(tags, ["a", "b", "c"]);
+  });
+
+  it("rejects oversized tags instead of silently dropping them", () => {
+    assertFieldError(
+      () =>
+        normalizeTagsCapped([
+          "ok",
+          "x".repeat(KEY_ENTRY_TAG_MAX + 1),
+        ]),
+      "tags",
+    );
   });
 });
 

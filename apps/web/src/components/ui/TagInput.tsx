@@ -1,4 +1,9 @@
-import { KEY_ENTRY_TAGS_MAX, normalizeTagsCapped } from "@keypage/shared";
+import {
+  KEY_ENTRY_TAG_MAX,
+  KEY_ENTRY_TAGS_MAX,
+  KeyEntryFieldError,
+  normalizeTagsCapped,
+} from "@keypage/shared";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -31,7 +36,9 @@ export function TagInput({
   const fieldId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
-  const errorId = error ? `${fieldId}-error` : undefined;
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const combinedError = error ?? draftError;
+  const errorId = combinedError ? `${fieldId}-error` : undefined;
   const hintId = hint ? `${fieldId}-hint` : undefined;
   const atMax = max !== undefined && value.length >= max;
 
@@ -39,17 +46,33 @@ export function TagInput({
     const trimmed = raw.trim();
     if (!trimmed || atMax) {
       setDraft("");
+      setDraftError(null);
       return;
     }
 
-    onChange(
-      normalizeTagsCapped([...value, trimmed], max ?? KEY_ENTRY_TAGS_MAX),
-    );
-    setDraft("");
+    if (trimmed.length > KEY_ENTRY_TAG_MAX) {
+      setDraftError(`Each tag must be 1..${KEY_ENTRY_TAG_MAX} characters.`);
+      return;
+    }
+
+    try {
+      onChange(
+        normalizeTagsCapped([...value, trimmed], max ?? KEY_ENTRY_TAGS_MAX),
+      );
+      setDraft("");
+      setDraftError(null);
+    } catch (err) {
+      if (err instanceof KeyEntryFieldError) {
+        setDraftError(`Each tag must be 1..${KEY_ENTRY_TAG_MAX} characters.`);
+        return;
+      }
+      throw err;
+    }
   }
 
   function removeTag(index: number) {
     onChange(value.filter((_, i) => i !== index));
+    setDraftError(null);
     inputRef.current?.focus();
   }
 
@@ -63,6 +86,7 @@ export function TagInput({
     if (event.key === "Backspace" && draft === "" && value.length > 0) {
       event.preventDefault();
       onChange(value.slice(0, -1));
+      setDraftError(null);
     }
   }
 
@@ -76,7 +100,7 @@ export function TagInput({
           "flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-obsidian/60 px-2 py-1.5",
           "focus-within:ring-1 focus-within:ring-brass/70",
           disabled && "cursor-not-allowed opacity-50",
-          error && "border-danger/50",
+          combinedError && "border-danger/50",
         )}
         onClick={() => {
           if (!disabled) inputRef.current?.focus();
@@ -108,7 +132,7 @@ export function TagInput({
           type="text"
           value={draft}
           disabled={disabled || atMax}
-          aria-invalid={error ? true : undefined}
+          aria-invalid={combinedError ? true : undefined}
           aria-describedby={[hintId, errorId].filter(Boolean).join(" ") || undefined}
           placeholder={atMax ? undefined : "Add tag…"}
           className={cn(
@@ -116,7 +140,10 @@ export function TagInput({
             "placeholder:text-muted/70",
             "disabled:cursor-not-allowed",
           )}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            if (draftError) setDraftError(null);
+          }}
           onKeyDown={handleKeyDown}
           onBlur={() => commitDraft(draft)}
         />
@@ -126,9 +153,9 @@ export function TagInput({
           {hint}
         </div>
       ) : null}
-      {error ? (
+      {combinedError ? (
         <p id={errorId} className="text-sm text-danger" role="alert">
-          {error}
+          {combinedError}
         </p>
       ) : null}
     </div>
