@@ -183,6 +183,9 @@ export async function changeMasterPassword(
  * Recovery reset: decrypt Key Entries with the recovered master key, re-encrypt
  * under the new Master Password, and submit them with the recovery ticket.
  * Mirrors `changeMasterPassword` (ADR 0001 — all crypto in the browser).
+ *
+ * The caller owns `recoveredMasterKey` buffer lifetime (via
+ * `RecoveryAttempt.succeeded` / `failed`); this function does not zeroize it.
  */
 export async function completeVaultRecovery(
   recoveryTicket: string,
@@ -238,7 +241,6 @@ export async function completeVaultRecovery(
       entries: reencrypted,
     });
 
-    zeroize(recoveredMasterKey);
     replaceEncryptionKey(nextEncryptionKey, response.keyVersion);
     downloadRecoveryCodes(codes);
 
