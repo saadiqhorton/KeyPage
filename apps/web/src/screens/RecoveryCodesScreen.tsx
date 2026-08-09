@@ -1,14 +1,35 @@
+import { useNavigate } from "react-router-dom";
+
 import { AuthShell } from "@/components/AuthShell";
+import { StepIndicator } from "@/components/StepIndicator";
 import { RecoveryCodesPanel } from "@/components/settings/RecoveryCodesPanel";
 import { Callout } from "@/components/ui/Callout";
-import { useWarnBeforeUnload } from "@/hooks/useWarnBeforeUnload";
 import { useVault } from "@/vault/useVault";
 
-export function RecoveryCodesScreen() {
-  const { state, wizard, actions } = useVault();
-  const codesPending = wizard.kind === "codes";
+const SETUP_STEPS = [
+  "Create Master Password",
+  "Save recovery codes",
+  "Vault ready",
+];
 
-  useWarnBeforeUnload(codesPending);
+function titleForReason(
+  reason: "setup" | "recovery" | "password_change" | "regen",
+): string {
+  switch (reason) {
+    case "setup":
+      return "Save these recovery codes offline. Any one code can recover your vault.";
+    case "recovery":
+      return "Save your new recovery codes offline.";
+    case "password_change":
+      return "Your Master Password was changed. Save these recovery codes offline.";
+    case "regen":
+      return "Save your new recovery codes offline.";
+  }
+}
+
+export function RecoveryCodesScreen() {
+  const navigate = useNavigate();
+  const { state, wizard, actions } = useVault();
 
   if (wizard.kind !== "codes") {
     return null;
@@ -16,14 +37,14 @@ export function RecoveryCodesScreen() {
 
   const unavailable = state.phase === "unavailable";
   const locked = state.phase !== "unlocked" && !unavailable;
-  const title =
-    wizard.reason === "password_change"
-      ? "Your Master Password was changed. Save these recovery codes offline."
-      : "Save your new recovery codes offline.";
+  const title = titleForReason(wizard.reason);
 
   return (
     <AuthShell chip="RECOVERY CODES" title={title}>
       <div className="flex flex-col gap-4">
+        {wizard.reason === "setup" ? (
+          <StepIndicator steps={SETUP_STEPS} currentStep={2} />
+        ) : null}
         <Callout tone="warning">
           These codes replace your previous set and are shown only once. They
           are not stored anywhere you can read them again.
@@ -41,7 +62,10 @@ export function RecoveryCodesScreen() {
         ) : null}
         <RecoveryCodesPanel
           codes={wizard.codes}
-          onAcknowledged={() => actions.finishWizard()}
+          onAcknowledged={() => {
+            const outcome = actions.acknowledgeRecoveryCodes();
+            navigate(outcome.navigateTo);
+          }}
         />
       </div>
     </AuthShell>

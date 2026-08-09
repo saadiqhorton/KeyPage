@@ -363,7 +363,6 @@ describe("recovery session slice 6 — wizard rule", () => {
     const wizard = recoveryWizardAfterKeyCleared({
       kind: "recovery",
       step: 1,
-      codes: null,
     });
     assert.deepEqual(wizard, { kind: "none" });
   });
@@ -372,23 +371,11 @@ describe("recovery session slice 6 — wizard rule", () => {
     const wizard = recoveryWizardAfterKeyCleared({
       kind: "recovery",
       step: 2,
-      codes: null,
     });
     assert.deepEqual(wizard, { kind: "none" });
   });
 
-  it("keeps freshly issued recovery codes on screen (recovery step 3 + kind codes)", () => {
-    const recoveryStep3 = recoveryWizardAfterKeyCleared({
-      kind: "recovery",
-      step: 3,
-      codes: ["code-a", "code-b"],
-    });
-    assert.deepEqual(recoveryStep3, {
-      kind: "recovery",
-      step: 3,
-      codes: ["code-a", "code-b"],
-    });
-
+  it("keeps freshly issued recovery codes on screen (kind codes)", () => {
     const codesWizard = recoveryWizardAfterKeyCleared({
       kind: "codes",
       codes: ["code-a", "code-b"],
@@ -406,16 +393,12 @@ describe("recovery session slice 6 — wizard rule", () => {
       kind: "none",
     });
     assert.deepEqual(
-      recoveryWizardAfterKeyCleared({ kind: "setup", step: 1, codes: null }),
-      { kind: "setup", step: 1, codes: null },
+      recoveryWizardAfterKeyCleared({ kind: "setup", step: 1 }),
+      { kind: "setup", step: 1 },
     );
     assert.deepEqual(
-      recoveryWizardAfterKeyCleared({
-        kind: "setup",
-        step: 3,
-        codes: ["setup-code"],
-      }),
-      { kind: "setup", step: 3, codes: ["setup-code"] },
+      recoveryWizardAfterKeyCleared({ kind: "setup", step: 3 }),
+      { kind: "setup", step: 3 },
     );
   });
 });

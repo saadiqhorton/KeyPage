@@ -1,8 +1,7 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { AuthShell } from "@/components/AuthShell";
-import { RecoveryCodeGrid } from "@/components/RecoveryCodeGrid";
 import { StepIndicator } from "@/components/StepIndicator";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
@@ -11,11 +10,7 @@ import {
 } from "@/components/ui/PasswordStrengthHint";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
-import { buildRecoveryCodesFileText } from "@/crypto/recovery.js";
 import { ApiError } from "@/lib/api.js";
-import { copyTextWithAutoClear } from "@/lib/clipboard.js";
-import { downloadTextFile } from "@/lib/download.js";
-import { formatRecoveryCode } from "@keypage/shared";
 import { useVault } from "@/vault/useVault";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -31,9 +26,7 @@ export function SetupScreen() {
   const { state, wizard, actions } = useVault();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (state.phase === "setup_required" && wizard.kind === "none") {
@@ -41,32 +34,12 @@ export function SetupScreen() {
     }
   }, [actions, state.phase, wizard.kind]);
 
-  const [codesConfirmed, setCodesConfirmed] = useState(false);
   const working = state.phase === "working";
-  const wizardStep = wizard.kind === "setup" ? wizard.step : 1;
-  const step = wizardStep >= 2 && codesConfirmed ? 3 : wizardStep;
-  const codes = wizard.kind === "setup" ? wizard.codes : null;
+  const step = wizard.kind === "setup" ? wizard.step : 1;
 
-  const downloadCodes = useCallback(() => {
-    if (!codes) return;
-    const date = new Date().toISOString().slice(0, 10);
-    downloadTextFile(
-      `keypage-recovery-codes-${date}.txt`,
-      buildRecoveryCodesFileText(codes),
-    );
-  }, [codes]);
-
-  useEffect(() => {
-    if (step !== 2 || !codes) return;
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [step, codes]);
+  if (wizard.kind === "codes") {
+    return null;
+  }
 
   async function handlePasswordSubmit(event: FormEvent) {
     event.preventDefault();
@@ -87,18 +60,6 @@ export function SetupScreen() {
       setConfirm("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Setup failed.");
-    }
-  }
-
-  async function handleCopyAll() {
-    if (!codes) return;
-    const text = codes.map((code) => formatRecoveryCode(code)).join("\n");
-    try {
-      await copyTextWithAutoClear(text, 30_000);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
     }
   }
 
@@ -145,45 +106,6 @@ export function SetupScreen() {
             Create vault
           </Button>
         </form>
-      </AuthShell>
-    );
-  }
-
-  if (step === 2) {
-    return (
-      <AuthShell
-        chip="FIRST-RUN SETUP"
-        title="Save these recovery codes offline. Any one code can recover your vault."
-      >
-        <StepIndicator steps={SETUP_STEPS} currentStep={2} />
-        <div className="flex flex-col gap-4">
-          <RecoveryCodeGrid codes={codes ?? []} />
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={downloadCodes}>
-              Download again
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={() => void handleCopyAll()}>
-              {copied ? "Copied" : "Copy all"}
-            </Button>
-          </div>
-          <label className="flex items-start gap-3 text-sm leading-relaxed text-muted">
-            <input
-              type="checkbox"
-              className="mt-1 accent-brass"
-              checked={saved}
-              onChange={(e) => setSaved(e.target.checked)}
-            />
-            <span>I&apos;ve saved my recovery codes somewhere safe.</span>
-          </label>
-          <Button
-            type="button"
-            disabled={!saved}
-            className="w-full"
-            onClick={() => setCodesConfirmed(true)}
-          >
-            Continue
-          </Button>
-        </div>
       </AuthShell>
     );
   }

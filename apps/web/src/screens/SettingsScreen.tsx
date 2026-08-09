@@ -37,26 +37,15 @@ export function SettingsScreen() {
     return outcome;
   }
 
-  // Park the codes in vault state before anything else can fail or lock: that
-  // both preserves them and routes to /recovery-codes, which unmounts Settings.
-  // Refreshing the local hooks afterwards would be pointless, so the next mount
-  // does it instead.
   async function handleChangePassword(
     currentPassword: string,
     newPassword: string,
   ) {
-    const codes = await passwordChange.changePassword(
-      currentPassword,
-      newPassword,
-    );
-    actions.showRecoveryCodes(codes, "password_change");
-    await actions.refreshStatus();
+    await passwordChange.changePassword(currentPassword, newPassword);
   }
 
   async function handleRegenerateRecoveryCodes(password: string) {
-    const codes = await recoveryCodes.regenerate(password);
-    actions.showRecoveryCodes(codes, "regen");
-    await actions.refreshStatus();
+    await recoveryCodes.regenerate(password);
   }
 
   async function handleSaveSessionTimeout() {

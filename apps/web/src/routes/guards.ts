@@ -1,3 +1,4 @@
+import { isRecoveryCodesParked } from "@/vault/recovery-codes-pending.js";
 import type { VaultState, WizardState } from "@/vault/useVault.js";
 
 export type RouteGuard =
@@ -29,14 +30,9 @@ function redirect(to: string): GuardDecision {
 export function resolveGuard(
   guard: RouteGuard,
   phase: VaultState["phase"],
-  wizardKind: WizardState["kind"],
+  wizard: WizardState,
 ): GuardDecision {
-  // Freshly issued codes exist only in wizard state, so /recovery-codes owns
-  // them until the user acknowledges them. Every other route defers, unlocked
-  // or not: otherwise a back navigation or a remount would drop the only copy
-  // the user has. This outranks loading/unavailable so a failed refreshStatus
-  // cannot hide codes or drop beforeunload protection.
-  if (wizardKind === "codes") {
+  if (isRecoveryCodesParked(wizard)) {
     return guard === "recovery-codes" ? RENDER : redirect("/recovery-codes");
   }
 
@@ -45,18 +41,24 @@ export function resolveGuard(
   }
 
   if (guard === "recovery-codes") {
-    // Codes are only ever issued from Settings, so that is where Done lands.
-    return redirect("/settings");
+    // Fallback when nothing parked (stale URL / post-ack race)
+    if (wizard.kind === "setup" && wizard.step === 3) {
+      return redirect("/setup");
+    }
+    if (phase === "unlocked") {
+      return redirect("/settings");
+    }
+    return redirect("/unlock");
   }
 
   if (guard === "unlocked") {
-    if (phase === "unlocked" && wizardKind === "none") {
+    if (phase === "unlocked" && wizard.kind === "none") {
       return RENDER;
     }
-    if (wizardKind === "setup") {
+    if (wizard.kind === "setup") {
       return redirect("/setup");
     }
-    if (wizardKind === "recovery") {
+    if (wizard.kind === "recovery") {
       return redirect("/recover");
     }
     if (phase === "setup_required") {
@@ -66,32 +68,32 @@ export function resolveGuard(
   }
 
   if (guard === "setup-wizard") {
-    if (phase === "setup_required" || wizardKind === "setup") {
+    if (phase === "setup_required" || wizard.kind === "setup") {
       return RENDER;
     }
-    if (phase === "unlocked" && wizardKind === "none") {
+    if (phase === "unlocked" && wizard.kind === "none") {
       return redirect("/");
     }
     return redirect("/unlock");
   }
 
   if (guard === "recovery-wizard") {
-    if (phase === "locked" || wizardKind === "recovery") {
+    if (phase === "locked" || wizard.kind === "recovery") {
       return RENDER;
     }
-    if (phase === "unlocked" && wizardKind === "none") {
+    if (phase === "unlocked" && wizard.kind === "none") {
       return redirect("/");
     }
     return redirect("/setup");
   }
 
-  if ((phase === "locked" || phase === "working") && wizardKind === "none") {
+  if ((phase === "locked" || phase === "working") && wizard.kind === "none") {
     return RENDER;
   }
-  if (wizardKind === "setup") {
+  if (wizard.kind === "setup") {
     return redirect("/setup");
   }
-  if (wizardKind === "recovery") {
+  if (wizard.kind === "recovery") {
     return redirect("/recover");
   }
   if (phase === "unlocked") {

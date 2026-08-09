@@ -1,16 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getVaultStatus } from "@/lib/api.js";
-import {
-  formatPasswordError,
-  regenerateRecoveryCodes,
-} from "@/vault/master-password.js";
+import { formatPasswordError } from "@/vault/master-password.js";
 import { useRekeyBusy } from "@/vault/useRekeyBusy.js";
+import { useVault } from "@/vault/useVault.js";
 
-/**
- * Returns a freshly generated set rather than holding it: the codes belong in
- * vault wizard state, which survives this hook's component unmounting.
- */
 export function useRecoveryCodes(): {
   remaining: number | null;
   loadingRemaining: boolean;
@@ -18,9 +12,10 @@ export function useRecoveryCodes(): {
   error: string | null;
   progress: string | null;
   refreshRemaining(): Promise<void>;
-  regenerate(password: string): Promise<string[]>;
+  regenerate(password: string): Promise<void>;
   clearError(): void;
 } {
+  const { actions } = useVault();
   const [remaining, setRemaining] = useState<number | null>(null);
   const [loadingRemaining, setLoadingRemaining] = useState(true);
   const { busy, error, progress, clearError, run } = useRekeyBusy();
@@ -42,16 +37,20 @@ export function useRecoveryCodes(): {
   }, [refreshRemaining]);
 
   const regenerate = useCallback(
-    async (password: string): Promise<string[]> => {
-      const result = await run({
+    async (password: string): Promise<void> => {
+      await run({
         fallback: "Recovery code regeneration failed.",
         formatError: formatPasswordError,
-        run: (onProgress) => regenerateRecoveryCodes(password, onProgress),
+        run: (onProgress) =>
+          actions.regenerateRecoveryCodes(password, onProgress),
       });
-      setRemaining(result.length);
-      return result;
+      try {
+        await refreshRemaining();
+      } catch {
+        // Park redirect may unmount Settings before refresh completes.
+      }
     },
-    [run],
+    [run, actions, refreshRemaining],
   );
 
   return {
