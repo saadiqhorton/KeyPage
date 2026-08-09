@@ -2,7 +2,6 @@ import {
   AES_GCM_IV_BYTES,
   KEY_ENTRY_AAD_PREFIX,
   type KeyEntry,
-  type KeyEntryCipherInput,
   type KeyEntryCipherPayload,
 } from "@keypage/shared";
 
@@ -14,10 +13,7 @@ import {
   zeroize,
   type AesKey,
 } from "./provider.js";
-import {
-  getEncryptionKey,
-  getEncryptionKeyVersion,
-} from "@/vault/session-keys.js";
+import { getEncryptionKey } from "@/vault/session-keys.js";
 
 export function newKeyEntryId(): string {
   const bytes = randomBytes(16);
@@ -76,23 +72,6 @@ export async function decryptKeyValueWith(
   } finally {
     zeroize(plaintextBytes);
   }
-}
-
-/**
- * Ordinary writes declare the key version the unlocked key belongs to, so the
- * server can reject ciphertext from a tab that missed a rotation.
- */
-export async function encryptKeyValue(
-  id: string,
-  keyValue: string,
-): Promise<KeyEntryCipherInput> {
-  const key = getEncryptionKey();
-  const keyVersion = getEncryptionKeyVersion();
-  if (key === null || keyVersion === null) {
-    throw new Error("Vault is locked");
-  }
-
-  return { ...(await encryptKeyValueWith(key, id, keyValue)), keyVersion };
 }
 
 export async function decryptKeyValue(entry: KeyEntry): Promise<string> {

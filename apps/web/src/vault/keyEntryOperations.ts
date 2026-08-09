@@ -4,7 +4,6 @@ import {
   resolveServiceForImport,
   type BackupEntry,
   type KeyEntry,
-  type KeyEntryCipherInput,
   type KeyEntryCreateRequest,
   type KeyEntryCreateResponse,
   type KeyEntryImportItem,
@@ -17,8 +16,7 @@ import {
 } from "@keypage/shared";
 
 import type { ClipboardAutoClearHandle } from "@/lib/clipboard.js";
-import type { ApiError } from "@/lib/api.js";
-import type { RekeyGuard } from "@/vault/useRekeyLock.js";
+import type { KeyVersionPin } from "@/vault/key-version-pin.js";
 
 export type NewKeyEntryInput = {
   label: string;
@@ -59,10 +57,8 @@ export type CopySecretResult =
   | { ok: false; reason: "decrypt" | "clipboard" };
 
 export type KeyEntryOperationsPorts = {
-  guardRekey: RekeyGuard;
-  getEncryptionKeyVersion(): number | null;
+  pin: KeyVersionPin;
   newKeyEntryId(): string;
-  encryptKeyValue(id: string, keyValue: string): Promise<KeyEntryCipherInput>;
   decryptKeyValue(entry: KeyEntry): Promise<string>;
   postKeyEntry(body: KeyEntryCreateRequest): Promise<KeyEntryCreateResponse>;
   patchKeyEntry(
@@ -78,7 +74,6 @@ export type KeyEntryOperationsPorts = {
     body: KeyEntryImportRequest,
   ): Promise<KeyEntryImportResponse>;
   copyTextWithAutoClear(text: string, clearMs: number): Promise<ClipboardAutoClearHandle>;
-  createSessionExpiredError(): ApiError;
 };
 
 export type KeyEntryOperations = {
@@ -145,8 +140,8 @@ export function createKeyEntryOperations(
     async create(input) {
       const fields = writeFieldsFromInput(input);
       const id = ports.newKeyEntryId();
-      const cipher = await ports.encryptKeyValue(id, input.keyValue);
-      const response = await ports.guardRekey(
+      const cipher = await ports.pin.encryptKeyValue(id, input.keyValue);
+      const response = await ports.pin.guardWrite(
         ports.postKeyEntry({
           id,
           ...fields,
@@ -157,10 +152,7 @@ export function createKeyEntryOperations(
     },
 
     async update(id, input) {
-      const keyVersion = ports.getEncryptionKeyVersion();
-      if (keyVersion === null) {
-        throw ports.createSessionExpiredError();
-      }
+      const keyVersion = ports.pin.requireForWrite();
       const fields = writeFieldsFromInput(input);
       const body: KeyEntryUpdateRequest = {
         keyVersion,
@@ -168,19 +160,16 @@ export function createKeyEntryOperations(
       };
 
       if (input.keyValue && input.keyValue.length > 0) {
-        body.cipher = await ports.encryptKeyValue(id, input.keyValue);
+        body.cipher = await ports.pin.encryptKeyValue(id, input.keyValue);
       }
 
-      const response = await ports.guardRekey(ports.patchKeyEntry(id, body));
+      const response = await ports.pin.guardWrite(ports.patchKeyEntry(id, body));
       return response.entry;
     },
 
     async remove(id) {
-      const keyVersion = ports.getEncryptionKeyVersion();
-      if (keyVersion === null) {
-        throw ports.createSessionExpiredError();
-      }
-      await ports.guardRekey(ports.deleteKeyEntry(id, { keyVersion }));
+      const keyVersion = ports.pin.requireForWrite();
+      await ports.pin.guardWrite(ports.deleteKeyEntry(id, { keyVersion }));
     },
 
     markUsed,
@@ -254,7 +243,7 @@ export function createKeyEntryOperations(
           description,
           tags: entry.tags,
         });
-        const cipher = await ports.encryptKeyValue(entry.id, entry.keyValue);
+        const cipher = await ports.pin.encryptKeyValue(entry.id, entry.keyValue);
         importItems.push({
           id: entry.id,
           ...fields,
@@ -265,7 +254,7 @@ export function createKeyEntryOperations(
         });
       }
 
-      const response = await ports.guardRekey(
+      const response = await ports.pin.guardWrite(
         ports.postKeyEntryImport({ entries: importItems }),
       );
 

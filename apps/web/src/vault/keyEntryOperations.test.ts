@@ -16,6 +16,7 @@ import type {
 
 import { ApiError } from "@/lib/api.js";
 import type { ClipboardAutoClearHandle } from "@/lib/clipboard.js";
+import type { KeyVersionPin } from "./key-version-pin.js";
 import {
   createKeyEntryOperations,
   type KeyEntryOperationsPorts,
@@ -69,12 +70,50 @@ const ENTRY_B: BackupEntry = {
   keyValue: "sk-b",
 };
 
+function createFakePin(
+  overrides: Partial<KeyVersionPin> = {},
+): {
+  pin: KeyVersionPin;
+  calls: {
+    guardWrite: number;
+    requireForWrite: number;
+    encryptKeyValue: Array<{ id: string; keyValue: string }>;
+  };
+} {
+  const calls = {
+    guardWrite: 0,
+    requireForWrite: 0,
+    encryptKeyValue: [] as Array<{ id: string; keyValue: string }>,
+  };
+
+  const pin: KeyVersionPin = {
+    current: () => 1,
+    requireForWrite: () => {
+      calls.requireForWrite += 1;
+      return 1;
+    },
+    encryptKeyValue: async (id, keyValue) => {
+      calls.encryptKeyValue.push({ id, keyValue });
+      return SAMPLE_CIPHER;
+    },
+    guardWrite: async (promise) => {
+      calls.guardWrite += 1;
+      return promise;
+    },
+    ...overrides,
+  };
+
+  return { pin, calls };
+}
+
 function createFakePorts(
   overrides: Partial<KeyEntryOperationsPorts> = {},
+  pinOverrides: Partial<KeyVersionPin> = {},
 ): {
   ports: KeyEntryOperationsPorts;
   calls: {
-    guardRekey: number;
+    guardWrite: number;
+    requireForWrite: number;
     postKeyEntry: KeyEntryCreateRequest[];
     patchKeyEntry: Array<{ id: string; body: KeyEntryUpdateRequest }>;
     deleteKeyEntry: Array<{ id: string; keyVersion: number }>;
@@ -85,8 +124,11 @@ function createFakePorts(
     copyTextWithAutoClear: Array<{ text: string; clearMs: number }>;
   };
 } {
+  const { pin, calls: pinCalls } = createFakePin(pinOverrides);
+
   const calls = {
-    guardRekey: 0,
+    guardWrite: 0,
+    requireForWrite: 0,
     postKeyEntry: [] as KeyEntryCreateRequest[],
     patchKeyEntry: [] as Array<{ id: string; body: KeyEntryUpdateRequest }>,
     deleteKeyEntry: [] as Array<{ id: string; keyVersion: number }>,
@@ -98,16 +140,8 @@ function createFakePorts(
   };
 
   const ports: KeyEntryOperationsPorts = {
-    guardRekey: async (promise) => {
-      calls.guardRekey += 1;
-      return promise;
-    },
-    getEncryptionKeyVersion: () => 1,
+    pin,
     newKeyEntryId: () => ENTRY_ID,
-    encryptKeyValue: async (id, keyValue) => {
-      calls.encryptKeyValue.push({ id, keyValue });
-      return SAMPLE_CIPHER;
-    },
     decryptKeyValue: async (entry) => {
       calls.decryptKeyValue.push(entry);
       return "decrypted-secret";
@@ -169,13 +203,18 @@ function createFakePorts(
         clearNow: async () => {},
       } satisfies ClipboardAutoClearHandle;
     },
-    createSessionExpiredError: () =>
-      new ApiError({
-        error: "session_expired",
-        message: "Vault is locked.",
-      }),
     ...overrides,
   };
+
+  Object.defineProperty(calls, "guardWrite", {
+    get: () => pinCalls.guardWrite,
+  });
+  Object.defineProperty(calls, "requireForWrite", {
+    get: () => pinCalls.requireForWrite,
+  });
+  Object.defineProperty(calls, "encryptKeyValue", {
+    get: () => pinCalls.encryptKeyValue,
+  });
 
   return { ports, calls };
 }
@@ -193,7 +232,7 @@ describe("keyEntryOperations.create", () => {
     });
 
     assert.equal(entry.id, ENTRY_ID);
-    assert.equal(calls.guardRekey, 1);
+    assert.equal(calls.guardWrite, 1);
     assert.equal(calls.encryptKeyValue.length, 1);
     assert.equal(calls.encryptKeyValue[0]!.id, ENTRY_ID);
     assert.equal(calls.postKeyEntry.length, 1);
@@ -234,9 +273,17 @@ describe("keyEntryOperations.update", () => {
   });
 
   it("throws when the vault is locked", async () => {
-    const { ports } = createFakePorts({
-      getEncryptionKeyVersion: () => null,
-    });
+    const { ports } = createFakePorts(
+      {},
+      {
+        requireForWrite: () => {
+          throw new ApiError({
+            error: "session_expired",
+            message: "Vault is locked.",
+          });
+        },
+      },
+    );
     const ops = createKeyEntryOperations(ports);
 
     await assert.rejects(
@@ -260,19 +307,20 @@ describe("keyEntryOperations.remove", () => {
 
     assert.equal(calls.deleteKeyEntry.length, 1);
     assert.equal(calls.deleteKeyEntry[0]!.keyVersion, 1);
-    assert.equal(calls.guardRekey, 1);
+    assert.equal(calls.guardWrite, 1);
+    assert.equal(calls.requireForWrite, 1);
   });
 });
 
 describe("keyEntryOperations.markUsed", () => {
-  it("does not wrap in guardRekey", async () => {
+  it("does not wrap in guardWrite", async () => {
     const { ports, calls } = createFakePorts();
     const ops = createKeyEntryOperations(ports);
 
     await ops.markUsed(ENTRY_ID, "copied");
 
     assert.equal(calls.postKeyEntryUse.length, 1);
-    assert.equal(calls.guardRekey, 0);
+    assert.equal(calls.guardWrite, 0);
   });
 });
 
@@ -379,7 +427,7 @@ describe("keyEntryOperations.importEntries", () => {
     assert.equal(result.clientSkipped, 2);
     assert.deepEqual(result.skippedIds, []);
     assert.equal(calls.postKeyEntryImport.length, 0);
-    assert.equal(calls.guardRekey, 0);
+    assert.equal(calls.guardWrite, 0);
   });
 
   it("remaps unknown service ids before import", async () => {
@@ -428,6 +476,6 @@ describe("keyEntryOperations.importEntries", () => {
     assert.equal(result.imported, 1);
     assert.deepEqual(result.skippedIds, [ENTRY_A.id]);
     assert.equal(result.clientSkipped, 1);
-    assert.equal(calls.guardRekey, 1);
+    assert.equal(calls.guardWrite, 1);
   });
 });
