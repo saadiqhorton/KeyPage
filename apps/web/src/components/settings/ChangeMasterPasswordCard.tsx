@@ -8,7 +8,6 @@ import { PasswordField } from "@/components/ui/PasswordField";
 import { PasswordStrengthHint } from "@/components/ui/PasswordStrengthHint";
 import { Spinner } from "@/components/ui/Spinner";
 import { SettingsCard } from "@/components/settings/SettingsCard";
-import { useWarnBeforeUnload } from "@/hooks/useWarnBeforeUnload";
 
 type ChangeMasterPasswordCardProps = {
   busy: boolean;
@@ -27,10 +26,6 @@ export function ChangeMasterPasswordCard({
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
-
-  // Leaving mid-re-encryption would abandon a half-rotated vault; the codes it
-  // issues are guarded by the /recovery-codes screen it hands them to.
-  useWarnBeforeUnload(busy);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

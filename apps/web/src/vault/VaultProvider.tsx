@@ -19,8 +19,10 @@ import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
 import { normalizeRecoveryCode } from "@keypage/shared";
 
 import {
+  changeMasterPassword,
   completeVaultRecovery,
   formatPasswordError,
+  regenerateRecoveryCodes,
 } from "./master-password.js";
 import {
   attachRecoverySessionToKeyClear,
@@ -30,6 +32,7 @@ import {
 import {
   VaultContext,
   type LockReason,
+  type RecoveryCodesAckOutcome,
   type RecoveryCodesReason,
   type VaultActions,
   type VaultContextValue,
@@ -56,6 +59,7 @@ type VaultProviderProps = {
 export function VaultProvider({ children }: VaultProviderProps) {
   const [state, setState] = useState<VaultState>({ phase: "loading" });
   const [wizard, setWizard] = useState<WizardState>({ kind: "none" });
+  const [issuingRecoveryCodes, setIssuingRecoveryCodes] = useState(false);
   const lockReasonRef = useRef<LockReason>("initial");
   const mountedRef = useRef(true);
 
@@ -148,11 +152,19 @@ export function VaultProvider({ children }: VaultProviderProps) {
     };
   }, [refreshStatus]);
 
+  const parkRecoveryCodes = useCallback(
+    (codes: string[], reason: RecoveryCodesReason) => {
+      setWizard({ kind: "codes", codes, reason });
+    },
+    [],
+  );
+
   const startSetup = useCallback(() => {
-    setWizard({ kind: "setup", step: 1, codes: null });
+    setWizard({ kind: "setup", step: 1 });
   }, []);
 
   const submitSetup = useCallback(async (password: string) => {
+    setIssuingRecoveryCodes(true);
     setState({ phase: "working", label: "Deriving your encryption key…" });
     try {
       const kdf = await pickKdfParams();
@@ -168,7 +180,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
       setEncryptionKey(derived.encryptionKey, response.keyVersion);
       downloadRecoveryCodes(codes);
-      setWizard({ kind: "setup", step: 2, codes });
+      parkRecoveryCodes(codes, "setup");
       setState({
         phase: "unlocked",
         idleTimeoutSeconds: response.session.idleTimeoutSeconds,
@@ -182,8 +194,10 @@ export function VaultProvider({ children }: VaultProviderProps) {
         error: "internal_error",
         message: "Setup failed. Please try again.",
       });
+    } finally {
+      setIssuingRecoveryCodes(false);
     }
-  }, [refreshStatus]);
+  }, [parkRecoveryCodes, refreshStatus]);
 
   const unlock = useCallback(async (password: string) => {
     const current = state;
@@ -227,7 +241,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
   }, [refreshStatus]);
 
   const startRecovery = useCallback(() => {
-    setWizard({ kind: "recovery", step: 1, codes: null });
+    setWizard({ kind: "recovery", step: 1 });
   }, []);
 
   const claimRecoveryCode = useCallback(async (code: string) => {
@@ -260,7 +274,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
         entries: claim.entries,
         masterKey,
       });
-      setWizard({ kind: "recovery", step: 2, codes: null });
+      setWizard({ kind: "recovery", step: 2 });
       await refreshStatus();
     } catch (error) {
       await refreshStatus();
@@ -277,6 +291,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       });
     }
 
+    setIssuingRecoveryCodes(true);
     setState({ phase: "working", label: "Setting up your new Master Password…" });
     try {
       const { codes, session } = await completeVaultRecovery(
@@ -288,8 +303,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       );
 
       const accepted = attempt.succeeded();
-      // Park codes before any key clear — step 3 survives recoveryWizardAfterKeyCleared.
-      setWizard({ kind: "recovery", step: 3, codes });
+      parkRecoveryCodes(codes, "recovery");
       if (!accepted) {
         // Reset may have landed on the server, but a concurrent lock invalidated
         // this attempt. Drop the key completeVaultRecovery installed and stay locked.
@@ -316,21 +330,71 @@ export function VaultProvider({ children }: VaultProviderProps) {
           fallback: "Recovery failed. Start again with a recovery code.",
         }),
       });
+    } finally {
+      setIssuingRecoveryCodes(false);
     }
-  }, [refreshStatus]);
+  }, [parkRecoveryCodes, refreshStatus]);
 
-  /**
-   * Recovery codes only exist in memory, so an idle lock or an expired session
-   * while they are on screen would destroy the only copy the user has. Parking
-   * them in wizard state lets the router keep showing them across a lock until
-   * the user acknowledges them.
-   */
-  const showRecoveryCodes = useCallback(
-    (codes: string[], reason: RecoveryCodesReason) => {
-      setWizard({ kind: "codes", codes, reason });
+  const changeMasterPasswordAction = useCallback(
+    async (
+      currentPassword: string,
+      newPassword: string,
+      onProgress?: (label: string) => void,
+    ) => {
+      setIssuingRecoveryCodes(true);
+      try {
+        const codes = await changeMasterPassword(
+          currentPassword,
+          newPassword,
+          onProgress,
+        );
+        parkRecoveryCodes(codes, "password_change");
+        await refreshStatus();
+      } catch (error) {
+        await refreshStatus();
+        throw error;
+      } finally {
+        setIssuingRecoveryCodes(false);
+      }
     },
-    [],
+    [parkRecoveryCodes, refreshStatus],
   );
+
+  const regenerateRecoveryCodesAction = useCallback(
+    async (password: string, onProgress?: (label: string) => void) => {
+      setIssuingRecoveryCodes(true);
+      try {
+        const codes = await regenerateRecoveryCodes(password, onProgress);
+        parkRecoveryCodes(codes, "regen");
+        await refreshStatus();
+      } catch (error) {
+        await refreshStatus();
+        throw error;
+      } finally {
+        setIssuingRecoveryCodes(false);
+      }
+    },
+    [parkRecoveryCodes, refreshStatus],
+  );
+
+  const acknowledgeRecoveryCodes = useCallback((): RecoveryCodesAckOutcome => {
+    if (wizard.kind !== "codes") {
+      return { navigateTo: "/" };
+    }
+
+    switch (wizard.reason) {
+      case "setup":
+        setWizard({ kind: "setup", step: 3 });
+        return { navigateTo: "/setup" };
+      case "recovery":
+        setWizard({ kind: "none" });
+        return { navigateTo: "/" };
+      case "password_change":
+      case "regen":
+        setWizard({ kind: "none" });
+        return { navigateTo: "/settings" };
+    }
+  }, [wizard]);
 
   const finishWizard = useCallback(() => {
     setWizard({ kind: "none" });
@@ -355,7 +419,9 @@ export function VaultProvider({ children }: VaultProviderProps) {
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
-      showRecoveryCodes,
+      changeMasterPassword: changeMasterPasswordAction,
+      regenerateRecoveryCodes: regenerateRecoveryCodesAction,
+      acknowledgeRecoveryCodes,
       finishWizard,
       cancelRecovery,
     }),
@@ -369,15 +435,17 @@ export function VaultProvider({ children }: VaultProviderProps) {
       startRecovery,
       claimRecoveryCode,
       completeRecovery,
-      showRecoveryCodes,
+      changeMasterPasswordAction,
+      regenerateRecoveryCodesAction,
+      acknowledgeRecoveryCodes,
       finishWizard,
       cancelRecovery,
     ],
   );
 
   const value = useMemo<VaultContextValue>(
-    () => ({ state, wizard, actions }),
-    [state, wizard, actions],
+    () => ({ state, wizard, actions, issuingRecoveryCodes }),
+    [state, wizard, actions, issuingRecoveryCodes],
   );
 
   return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;

@@ -5,7 +5,6 @@ import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
 import { SettingsCard } from "@/components/settings/SettingsCard";
-import { useWarnBeforeUnload } from "@/hooks/useWarnBeforeUnload";
 
 type RecoveryCodesCardProps = {
   remaining: number | null;
@@ -26,10 +25,6 @@ export function RecoveryCodesCard({
 }: RecoveryCodesCardProps) {
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
-
-  // The new set is already being minted server-side; leaving now would lose
-  // codes that the /recovery-codes screen is about to show.
-  useWarnBeforeUnload(busy);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

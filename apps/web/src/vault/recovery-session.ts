@@ -117,8 +117,10 @@ export function attachRecoverySessionToKeyClear(
 }
 
 export function recoveryWizardAfterKeyCleared(wizard: WizardState): WizardState {
-  if (wizard.kind === "recovery" && wizard.codes === null) {
+  // Mid-recovery (no codes yet) must not leave orphaned wizard after lock.
+  if (wizard.kind === "recovery") {
     return { kind: "none" };
   }
+  // Parked codes must survive lock until ack.
   return wizard;
 }

@@ -27,13 +27,21 @@ export type VaultState =
   | { phase: "working"; label: string }
   | { phase: "unlocked"; idleTimeoutSeconds: number };
 
-export type RecoveryCodesReason = "password_change" | "regen";
+export type RecoveryCodesReason =
+  | "setup"
+  | "recovery"
+  | "password_change"
+  | "regen";
 
 export type WizardState =
   | { kind: "none" }
-  | { kind: "setup"; step: 1 | 2 | 3; codes: string[] | null }
-  | { kind: "recovery"; step: 1 | 2 | 3; codes: string[] | null }
+  | { kind: "setup"; step: 1 | 3 }
+  | { kind: "recovery"; step: 1 | 2 }
   | { kind: "codes"; codes: string[]; reason: RecoveryCodesReason };
+
+export type RecoveryCodesAckOutcome = {
+  navigateTo: "/setup" | "/" | "/settings";
+};
 
 export type VaultActions = {
   refreshStatus(): Promise<void>;
@@ -46,7 +54,16 @@ export type VaultActions = {
   startRecovery(): void;
   claimRecoveryCode(code: string): Promise<void>;
   completeRecovery(newPassword: string): Promise<void>;
-  showRecoveryCodes(codes: string[], reason: RecoveryCodesReason): void;
+  changeMasterPassword(
+    currentPassword: string,
+    newPassword: string,
+    onProgress?: (label: string) => void,
+  ): Promise<void>;
+  regenerateRecoveryCodes(
+    password: string,
+    onProgress?: (label: string) => void,
+  ): Promise<void>;
+  acknowledgeRecoveryCodes(): RecoveryCodesAckOutcome;
   finishWizard(): void;
   cancelRecovery(): void;
 };
@@ -55,6 +72,8 @@ export type VaultContextValue = {
   state: VaultState;
   wizard: WizardState;
   actions: VaultActions;
+  /** True while a mint that will issue recovery codes is in flight. */
+  issuingRecoveryCodes: boolean;
 };
 
 export const VaultContext = createContext<VaultContextValue | null>(null);
