@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { proofKeysFromSecrets } from "@/crypto/auth-proof.js";
 import { deriveVaultKeys, pickKdfParams } from "@/crypto/derive.js";
 import {
   buildRecoveryCodeEnvelopes,
@@ -14,7 +15,7 @@ import {
   unwrapMasterKey,
 } from "@/crypto/recovery.js";
 import { zeroize } from "@/crypto/provider.js";
-import { ApiError, getVaultStatus, postRecoveryClaim, postVaultLock, postVaultLogin, postVaultSetup } from "@/lib/api.js";
+import { ApiError, getVaultStatus, postRecoveryCancel, postRecoveryClaim, postVaultLock, postVaultLoginWithAuthKey, postVaultSetup } from "@/lib/api.js";
 import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
 import { normalizeRecoveryCode } from "@keypage/shared";
 
@@ -170,11 +171,16 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const kdf = await pickKdfParams();
       const derived = await deriveVaultKeys(password, kdf);
       const { codes, envelopes } = await buildRecoveryCodeEnvelopes(derived.masterKey);
+      const proofKeys = proofKeysFromSecrets({
+        authKeyB64: derived.authKeyB64,
+        masterKey: derived.masterKey,
+      });
       zeroize(derived.masterKey);
 
       const response = await postVaultSetup({
         kdf,
-        authKeyB64: derived.authKeyB64,
+        authStoredKeyHex: proofKeys.authStoredKeyHex,
+        recoveryStoredKeyHex: proofKeys.recoveryStoredKeyHex,
         recoveryCodes: envelopes,
       });
 
@@ -213,7 +219,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const derived = await deriveVaultKeys(password, current.kdf);
       zeroize(derived.masterKey);
 
-      const response = await postVaultLogin({ authKeyB64: derived.authKeyB64 });
+      const response = await postVaultLoginWithAuthKey(derived.authKeyB64);
       setEncryptionKey(derived.encryptionKey, response.keyVersion);
       lockReasonRef.current = "initial";
       setState({
@@ -271,6 +277,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       );
       recoverySession.start({
         ticket: claim.recoveryTicket,
+        challengeNonceB64: claim.challengeNonceB64,
         entries: claim.entries,
         masterKey,
       });
@@ -296,6 +303,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
     try {
       const { codes, session } = await completeVaultRecovery(
         attempt.ticket,
+        attempt.challengeNonceB64,
         attempt.masterKey,
         attempt.entries,
         newPassword,
@@ -401,10 +409,11 @@ export function VaultProvider({ children }: VaultProviderProps) {
   }, []);
 
   const cancelRecovery = useCallback(() => {
-    // Clear the recovery-session owner directly (do not rely on encryption-key
-    // listeners — mid-recovery there is usually no encryption key held).
-    recoverySession.clear();
+    const ticket = recoverySession.takeTicketForCancel();
     setWizard({ kind: "none" });
+    if (ticket) {
+      void postRecoveryCancel({ recoveryTicket: ticket }).catch(() => {});
+    }
     void refreshStatus();
   }, [refreshStatus]);
 

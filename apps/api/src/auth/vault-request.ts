@@ -60,3 +60,36 @@ export function validateAuthKeyB64(
     ]);
   }
 }
+
+export function validateStoredKeyHex(
+  value: string,
+  field: string,
+): void {
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new HttpInvalidRequest(`Invalid ${field}`, [
+      {
+        field,
+        message: "must be 64 lowercase hex characters",
+      },
+    ]);
+  }
+}
+
+export function validateClientProofB64(
+  value: string,
+  field: string,
+): void {
+  let length: number;
+  try {
+    length = Buffer.from(value, "base64").length;
+  } catch {
+    throw new HttpInvalidRequest(`Invalid ${field}`, [
+      { field, message: "must be valid base64" },
+    ]);
+  }
+  if (length !== 32) {
+    throw new HttpInvalidRequest(`Invalid ${field}`, [
+      { field, message: "must decode to exactly 32 bytes" },
+    ]);
+  }
+}

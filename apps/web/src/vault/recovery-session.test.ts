@@ -44,7 +44,7 @@ describe("recovery session slice 1 — hold, clear, supersede", () => {
     const entries = [makeEntry("entry-1")];
     const key = masterKey();
 
-    session.start({ ticket: "ticket-a", entries, masterKey: key });
+    session.start({ ticket: "ticket-a", challengeNonceB64: "Y2hhbA==", entries, masterKey: key });
     assert.equal(session.isActive(), true);
 
     const attempt = session.beginComplete();
@@ -62,6 +62,7 @@ describe("recovery session slice 1 — hold, clear, supersede", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -78,6 +79,7 @@ describe("recovery session slice 1 — hold, clear, supersede", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -96,11 +98,13 @@ describe("recovery session slice 1 — hold, clear, supersede", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: firstKey,
     });
     session.start({
       ticket: "ticket-b",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-2")],
       masterKey: secondKey,
     });
@@ -127,7 +131,7 @@ describe("recovery session slice 2 — beginComplete and succeeded", () => {
     const entries = [makeEntry("entry-1")];
     const key = masterKey();
 
-    session.start({ ticket: "ticket-a", entries, masterKey: key });
+    session.start({ ticket: "ticket-a", challengeNonceB64: "Y2hhbA==", entries, masterKey: key });
     const attempt = session.beginComplete();
 
     assert.ok(attempt);
@@ -144,6 +148,7 @@ describe("recovery session slice 2 — beginComplete and succeeded", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -162,6 +167,7 @@ describe("recovery session slice 2 — beginComplete and succeeded", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -181,7 +187,7 @@ describe("recovery session slice 3 — failed restores for retry", () => {
     const entries = [makeEntry("entry-1")];
     const key = masterKey();
 
-    session.start({ ticket: "ticket-a", entries, masterKey: key });
+    session.start({ ticket: "ticket-a", challengeNonceB64: "Y2hhbA==", entries, masterKey: key });
     const attempt = session.beginComplete();
     assert.ok(attempt);
     attempt.failed();
@@ -201,6 +207,7 @@ describe("recovery session slice 3 — failed restores for retry", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -222,6 +229,7 @@ describe("recovery session slice 4 — epoch invalidation", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -240,6 +248,7 @@ describe("recovery session slice 4 — epoch invalidation", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -258,6 +267,7 @@ describe("recovery session slice 4 — epoch invalidation", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -276,6 +286,7 @@ describe("recovery session slice 4 — epoch invalidation", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -297,6 +308,7 @@ describe("recovery session slice 4 — epoch invalidation", () => {
 
     session.start({
       ticket: "ticket-old",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-old")],
       masterKey: oldKey,
     });
@@ -305,6 +317,7 @@ describe("recovery session slice 4 — epoch invalidation", () => {
 
     session.start({
       ticket: "ticket-new",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-new")],
       masterKey: newKey,
     });
@@ -328,6 +341,7 @@ describe("recovery session slice 5 — key-clear attachment", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });
@@ -345,6 +359,7 @@ describe("recovery session slice 5 — key-clear attachment", () => {
 
     session.start({
       ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
       entries: [makeEntry("entry-1")],
       masterKey: key,
     });

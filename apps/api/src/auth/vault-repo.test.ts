@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import Database from "better-sqlite3";
 
-import { hashAuthKey } from "./verifier.js";
 import {
   assertKeyEntryMutationsAllowed,
   changeMasterPassword,
@@ -30,6 +29,14 @@ function openMemoryDb(): Database.Database {
   db.pragma("foreign_keys = ON");
   runMigrations(db);
   return db;
+}
+
+
+function sampleProofKeys(seed = 9) {
+  return {
+    authStoredKeyHex: Buffer.alloc(32, seed).toString("hex"),
+    recoveryStoredKeyHex: Buffer.alloc(32, seed + 1).toString("hex"),
+  };
 }
 
 function sampleKdf() {
@@ -115,10 +122,7 @@ describe("changeMasterPassword", () => {
     validateKdfParams(kdf);
     const recoveryCodes = sampleRecoveryCodes();
     validateRecoveryEnvelopes(recoveryCodes);
-    const authVerifier = await hashAuthKey(
-      Buffer.alloc(32, 9).toString("base64"),
-    );
-    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+    initializeVault(db, { kdf, proofKeys: sampleProofKeys(), recoveryCodes });
   });
 
   afterEach(() => {
@@ -136,7 +140,7 @@ describe("changeMasterPassword", () => {
           db,
           {
             kdf: sampleKdf(),
-            authVerifier: "new-verifier",
+            proofKeys: sampleProofKeys(5),
             recoveryCodes: sampleRecoveryCodes(),
             entries: [],
           },
@@ -167,7 +171,7 @@ describe("changeMasterPassword", () => {
           db,
           {
             kdf: sampleKdf(),
-            authVerifier: "new-verifier",
+            proofKeys: sampleProofKeys(5),
             recoveryCodes: sampleRecoveryCodes(),
             entries: [
               entryPayload(ENTRY_ID),
@@ -211,7 +215,7 @@ describe("changeMasterPassword", () => {
           db,
           {
             kdf: sampleKdf(),
-            authVerifier: "new-verifier",
+            proofKeys: sampleProofKeys(5),
             recoveryCodes: sampleRecoveryCodes(),
             entries: [entryPayload(ENTRY_ID, newCipher)],
           },
@@ -274,7 +278,7 @@ describe("changeMasterPassword", () => {
         db,
         {
           kdf: sampleKdf(),
-          authVerifier: "new-verifier",
+          proofKeys: sampleProofKeys(5),
           recoveryCodes: collidingCodes,
           entries: [entryPayload(ENTRY_ID, newCipher)],
         },
@@ -320,9 +324,7 @@ describe("changeMasterPassword", () => {
       db,
       {
         kdf: sampleKdf(),
-        authVerifier: await hashAuthKey(
-          Buffer.alloc(32, 5).toString("base64"),
-        ),
+        proofKeys: sampleProofKeys(7),
         recoveryCodes: sampleRecoveryCodes(),
         entries: [entryPayload(entryId, newCipher)],
       },
@@ -349,10 +351,7 @@ describe("regenerateRecoveryCodes", () => {
     db = openMemoryDb();
     const kdf = sampleKdf();
     const recoveryCodes = sampleRecoveryCodes();
-    const authVerifier = await hashAuthKey(
-      Buffer.alloc(32, 9).toString("base64"),
-    );
-    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+    initializeVault(db, { kdf, proofKeys: sampleProofKeys(), recoveryCodes });
   });
 
   afterEach(() => {
@@ -444,15 +443,14 @@ describe("resetVaultFromRecovery", () => {
     validateKdfParams(kdf);
     const recoveryCodes = sampleRecoveryCodes();
     validateRecoveryEnvelopes(recoveryCodes);
-    const authVerifier = await hashAuthKey(
-      Buffer.alloc(32, 9).toString("base64"),
-    );
-    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+    initializeVault(db, { kdf, proofKeys: sampleProofKeys(), recoveryCodes });
   });
 
   afterEach(() => {
     db?.close();
   });
+
+  const SAMPLE_CHALLENGE_NONCE = Buffer.from("challenge-nonce").toString("base64");
 
   function insertOpenTicket(ticketPlain: string): void {
     const codeId = (
@@ -461,14 +459,16 @@ describe("resetVaultFromRecovery", () => {
     const now = new Date();
     db.prepare(
       `INSERT INTO recovery_tickets (
-         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
-       ) VALUES (?, ?, ?, ?, ?, NULL)`,
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at,
+         challenge_nonce
+       ) VALUES (?, ?, ?, ?, ?, NULL, ?)`,
     ).run(
       "ticket-row-1",
       sha256Hex(ticketPlain),
       codeId,
       now.toISOString(),
       new Date(now.getTime() + 600_000).toISOString(),
+      SAMPLE_CHALLENGE_NONCE,
     );
   }
 
@@ -483,10 +483,9 @@ describe("resetVaultFromRecovery", () => {
           db,
           {
             recoveryTicket: "recovery-ticket-token",
+            challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
             kdf: sampleKdf(),
-            authVerifier: await hashAuthKey(
-              Buffer.alloc(32, 5).toString("base64"),
-            ),
+            proofKeys: sampleProofKeys(7),
             recoveryCodes: sampleRecoveryCodes(),
             entries: [],
           },
@@ -520,10 +519,9 @@ describe("resetVaultFromRecovery", () => {
       db,
       {
         recoveryTicket: "recovery-ticket-token",
+        challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
         kdf: sampleKdf(),
-        authVerifier: await hashAuthKey(
-          Buffer.alloc(32, 5).toString("base64"),
-        ),
+        proofKeys: sampleProofKeys(7),
         recoveryCodes: sampleRecoveryCodes(),
         entries: [entryPayload(ENTRY_ID, newCipher)],
       },
@@ -558,10 +556,9 @@ describe("resetVaultFromRecovery", () => {
       db,
       {
         recoveryTicket: "recovery-ticket-token",
+        challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
         kdf: sampleKdf(),
-        authVerifier: await hashAuthKey(
-          Buffer.alloc(32, 5).toString("base64"),
-        ),
+        proofKeys: sampleProofKeys(7),
         recoveryCodes: sampleRecoveryCodes(),
         entries: [entryPayload(ENTRY_ID)],
       },
@@ -589,10 +586,9 @@ describe("resetVaultFromRecovery", () => {
           db,
           {
             recoveryTicket: "recovery-ticket-token",
+            challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
             kdf: sampleKdf(),
-            authVerifier: await hashAuthKey(
-              Buffer.alloc(32, 5).toString("base64"),
-            ),
+            proofKeys: sampleProofKeys(7),
             recoveryCodes: sampleRecoveryCodes(),
             entries: snapshot,
           },
@@ -621,10 +617,9 @@ describe("resetVaultFromRecovery", () => {
           db,
           {
             recoveryTicket: "recovery-ticket-token",
+            challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
             kdf: sampleKdf(),
-            authVerifier: await hashAuthKey(
-              Buffer.alloc(32, 5).toString("base64"),
-            ),
+            proofKeys: sampleProofKeys(7),
             recoveryCodes: sampleRecoveryCodes(),
             entries: snapshot,
           },
@@ -656,10 +651,9 @@ describe("resetVaultFromRecovery", () => {
           db,
           {
             recoveryTicket: "recovery-ticket-token",
+            challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
             kdf: sampleKdf(),
-            authVerifier: await hashAuthKey(
-              Buffer.alloc(32, 5).toString("base64"),
-            ),
+            proofKeys: sampleProofKeys(7),
             recoveryCodes: sampleRecoveryCodes(),
             entries: snapshot,
           },
@@ -692,10 +686,9 @@ describe("resetVaultFromRecovery", () => {
       db,
       {
         recoveryTicket: "recovery-ticket-token",
+        challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
         kdf: sampleKdf(),
-        authVerifier: await hashAuthKey(
-          Buffer.alloc(32, 5).toString("base64"),
-        ),
+        proofKeys: sampleProofKeys(7),
         recoveryCodes: sampleRecoveryCodes(),
         entries: [entryPayload(ENTRY_ID, newCipher)],
       },
@@ -711,10 +704,9 @@ describe("resetVaultFromRecovery", () => {
           db,
           {
             recoveryTicket: "recovery-ticket-token",
+            challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
             kdf: sampleKdf(),
-            authVerifier: await hashAuthKey(
-              Buffer.alloc(32, 6).toString("base64"),
-            ),
+            proofKeys: sampleProofKeys(7),
             recoveryCodes: sampleRecoveryCodes(),
             entries: [entryPayload(ENTRY_ID, newCipher)],
           },
@@ -741,10 +733,9 @@ describe("resetVaultFromRecovery", () => {
       db,
       {
         recoveryTicket: "recovery-ticket-token",
+        challengeNonceB64: SAMPLE_CHALLENGE_NONCE,
         kdf: sampleKdf(),
-        authVerifier: await hashAuthKey(
-          Buffer.alloc(32, 5).toString("base64"),
-        ),
+        proofKeys: sampleProofKeys(7),
         recoveryCodes: sampleRecoveryCodes(),
         entries: [entryPayload(ENTRY_ID, newCipher)],
       },
@@ -772,10 +763,7 @@ describe("claimRecoveryCode", () => {
     validateKdfParams(kdf);
     const recoveryCodes = sampleRecoveryCodes();
     validateRecoveryEnvelopes(recoveryCodes);
-    const authVerifier = await hashAuthKey(
-      Buffer.alloc(32, 9).toString("base64"),
-    );
-    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+    initializeVault(db, { kdf, proofKeys: sampleProofKeys(), recoveryCodes });
   });
 
   afterEach(() => {
@@ -844,10 +832,7 @@ describe("assertKeyEntryMutationsAllowed", () => {
     validateKdfParams(kdf);
     const recoveryCodes = sampleRecoveryCodes();
     validateRecoveryEnvelopes(recoveryCodes);
-    const authVerifier = await hashAuthKey(
-      Buffer.alloc(32, 9).toString("base64"),
-    );
-    initializeVault(db, { kdf, authVerifier, recoveryCodes });
+    initializeVault(db, { kdf, proofKeys: sampleProofKeys(), recoveryCodes });
   });
 
   afterEach(() => {
@@ -884,14 +869,16 @@ describe("assertKeyEntryMutationsAllowed", () => {
     const now = new Date();
     db.prepare(
       `INSERT INTO recovery_tickets (
-         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
-       ) VALUES (?, ?, ?, ?, ?, NULL)`,
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at,
+         challenge_nonce
+       ) VALUES (?, ?, ?, ?, ?, NULL, ?)`,
     ).run(
       "open-ticket-1",
       sha256Hex("open-ticket-plain"),
       codeId,
       now.toISOString(),
       new Date(now.getTime() + 600_000).toISOString(),
+      Buffer.from("challenge-nonce").toString("base64"),
     );
 
     assert.equal(hasOpenRecoveryTicket(db), true);

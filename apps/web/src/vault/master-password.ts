@@ -12,9 +12,15 @@ import {
   getVaultStatus,
   postRecoveryCodesRegenerate,
   postRecoveryReset,
-  postVaultLogin,
+  postVaultLoginChallenge,
+  postVaultLoginWithAuthKey,
   postVaultPasswordChange,
 } from "@/lib/api.js";
+import {
+  loginClientProofB64,
+  proofKeysFromSecrets,
+  recoveryClientProofB64,
+} from "@/crypto/auth-proof.js";
 
 import {
   buildRekeyRecoveryEnvelopes,
@@ -100,7 +106,9 @@ export async function changeMasterPassword(
   const { entries } = await getKeyEntries();
 
   let kdf: Awaited<ReturnType<typeof pickKdfParams>>;
-  let nextAuthKeyB64: string;
+  let nextProofKeys:
+    | { authStoredKeyHex: string; recoveryStoredKeyHex: string }
+    | undefined;
   let reencrypted;
   let codes;
   let envelopes;
@@ -119,7 +127,10 @@ export async function changeMasterPassword(
         onProgress?.("Deriving new encryption key…");
         kdf = await pickKdfParams();
         const next = await deriveVaultKeys(newPassword, kdf);
-        nextAuthKeyB64 = next.authKeyB64;
+        nextProofKeys = proofKeysFromSecrets({
+          authKeyB64: next.authKeyB64,
+          masterKey: next.masterKey,
+        });
         return next;
       },
       decryptFailure: {
@@ -128,10 +139,8 @@ export async function changeMasterPassword(
         partial: (first) =>
           `“${first.label}” (${first.id}) could not be decrypted, so nothing was changed. Check that key entry and try again.`,
         beforeEmpty: async () => {
-          // A successful arbitration login revokes/reissues the session cookie
-          // (server /login behavior); harmless here.
           try {
-            await postVaultLogin({ authKeyB64: current.authKeyB64 });
+            await postVaultLoginWithAuthKey(current.authKeyB64);
           } catch (error) {
             zeroizeAesKey(current.encryptionKey);
             if (error instanceof ApiError && error.code === "invalid_credentials") {
@@ -155,10 +164,18 @@ export async function changeMasterPassword(
   onProgress?.("Saving new Master Password…");
   let response: VaultPasswordChangeResponse;
   try {
+    const challenge = await postVaultLoginChallenge();
     response = await postVaultPasswordChange({
-      currentAuthKeyB64: current.authKeyB64,
+      challengeId: challenge.challengeId,
+      nonceB64: challenge.nonceB64,
+      currentClientProofB64: loginClientProofB64(
+        current.authKeyB64,
+        challenge.challengeId,
+        challenge.nonceB64,
+      ),
       kdf: kdf!,
-      authKeyB64: nextAuthKeyB64!,
+      authStoredKeyHex: nextProofKeys!.authStoredKeyHex,
+      recoveryStoredKeyHex: nextProofKeys!.recoveryStoredKeyHex,
       recoveryCodes: envelopes,
       entries: reencrypted,
     });
@@ -189,6 +206,7 @@ export async function changeMasterPassword(
  */
 export async function completeVaultRecovery(
   recoveryTicket: string,
+  challengeNonceB64: string,
   recoveredMasterKey: Uint8Array,
   entries: KeyEntry[],
   newPassword: string,
@@ -207,7 +225,9 @@ export async function completeVaultRecovery(
   );
 
   let kdf: Awaited<ReturnType<typeof pickKdfParams>>;
-  let nextAuthKeyB64: string;
+  let nextProofKeys:
+    | { authStoredKeyHex: string; recoveryStoredKeyHex: string }
+    | undefined;
   let nextEncryptionKey: AesKey | undefined;
 
   try {
@@ -220,7 +240,10 @@ export async function completeVaultRecovery(
           onProgress?.("Deriving new encryption key…");
           kdf = await pickKdfParams();
           const next = await deriveVaultKeys(newPassword, kdf);
-          nextAuthKeyB64 = next.authKeyB64;
+            nextProofKeys = proofKeysFromSecrets({
+            authKeyB64: next.authKeyB64,
+            masterKey: next.masterKey,
+          });
           return next;
         },
         decryptFailure: {
@@ -235,8 +258,15 @@ export async function completeVaultRecovery(
     onProgress?.("Saving new Master Password…");
     const response = await postRecoveryReset({
       recoveryTicket,
+      challengeNonceB64,
+      recoveryClientProofB64: recoveryClientProofB64(
+        recoveredMasterKey,
+        recoveryTicket,
+        challengeNonceB64,
+      ),
       kdf: kdf!,
-      authKeyB64: nextAuthKeyB64!,
+      authStoredKeyHex: nextProofKeys!.authStoredKeyHex,
+      recoveryStoredKeyHex: nextProofKeys!.recoveryStoredKeyHex,
       recoveryCodes: envelopes,
       entries: reencrypted,
     });
@@ -295,8 +325,15 @@ export async function regenerateRecoveryCodes(
 
   onProgress?.("Saving recovery codes…");
   try {
+    const challenge = await postVaultLoginChallenge();
     await postRecoveryCodesRegenerate({
-      authKeyB64: derived.authKeyB64,
+      challengeId: challenge.challengeId,
+      nonceB64: challenge.nonceB64,
+      clientProofB64: loginClientProofB64(
+        derived.authKeyB64,
+        challenge.challengeId,
+        challenge.nonceB64,
+      ),
       // Pinned to the same status read that supplied the KDF params these
       // envelopes were built from, so a rotation in between is rejected rather
       // than persisted as codes wrapping a superseded master key.

@@ -13,6 +13,7 @@ import type {
   KeyEntryListResponse,
   KeyEntryUseAction,
   KeyEntryUseResponse,
+  RecoveryCancelRequest,
   RecoveryClaimRequest,
   RecoveryClaimResponse,
   RecoveryCodesRegenerateRequest,
@@ -21,6 +22,7 @@ import type {
   RecoveryResetResponse,
   VaultPasswordChangeRequest,
   VaultPasswordChangeResponse,
+  VaultLoginChallengeResponse,
   VaultLoginRequest,
   VaultLoginResponse,
   VaultSessionResponse,
@@ -28,6 +30,8 @@ import type {
   VaultSetupResponse,
   VaultStatusResponse,
 } from "@keypage/shared";
+
+import { loginClientProofB64 } from "@/crypto/auth-proof.js";
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
@@ -105,12 +109,33 @@ export function postVaultSetup(
   });
 }
 
+export function postVaultLoginChallenge(): Promise<VaultLoginChallengeResponse> {
+  return apiFetch<VaultLoginChallengeResponse>("/api/vault/login/challenge", {
+    method: "POST",
+  });
+}
+
 export function postVaultLogin(
   body: VaultLoginRequest,
 ): Promise<VaultLoginResponse> {
   return apiFetch<VaultLoginResponse>("/api/vault/login", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export async function postVaultLoginWithAuthKey(
+  authKeyB64: string,
+): Promise<VaultLoginResponse> {
+  const challenge = await postVaultLoginChallenge();
+  return postVaultLogin({
+    challengeId: challenge.challengeId,
+    nonceB64: challenge.nonceB64,
+    clientProofB64: loginClientProofB64(
+      authKeyB64,
+      challenge.challengeId,
+      challenge.nonceB64,
+    ),
   });
 }
 
@@ -130,6 +155,15 @@ export function postRecoveryClaim(
   body: RecoveryClaimRequest,
 ): Promise<RecoveryClaimResponse> {
   return apiFetch<RecoveryClaimResponse>("/api/vault/recovery/claim", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function postRecoveryCancel(
+  body: RecoveryCancelRequest,
+): Promise<void> {
+  return apiFetch<void>("/api/vault/recovery/cancel", {
     method: "POST",
     body: JSON.stringify(body),
   });

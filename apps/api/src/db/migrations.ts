@@ -127,6 +127,21 @@ CREATE INDEX idx_activity_events_occurred_at ON activity_events (occurred_at DES
 CREATE INDEX idx_activity_events_key_entry ON activity_events (key_entry_id);
 `;
 
+const MIGRATION_4_SQL = `
+-- SAA-170 / SAA-173: stored-key possession proofs (authKey / masterKey stay off the wire).
+ALTER TABLE vault_auth ADD COLUMN auth_stored_key TEXT;
+ALTER TABLE vault_auth ADD COLUMN recovery_stored_key TEXT;
+
+ALTER TABLE recovery_tickets ADD COLUMN challenge_nonce TEXT;
+
+CREATE TABLE login_challenges (
+  id         TEXT PRIMARY KEY,
+  nonce_b64  TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -148,6 +163,12 @@ export const MIGRATIONS: Migration[] = [
     version: 3,
     up(db) {
       db.exec(MIGRATION_3_SQL);
+    },
+  },
+  {
+    version: 4,
+    up(db) {
+      db.exec(MIGRATION_4_SQL);
     },
   },
 ];

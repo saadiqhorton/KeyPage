@@ -7,12 +7,14 @@ import type { WizardState } from "./useVault.js";
 
 export type RecoverySessionStart = {
   ticket: string;
+  challengeNonceB64: string;
   entries: KeyEntry[];
   masterKey: Uint8Array;
 };
 
 export type RecoveryAttempt = {
   readonly ticket: string;
+  readonly challengeNonceB64: string;
   readonly entries: KeyEntry[];
   readonly masterKey: Uint8Array;
   /**
@@ -29,12 +31,15 @@ export type RecoverySession = {
   start(input: RecoverySessionStart): void;
   isActive(): boolean;
   beginComplete(): RecoveryAttempt | null;
+  /** Zeroize local state and return the open ticket (if any) for server cancel. */
+  takeTicketForCancel(): string | null;
   clear(): void;
 };
 
 export function createRecoverySession(): RecoverySession {
   let held: {
     ticket: string;
+    challengeNonceB64: string;
     entries: KeyEntry[];
     masterKey: Uint8Array;
   } | null = null;
@@ -49,6 +54,7 @@ export function createRecoverySession(): RecoverySession {
       epoch += 1;
       held = {
         ticket: input.ticket,
+        challengeNonceB64: input.challengeNonceB64,
         entries: [...input.entries],
         masterKey: input.masterKey,
       };
@@ -64,6 +70,7 @@ export function createRecoverySession(): RecoverySession {
       }
       const capturedEpoch = epoch;
       const ticket = held.ticket;
+      const challengeNonceB64 = held.challengeNonceB64;
       const entries = held.entries;
       const masterKey = held.masterKey;
       held = null;
@@ -72,6 +79,7 @@ export function createRecoverySession(): RecoverySession {
 
       return {
         ticket,
+        challengeNonceB64,
         entries,
         masterKey,
         succeeded(): boolean {
@@ -88,12 +96,23 @@ export function createRecoverySession(): RecoverySession {
           }
           settled = true;
           if (capturedEpoch === epoch) {
-            held = { ticket, entries, masterKey };
+            held = { ticket, challengeNonceB64, entries, masterKey };
           } else {
             zeroize(masterKey);
           }
         },
       };
+    },
+
+    takeTicketForCancel(): string | null {
+      if (!held) {
+        return null;
+      }
+      const ticket = held.ticket;
+      zeroize(held.masterKey);
+      held = null;
+      epoch += 1;
+      return ticket;
     },
 
     clear(): void {

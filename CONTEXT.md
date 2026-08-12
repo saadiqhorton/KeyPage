@@ -33,7 +33,7 @@ Open source project — each deployment is single-user, but the code is public f
 
 ## Security Model
 - General security best practices for API key storage and management
-- Login protocol: Argon2id stretches the Master Password into a `masterKey`, then HKDF splits it into an `encryptionKey` (browser-only) and an `authKey` (sent to the server); the server stores only `Argon2id(authKey)` as the login verifier
+- Login protocol: Argon2id stretches the Master Password into a `masterKey`, then HKDF splits it into an `encryptionKey` (browser-only) and an `authKey` (browser-only). The server stores SCRAM-style `storedKey` digests derived from `authKey` / `masterKey`; login and sensitive mutations use a one-time challenge + client proof so those secrets never cross the wire (even on LAN HTTP)
 - Client-side encryption: master password never leaves the browser
 - Keys encrypted/decrypted in the browser via Web Crypto API (AES-256-GCM)
 - Encryption key derived client-side via Argon2id (or Web Crypto PBKDF2 fallback)
