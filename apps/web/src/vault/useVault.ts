@@ -23,6 +23,8 @@ export type VaultState =
       lockout: LockoutState;
       recoveryCodesRemaining: number;
       recoveryLockout: LockoutState;
+      /** False on pre-proof vaults; unlock must enroll with authKeyB64. */
+      proofReady: boolean;
     }
   | { phase: "working"; label: string }
   | { phase: "unlocked"; idleTimeoutSeconds: number };

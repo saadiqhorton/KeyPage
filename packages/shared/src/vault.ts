@@ -92,6 +92,8 @@ export type VaultStatusResponse = {
   lockout: LockoutState;
   recoveryLockout: LockoutState;
   session: { authenticated: boolean; idleTimeoutSeconds: number };
+  /** True once auth_stored_key is enrolled (challenge proofs). False on legacy vaults. */
+  proofReady: boolean;
 };
 
 export type VaultSetupRequest = {
@@ -115,11 +117,18 @@ export type VaultLoginChallengeResponse = {
   expiresAt: string;
 };
 
-export type VaultLoginRequest = {
+export type VaultLoginProofRequest = {
   challengeId: string;
   nonceB64: string;
   clientProofB64: string;
 };
+
+/** One-shot enroll for pre-proof vaults (SAA-177). Rejected once proofReady. */
+export type VaultLoginEnrollRequest = {
+  authKeyB64: string;
+};
+
+export type VaultLoginRequest = VaultLoginProofRequest | VaultLoginEnrollRequest;
 export type VaultLoginResponse = { keyVersion: number; session: SessionInfo };
 
 export type VaultSessionResponse = {
@@ -149,8 +158,8 @@ export type RecoveryCancelRequest = {
 export type RecoveryResetRequest = {
   recoveryTicket: string;
   challengeNonceB64: string;
-  /** Proof of unwrapped masterKey (SAA-173). */
-  recoveryClientProofB64: string;
+  /** Proof of unwrapped masterKey (SAA-173). Omitted only for pre-proof vaults. */
+  recoveryClientProofB64?: string;
   kdf: KdfParams;
   authStoredKeyHex: string;
   recoveryStoredKeyHex: string;

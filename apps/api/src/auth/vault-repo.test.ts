@@ -3,10 +3,14 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import Database from "better-sqlite3";
 
+import { AUTH_VERIFIER_PROOF_V1 } from "@keypage/shared";
+
 import {
   assertKeyEntryMutationsAllowed,
+  cancelRecoveryTicket,
   changeMasterPassword,
   claimRecoveryCode,
+  enrollLegacyAuthStoredKey,
   hasOpenRecoveryTicket,
   initializeVault,
   regenerateRecoveryCodes,
@@ -887,6 +891,77 @@ describe("assertKeyEntryMutationsAllowed", () => {
       (error: unknown) =>
         error instanceof HttpInvalidRequest &&
         error.message === "Vault recovery in progress",
+    );
+  });
+});
+
+describe("cancelRecoveryTicket", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = openMemoryDb();
+    initializeVault(db, {
+      kdf: sampleKdf(),
+      proofKeys: sampleProofKeys(),
+      recoveryCodes: sampleRecoveryCodes(),
+    });
+  });
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  it("revokes an open ticket and is a no-op for unknown or already-cancelled tickets", () => {
+    const result = claimRecoveryCode(db, sampleRecoveryCodes()[0]!.lookupHash);
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+
+    assert.equal(hasOpenRecoveryTicket(db), true);
+    assert.equal(cancelRecoveryTicket(db, result.claim.recoveryTicket), true);
+    assert.equal(hasOpenRecoveryTicket(db), false);
+    assert.equal(cancelRecoveryTicket(db, result.claim.recoveryTicket), false);
+    assert.equal(cancelRecoveryTicket(db, "unknown-ticket"), false);
+  });
+});
+
+describe("enrollLegacyAuthStoredKey", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = openMemoryDb();
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO vault_auth (
+         id, kdf_algorithm, kdf_memory_kib, kdf_iterations, kdf_parallelism,
+         kdf_salt, auth_verifier, auth_stored_key, recovery_stored_key,
+         key_version, created_at, updated_at
+       ) VALUES (1, 'pbkdf2-sha256', NULL, 600000, NULL, ?, ?, NULL, NULL, 1, ?, ?)`,
+    ).run(sampleKdf().saltB64, "$argon2id$legacy-phc", nowIso, nowIso);
+  });
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  it("writes auth_stored_key and flips the verifier once", () => {
+    const storedKeyHex = Buffer.alloc(32, 11).toString("hex");
+    enrollLegacyAuthStoredKey(db, storedKeyHex);
+
+    const row = db
+      .prepare(
+        `SELECT auth_stored_key, auth_verifier FROM vault_auth WHERE id = 1`,
+      )
+      .get() as { auth_stored_key: string; auth_verifier: string };
+    assert.equal(row.auth_stored_key, storedKeyHex);
+    assert.equal(row.auth_verifier, AUTH_VERIFIER_PROOF_V1);
+
+    assert.throws(
+      () => enrollLegacyAuthStoredKey(db, Buffer.alloc(32, 12).toString("hex")),
+      (error: unknown) =>
+        error instanceof HttpInvalidRequest &&
+        error.message === "legacy auth enrollment failed",
     );
   });
 });

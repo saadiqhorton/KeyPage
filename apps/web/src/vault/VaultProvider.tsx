@@ -15,7 +15,7 @@ import {
   unwrapMasterKey,
 } from "@/crypto/recovery.js";
 import { zeroize } from "@/crypto/provider.js";
-import { ApiError, getVaultStatus, postRecoveryCancel, postRecoveryClaim, postVaultLock, postVaultLoginWithAuthKey, postVaultSetup } from "@/lib/api.js";
+import { ApiError, getVaultStatus, postRecoveryCancel, postRecoveryClaim, postVaultLock, postVaultLogin, postVaultLoginWithAuthKey, postVaultSetup } from "@/lib/api.js";
 import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
 import { normalizeRecoveryCode } from "@keypage/shared";
 
@@ -95,6 +95,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       lockout: status.lockout,
       recoveryCodesRemaining: status.recoveryCodesRemaining,
       recoveryLockout: status.recoveryLockout,
+      proofReady: status.proofReady,
     });
   }, []);
 
@@ -219,7 +220,9 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const derived = await deriveVaultKeys(password, current.kdf);
       zeroize(derived.masterKey);
 
-      const response = await postVaultLoginWithAuthKey(derived.authKeyB64);
+      const response = current.proofReady
+        ? await postVaultLoginWithAuthKey(derived.authKeyB64)
+        : await postVaultLogin({ authKeyB64: derived.authKeyB64 });
       setEncryptionKey(derived.encryptionKey, response.keyVersion);
       lockReasonRef.current = "initial";
       setState({
