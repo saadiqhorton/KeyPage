@@ -67,7 +67,7 @@ export type VaultActions = {
   ): Promise<void>;
   acknowledgeRecoveryCodes(): RecoveryCodesAckOutcome;
   finishWizard(): void;
-  cancelRecovery(): void;
+  cancelRecovery(): Promise<void>;
 };
 
 export type VaultContextValue = {

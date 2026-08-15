@@ -373,7 +373,29 @@ describe("recovery session slice 5 — key-clear attachment", () => {
   });
 });
 
-describe("recovery session slice 6 — wizard rule", () => {
+describe("recovery session slice 6 — open ticket peek", () => {
+  it("openTicket() returns the ticket without clearing the session", () => {
+    const session = createRecoverySession();
+    const key = masterKey();
+    session.start({
+      ticket: "ticket-a",
+      challengeNonceB64: "Y2hhbA==",
+      entries: [makeEntry("entry-1")],
+      masterKey: key,
+    });
+
+    assert.equal(session.openTicket(), "ticket-a");
+    assert.equal(session.isActive(), true);
+    assert.equal(isZeroized(key), false);
+
+    session.clear();
+    assert.equal(session.openTicket(), null);
+    assert.equal(session.isActive(), false);
+    assert.equal(isZeroized(key), true);
+  });
+});
+
+describe("recovery session slice 7 — wizard rule", () => {
   it("resets the recovery wizard at the code step", () => {
     const wizard = recoveryWizardAfterKeyCleared({
       kind: "recovery",

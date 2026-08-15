@@ -31,8 +31,8 @@ export type RecoverySession = {
   start(input: RecoverySessionStart): void;
   isActive(): boolean;
   beginComplete(): RecoveryAttempt | null;
-  /** Zeroize local state and return the open ticket (if any) for server cancel. */
-  takeTicketForCancel(): string | null;
+  /** Ticket currently held, if any. Does not clear or zeroize. */
+  openTicket(): string | null;
   clear(): void;
 };
 
@@ -104,15 +104,8 @@ export function createRecoverySession(): RecoverySession {
       };
     },
 
-    takeTicketForCancel(): string | null {
-      if (!held) {
-        return null;
-      }
-      const ticket = held.ticket;
-      zeroize(held.masterKey);
-      held = null;
-      epoch += 1;
-      return ticket;
+    openTicket(): string | null {
+      return held?.ticket ?? null;
     },
 
     clear(): void {

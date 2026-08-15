@@ -157,7 +157,8 @@ export type RecoveryCancelRequest = {
 
 export type RecoveryResetRequest = {
   recoveryTicket: string;
-  challengeNonceB64: string;
+  /** Required when the ticket was minted with a challenge nonce. */
+  challengeNonceB64?: string;
   /** Proof of unwrapped masterKey (SAA-173). Omitted only for pre-proof vaults. */
   recoveryClientProofB64?: string;
   kdf: KdfParams;

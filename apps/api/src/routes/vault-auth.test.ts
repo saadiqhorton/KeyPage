@@ -13,6 +13,7 @@ import {
   recoveryStoredKeyHexFromMasterKey,
 } from "@keypage/shared";
 
+import { sha256Hex } from "../auth/tokens.js";
 import { hashAuthKey } from "../auth/verifier.js";
 import { initializeVault, replaceRecoveryCodes } from "../auth/vault-repo.js";
 import { runMigrations } from "../db/migrations.js";
@@ -282,6 +283,32 @@ describe("vault auth routes (SAA-177)", () => {
     assert.equal(unknown.statusCode, 204);
   });
 
+  it("rejects a proof-ready recovery reset without challengeNonceB64", async () => {
+    await startProofReady();
+    const claim = await app.inject({
+      method: "POST",
+      url: "/api/vault/recovery/claim",
+      payload: { lookupHash: sampleRecoveryCodes()[0]!.lookupHash },
+    });
+    assert.equal(claim.statusCode, 200);
+
+    const { recoveryTicket } = claim.json() as { recoveryTicket: string };
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/recovery/reset",
+      payload: {
+        recoveryTicket,
+        kdf: sampleKdf(),
+        authStoredKeyHex: proofKeys().authStoredKeyHex,
+        recoveryStoredKeyHex: proofKeys().recoveryStoredKeyHex,
+        recoveryCodes: sampleRecoveryCodes(16),
+        entries: [],
+      },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error, "invalid_request");
+  });
+
   it("rejects a proof-ready recovery reset without recoveryClientProofB64", async () => {
     await startProofReady();
     const claim = await app.inject({
@@ -305,6 +332,44 @@ describe("vault auth routes (SAA-177)", () => {
       response.json().details?.[0]?.message,
       "must have required property 'recoveryClientProofB64'",
     );
+  });
+
+  it("resets a pre-migration ticket with a null challenge_nonce and no proof", async () => {
+    await startLegacy();
+    const nowIso = new Date().toISOString();
+    const ticketPlain = "pre-migration-ticket";
+    const codeId = (
+      db.prepare(`SELECT id FROM recovery_codes LIMIT 1`).get() as { id: string }
+    ).id;
+    db.prepare(
+      `INSERT INTO recovery_tickets (
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at,
+         challenge_nonce
+       ) VALUES (?, ?, ?, ?, ?, NULL, NULL)`,
+    ).run(
+      "legacy-ticket-row",
+      sha256Hex(ticketPlain),
+      codeId,
+      nowIso,
+      new Date(Date.now() + 600_000).toISOString(),
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/recovery/reset",
+      payload: {
+        recoveryTicket: ticketPlain,
+        kdf: sampleKdf(),
+        authStoredKeyHex: proofKeys().authStoredKeyHex,
+        recoveryStoredKeyHex: proofKeys().recoveryStoredKeyHex,
+        recoveryCodes: sampleRecoveryCodes(16),
+        entries: [],
+      },
+    });
+    assert.equal(response.statusCode, 200);
+
+    const status = await app.inject({ method: "GET", url: "/api/vault/status" });
+    assert.equal(status.json().proofReady, true);
   });
 
   it("resets a legacy vault without a masterKey proof and leaves it proof-ready", async () => {

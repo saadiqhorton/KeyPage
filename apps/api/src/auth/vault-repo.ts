@@ -401,7 +401,8 @@ export function initializeVault(
 
 export type ResetVaultFromRecoveryInput = {
   recoveryTicket: string;
-  challengeNonceB64: string;
+  /** Required when the ticket has a stored challenge_nonce (post-migration). */
+  challengeNonceB64?: string;
   kdf: KdfParams;
   proofKeys: VaultProofKeys;
   recoveryCodes: RecoveryCodeEnvelope[];
@@ -560,11 +561,10 @@ export function resetVaultFromRecovery(
       throw new HttpInvalidRecoveryTicket();
     }
 
-    if (
-      !ticket.challenge_nonce ||
-      ticket.challenge_nonce !== input.challengeNonceB64
-    ) {
-      throw new HttpInvalidRecoveryTicket();
+    if (ticket.challenge_nonce) {
+      if (ticket.challenge_nonce !== input.challengeNonceB64) {
+        throw new HttpInvalidRecoveryTicket();
+      }
     }
 
     const vault = getVaultAuth(db);

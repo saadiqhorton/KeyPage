@@ -12,6 +12,7 @@ import {
   getVaultStatus,
   postRecoveryCodesRegenerate,
   postRecoveryReset,
+  postVaultLogin,
   postVaultLoginChallenge,
   postVaultLoginWithAuthKey,
   postVaultPasswordChange,
@@ -87,6 +88,17 @@ export function formatPasswordError(
 
 export type PasswordChangeProgress = (label: string) => void;
 
+/** One-shot enroll so /login/challenge can issue a proof (SAA-178). */
+async function enrollLegacyAuthIfNeeded(
+  proofReady: boolean,
+  authKeyB64: string,
+): Promise<void> {
+  if (proofReady) {
+    return;
+  }
+  await postVaultLogin({ authKeyB64 });
+}
+
 export async function changeMasterPassword(
   currentPassword: string,
   newPassword: string,
@@ -101,6 +113,12 @@ export async function changeMasterPassword(
   onProgress?.("Verifying current Master Password…");
   const current = await deriveVaultKeys(currentPassword, status.kdf);
   zeroize(current.masterKey);
+  try {
+    await enrollLegacyAuthIfNeeded(status.proofReady, current.authKeyB64);
+  } catch (error) {
+    zeroizeAesKey(current.encryptionKey);
+    rethrowInvalidCredentials(error);
+  }
 
   onProgress?.("Loading key entries…");
   const { entries } = await getKeyEntries();
@@ -322,6 +340,11 @@ export async function regenerateRecoveryCodes(
     onProgress,
   );
   zeroize(derived.masterKey);
+  try {
+    await enrollLegacyAuthIfNeeded(status.proofReady, derived.authKeyB64);
+  } catch (error) {
+    rethrowInvalidCredentials(error);
+  }
 
   onProgress?.("Saving recovery codes…");
   try {

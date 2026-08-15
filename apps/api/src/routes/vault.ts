@@ -620,7 +620,6 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
           type: "object",
           required: [
             "recoveryTicket",
-            "challengeNonceB64",
             "kdf",
             "authStoredKeyHex",
             "recoveryStoredKeyHex",
@@ -651,7 +650,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
     async (request, reply): Promise<RecoveryResetResponse> => {
       const body = request.body as {
         recoveryTicket: string;
-        challengeNonceB64: string;
+        challengeNonceB64?: string;
         recoveryClientProofB64?: string;
         kdf: KdfParams;
         authStoredKeyHex: string;
@@ -687,6 +686,17 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
               {
                 field: "recoveryClientProofB64",
                 message: "must have required property 'recoveryClientProofB64'",
+              },
+            ],
+          );
+        }
+        if (!body.challengeNonceB64) {
+          throw new HttpInvalidRequest(
+            "Recovery reset requires the claim challenge nonce.",
+            [
+              {
+                field: "challengeNonceB64",
+                message: "must have required property 'challengeNonceB64'",
               },
             ],
           );

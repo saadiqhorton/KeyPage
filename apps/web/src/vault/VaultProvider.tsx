@@ -411,13 +411,24 @@ export function VaultProvider({ children }: VaultProviderProps) {
     setWizard({ kind: "none" });
   }, []);
 
-  const cancelRecovery = useCallback(() => {
-    const ticket = recoverySession.takeTicketForCancel();
-    setWizard({ kind: "none" });
-    if (ticket) {
-      void postRecoveryCancel({ recoveryTicket: ticket }).catch(() => {});
+  const cancelRecovery = useCallback(async () => {
+    const ticket = recoverySession.openTicket();
+    if (!ticket) {
+      setWizard({ kind: "none" });
+      await refreshStatus();
+      return;
     }
-    void refreshStatus();
+
+    setState({ phase: "working", label: "Cancelling recovery…" });
+    try {
+      await postRecoveryCancel({ recoveryTicket: ticket });
+      recoverySession.clear();
+      setWizard({ kind: "none" });
+    } catch (error) {
+      await refreshStatus();
+      throw error;
+    }
+    await refreshStatus();
   }, [refreshStatus]);
 
   const actions = useMemo<VaultActions>(

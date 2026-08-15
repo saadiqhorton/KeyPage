@@ -456,7 +456,10 @@ describe("resetVaultFromRecovery", () => {
 
   const SAMPLE_CHALLENGE_NONCE = Buffer.from("challenge-nonce").toString("base64");
 
-  function insertOpenTicket(ticketPlain: string): void {
+  function insertOpenTicket(
+    ticketPlain: string,
+    challengeNonce: string | null = SAMPLE_CHALLENGE_NONCE,
+  ): void {
     const codeId = (
       db.prepare(`SELECT id FROM recovery_codes LIMIT 1`).get() as { id: string }
     ).id;
@@ -472,7 +475,7 @@ describe("resetVaultFromRecovery", () => {
       codeId,
       now.toISOString(),
       new Date(now.getTime() + 600_000).toISOString(),
-      SAMPLE_CHALLENGE_NONCE,
+      challengeNonce,
     );
   }
 
@@ -754,6 +757,51 @@ describe("resetVaultFromRecovery", () => {
       }
     ).count;
     assert.equal(ticketCount, 0);
+    assert.equal(hasOpenRecoveryTicket(db), false);
+  });
+
+  it("rejects a nonce mismatch when the ticket has a challenge_nonce", async () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("recovery-ticket-token");
+
+    await assert.rejects(
+      async () =>
+        resetVaultFromRecovery(
+          db,
+          {
+            recoveryTicket: "recovery-ticket-token",
+            challengeNonceB64: Buffer.from("wrong-nonce").toString("base64"),
+            kdf: sampleKdf(),
+            proofKeys: sampleProofKeys(7),
+            recoveryCodes: sampleRecoveryCodes(),
+            entries: [entryPayload(ENTRY_ID)],
+          },
+          {},
+          1200,
+        ),
+      (error: unknown) => error instanceof HttpInvalidRecoveryTicket,
+    );
+    assert.equal(readKeyVersion(db), 1);
+  });
+
+  it("accepts a pre-migration ticket with a null challenge_nonce", () => {
+    insertSampleEntry(db, ENTRY_ID);
+    insertOpenTicket("legacy-open-ticket", null);
+
+    const result = resetVaultFromRecovery(
+      db,
+      {
+        recoveryTicket: "legacy-open-ticket",
+        kdf: sampleKdf(),
+        proofKeys: sampleProofKeys(7),
+        recoveryCodes: sampleRecoveryCodes(),
+        entries: [entryPayload(ENTRY_ID)],
+      },
+      {},
+      1200,
+    );
+
+    assert.equal(result.keyVersion, 2);
     assert.equal(hasOpenRecoveryTicket(db), false);
   });
 });
