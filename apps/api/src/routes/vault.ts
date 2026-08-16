@@ -5,6 +5,7 @@ import {
   RECOVERY_CODE_COUNT,
   SESSION_COOKIE_NAME,
   loginAuthMessage,
+  loginStoredKeyHexFromAuthKey,
   recoveryAuthMessage,
   verifyClientProof,
   type KdfParams,
@@ -44,14 +45,17 @@ import {
   kdfSchema,
   recoveryEnvelopeSchema,
   reencryptedEntrySchema,
+  validateAuthKeyB64,
   validateClientProofB64,
   validateStoredKeyHex,
 } from "../auth/vault-request.js";
+import { verifyAuthKey } from "../auth/verifier.js";
 import {
   cancelRecoveryTicket,
   changeMasterPassword,
   claimRecoveryCode,
   countUnusedRecoveryCodes,
+  enrollLegacyAuthStoredKey,
   getVaultAuth,
   initializeVault,
   isVaultInitialized,
@@ -130,6 +134,7 @@ function buildStatusResponse(
         authenticated: false,
         idleTimeoutSeconds: idleSeconds,
       },
+      proofReady: false,
     };
   }
 
@@ -144,6 +149,7 @@ function buildStatusResponse(
       authenticated: resolution.ok,
       idleTimeoutSeconds: idleSeconds,
     },
+    proofReady: Boolean(vault.auth_stored_key),
   };
 }
 
@@ -181,19 +187,19 @@ function buildSessionResponse(
   };
 }
 
-function requireProofReadyVault(db: Database.Database): VaultAuthRow {
+function requireAuthStoredKey(db: Database.Database): VaultAuthRow {
   const vault = getVaultAuth(db);
   if (!vault) {
     throw new HttpSetupRequired();
   }
-  if (!vault.auth_stored_key || !vault.recovery_stored_key) {
+  if (!vault.auth_stored_key) {
     throw new HttpInvalidRequest(
-      "This vault must be recovered before it can unlock on this version of KeyPage.",
+      "This vault must enroll via Master Password login before using proofs.",
       [
         {
           field: "auth",
           message:
-            "stored-key proofs are required; use a recovery code to reset the Master Password",
+            "auth_stored_key is missing; POST /login with authKeyB64 to enroll",
         },
       ],
     );
@@ -354,7 +360,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         throw new HttpSetupRequired();
       }
       assertNotLocked(db, "login");
-      requireProofReadyVault(db);
+      requireAuthStoredKey(db);
       return createLoginChallenge(db);
     },
   );
@@ -367,11 +373,11 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       schema: {
         body: {
           type: "object",
-          required: ["challengeId", "nonceB64", "clientProofB64"],
           properties: {
             challengeId: { type: "string" },
             nonceB64: { type: "string" },
             clientProofB64: { type: "string" },
+            authKeyB64: { type: "string" },
           },
         },
       },
@@ -384,67 +390,126 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       assertNotLocked(db, "login");
 
       const body = request.body as {
-        challengeId: string;
-        nonceB64: string;
-        clientProofB64: string;
+        challengeId?: string;
+        nonceB64?: string;
+        clientProofB64?: string;
+        authKeyB64?: string;
       };
-      validateClientProofB64(body.clientProofB64, "clientProofB64");
 
-      const vault = requireProofReadyVault(db);
-      const storedKeyHex = vault.auth_stored_key!;
+      const vault = getVaultAuth(db);
+      if (!vault) {
+        throw new HttpSetupRequired();
+      }
 
-      try {
+      const idleSeconds = idleTimeoutSeconds(db);
+
+      const finishLogin = (storedKeyHex: string) => {
+        try {
+          return db.transaction(() => {
+            const currentVault = getVaultAuth(db);
+            if (
+              !currentVault ||
+              currentVault.auth_stored_key !== storedKeyHex
+            ) {
+              throw new HttpInvalidCredentials("Incorrect Master Password", 0);
+            }
+
+            const currentSession = resolveSession(db, request, idleSeconds);
+            if (currentSession.ok) {
+              revokeSession(db, currentSession.session.id);
+            }
+
+            revokeOpenRecoveryTickets(db);
+
+            const { token, info } = createSession(db, request, idleSeconds);
+            return { token, info, keyVersion: currentVault.key_version };
+          })();
+        } catch (error) {
+          if (error instanceof HttpInvalidCredentials) {
+            const attemptsRemaining = recordFailure(db, "login");
+            throw new HttpInvalidCredentials(
+              "Incorrect Master Password",
+              attemptsRemaining,
+            );
+          }
+          throw error;
+        }
+      };
+
+      if (vault.auth_stored_key) {
+        if (body.authKeyB64 !== undefined) {
+          throw new HttpInvalidRequest(
+            "This vault uses challenge proofs; authKeyB64 is not accepted.",
+            [
+              {
+                field: "authKeyB64",
+                message: "must be omitted once the vault is proof-ready",
+              },
+            ],
+          );
+        }
+        if (!body.challengeId || !body.nonceB64 || !body.clientProofB64) {
+          throw new HttpInvalidRequest("Login proof is required", [
+            {
+              field: "clientProofB64",
+              message: "challengeId, nonceB64, and clientProofB64 are required",
+            },
+          ]);
+        }
+        validateClientProofB64(body.clientProofB64, "clientProofB64");
+        const storedKeyHex = vault.auth_stored_key;
         verifyLoginProof(db, {
           challengeId: body.challengeId,
           nonceB64: body.nonceB64,
           clientProofB64: body.clientProofB64,
           storedKeyHex,
         });
-      } catch (error) {
-        if (error instanceof HttpInvalidCredentials) {
-          throw error;
-        }
-        throw error;
+        resetThrottle(db, "login");
+        const loginResult = finishLogin(storedKeyHex);
+        setSessionCookie(reply, request, loginResult.token);
+        return { keyVersion: loginResult.keyVersion, session: loginResult.info };
       }
 
+      if (!body.authKeyB64) {
+        throw new HttpInvalidRequest(
+          "This vault must enroll via Master Password login.",
+          [
+            {
+              field: "authKeyB64",
+              message: "required for one-shot enroll on a legacy vault",
+            },
+          ],
+        );
+      }
+      validateAuthKeyB64(body.authKeyB64);
+      if (!vault.auth_verifier.startsWith("$argon2")) {
+        throw new HttpInvalidRequest(
+          "This vault cannot enroll; recover or re-setup.",
+          [
+            {
+              field: "auth",
+              message: "legacy PHC verifier is missing",
+            },
+          ],
+        );
+      }
+
+      const ok = await verifyAuthKey(body.authKeyB64, vault.auth_verifier);
+      if (!ok) {
+        const attemptsRemaining = recordFailure(db, "login");
+        throw new HttpInvalidCredentials(
+          "Incorrect Master Password",
+          attemptsRemaining,
+        );
+      }
+
+      const authKey = new Uint8Array(Buffer.from(body.authKeyB64, "base64"));
+      const storedKeyHex = loginStoredKeyHexFromAuthKey(authKey);
+      authKey.fill(0);
+      enrollLegacyAuthStoredKey(db, storedKeyHex);
       resetThrottle(db, "login");
-
-      const idleSeconds = idleTimeoutSeconds(db);
-
-      let loginResult: { token: string; info: SessionInfo; keyVersion: number };
-      try {
-        loginResult = db.transaction(() => {
-          const currentVault = getVaultAuth(db);
-          if (
-            !currentVault ||
-            currentVault.auth_stored_key !== storedKeyHex
-          ) {
-            throw new HttpInvalidCredentials("Incorrect Master Password", 0);
-          }
-
-          const currentSession = resolveSession(db, request, idleSeconds);
-          if (currentSession.ok) {
-            revokeSession(db, currentSession.session.id);
-          }
-
-          revokeOpenRecoveryTickets(db);
-
-          const { token, info } = createSession(db, request, idleSeconds);
-          return { token, info, keyVersion: currentVault.key_version };
-        })();
-      } catch (error) {
-        if (error instanceof HttpInvalidCredentials) {
-          const attemptsRemaining = recordFailure(db, "login");
-          throw new HttpInvalidCredentials(
-            "Incorrect Master Password",
-            attemptsRemaining,
-          );
-        }
-        throw error;
-      }
-
+      const loginResult = finishLogin(storedKeyHex);
       setSessionCookie(reply, request, loginResult.token);
-
       return { keyVersion: loginResult.keyVersion, session: loginResult.info };
     },
   );
@@ -555,8 +620,6 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
           type: "object",
           required: [
             "recoveryTicket",
-            "challengeNonceB64",
-            "recoveryClientProofB64",
             "kdf",
             "authStoredKeyHex",
             "recoveryStoredKeyHex",
@@ -587,8 +650,8 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
     async (request, reply): Promise<RecoveryResetResponse> => {
       const body = request.body as {
         recoveryTicket: string;
-        challengeNonceB64: string;
-        recoveryClientProofB64: string;
+        challengeNonceB64?: string;
+        recoveryClientProofB64?: string;
         kdf: KdfParams;
         authStoredKeyHex: string;
         recoveryStoredKeyHex: string;
@@ -601,10 +664,6 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       };
 
       validateKdfParams(body.kdf);
-      validateClientProofB64(
-        body.recoveryClientProofB64,
-        "recoveryClientProofB64",
-      );
       validateStoredKeyHex(body.authStoredKeyHex, "authStoredKeyHex");
       validateStoredKeyHex(body.recoveryStoredKeyHex, "recoveryStoredKeyHex");
       validateRecoveryEnvelopes(body.recoveryCodes);
@@ -615,15 +674,45 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         });
       });
 
-      const vault = requireProofReadyVault(db);
-      const recoveryStoredKey = vault.recovery_stored_key!;
-      const message = recoveryAuthMessage(
-        body.recoveryTicket,
-        body.challengeNonceB64,
-      );
-      const proof = Buffer.from(body.recoveryClientProofB64, "base64");
-      if (!verifyClientProof(recoveryStoredKey, message, proof)) {
-        throw new HttpInvalidRecoveryTicket();
+      const vault = getVaultAuth(db);
+      if (!vault) {
+        throw new HttpSetupRequired();
+      }
+      if (vault.recovery_stored_key) {
+        if (!body.recoveryClientProofB64) {
+          throw new HttpInvalidRequest(
+            "Recovery reset requires a masterKey proof.",
+            [
+              {
+                field: "recoveryClientProofB64",
+                message: "must have required property 'recoveryClientProofB64'",
+              },
+            ],
+          );
+        }
+        if (!body.challengeNonceB64) {
+          throw new HttpInvalidRequest(
+            "Recovery reset requires the claim challenge nonce.",
+            [
+              {
+                field: "challengeNonceB64",
+                message: "must have required property 'challengeNonceB64'",
+              },
+            ],
+          );
+        }
+        validateClientProofB64(
+          body.recoveryClientProofB64,
+          "recoveryClientProofB64",
+        );
+        const message = recoveryAuthMessage(
+          body.recoveryTicket,
+          body.challengeNonceB64,
+        );
+        const proof = Buffer.from(body.recoveryClientProofB64, "base64");
+        if (!verifyClientProof(vault.recovery_stored_key, message, proof)) {
+          throw new HttpInvalidRecoveryTicket();
+        }
       }
 
       const idleSeconds = idleTimeoutSeconds(db);
@@ -728,7 +817,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         });
       });
 
-      const vault = requireProofReadyVault(db);
+      const vault = requireAuthStoredKey(db);
       verifyLoginProof(db, {
         challengeId: body.challengeId,
         nonceB64: body.nonceB64,
@@ -810,7 +899,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       validateClientProofB64(body.clientProofB64, "clientProofB64");
       validateRecoveryEnvelopes(body.recoveryCodes);
 
-      const vault = requireProofReadyVault(db);
+      const vault = requireAuthStoredKey(db);
       verifyLoginProof(db, {
         challengeId: body.challengeId,
         nonceB64: body.nonceB64,

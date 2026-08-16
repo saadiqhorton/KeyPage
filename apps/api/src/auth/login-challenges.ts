@@ -1,9 +1,15 @@
+import { randomBytes } from "node:crypto";
+
 import type Database from "better-sqlite3";
 
-import { LOGIN_CHALLENGE_TTL_SECONDS } from "@keypage/shared";
+import {
+  LOGIN_CHALLENGE_MAX_OPEN,
+  LOGIN_CHALLENGE_TTL_SECONDS,
+} from "@keypage/shared";
 
 import type { LoginChallengeRow } from "../db/rows.js";
-import { newId, randomToken } from "./tokens.js";
+import { HttpRateLimited } from "../errors.js";
+import { newId } from "./tokens.js";
 
 export type IssuedLoginChallenge = {
   challengeId: string;
@@ -16,20 +22,28 @@ export function createLoginChallenge(
 ): IssuedLoginChallenge {
   const now = new Date();
   const nowIso = now.toISOString();
+  db.prepare(`DELETE FROM login_challenges WHERE expires_at < ?`).run(nowIso);
+
+  const open = db
+    .prepare(`SELECT COUNT(*) AS count FROM login_challenges`)
+    .get() as { count: number };
+  if (open.count >= LOGIN_CHALLENGE_MAX_OPEN) {
+    throw new HttpRateLimited(
+      "Too many outstanding login challenges",
+      LOGIN_CHALLENGE_TTL_SECONDS,
+    );
+  }
+
   const expiresAt = new Date(
     now.getTime() + LOGIN_CHALLENGE_TTL_SECONDS * 1000,
   ).toISOString();
   const challengeId = newId();
-  // randomToken is base64url; fine as opaque nonce material.
-  const nonceB64 = Buffer.from(randomToken(), "utf8").toString("base64");
+  const nonceB64 = randomBytes(32).toString("base64");
 
   db.prepare(
     `INSERT INTO login_challenges (id, nonce_b64, created_at, expires_at)
      VALUES (?, ?, ?, ?)`,
   ).run(challengeId, nonceB64, nowIso, expiresAt);
-
-  // Opportunistic cleanup of expired rows.
-  db.prepare(`DELETE FROM login_challenges WHERE expires_at < ?`).run(nowIso);
 
   return { challengeId, nonceB64, expiresAt };
 }

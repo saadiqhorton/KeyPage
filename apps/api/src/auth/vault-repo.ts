@@ -352,6 +352,23 @@ function updateVaultAuth(
   );
 }
 
+export function enrollLegacyAuthStoredKey(
+  db: Database.Database,
+  storedKeyHex: string,
+): void {
+  const nowIso = new Date().toISOString();
+  const result = db
+    .prepare(
+      `UPDATE vault_auth
+       SET auth_stored_key = ?, auth_verifier = ?, updated_at = ?
+       WHERE id = 1 AND auth_stored_key IS NULL`,
+    )
+    .run(storedKeyHex, AUTH_VERIFIER_PROOF_V1, nowIso);
+  if (result.changes !== 1) {
+    throw new HttpInvalidRequest("legacy auth enrollment failed");
+  }
+}
+
 export function initializeVault(
   db: Database.Database,
   input: InitializeVaultInput,
@@ -384,7 +401,8 @@ export function initializeVault(
 
 export type ResetVaultFromRecoveryInput = {
   recoveryTicket: string;
-  challengeNonceB64: string;
+  /** Required when the ticket has a stored challenge_nonce (post-migration). */
+  challengeNonceB64?: string;
   kdf: KdfParams;
   proofKeys: VaultProofKeys;
   recoveryCodes: RecoveryCodeEnvelope[];
@@ -543,11 +561,10 @@ export function resetVaultFromRecovery(
       throw new HttpInvalidRecoveryTicket();
     }
 
-    if (
-      !ticket.challenge_nonce ||
-      ticket.challenge_nonce !== input.challengeNonceB64
-    ) {
-      throw new HttpInvalidRecoveryTicket();
+    if (ticket.challenge_nonce) {
+      if (ticket.challenge_nonce !== input.challengeNonceB64) {
+        throw new HttpInvalidRecoveryTicket();
+      }
     }
 
     const vault = getVaultAuth(db);
