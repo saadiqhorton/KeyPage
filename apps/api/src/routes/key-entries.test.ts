@@ -9,7 +9,6 @@ import { SESSION_COOKIE_NAME } from "@keypage/shared";
 
 import { createSession } from "../auth/sessions.js";
 import { initializeVault } from "../auth/vault-repo.js";
-import { hashAuthKey } from "../auth/verifier.js";
 import { runMigrations } from "../db/migrations.js";
 import { HttpError, toApiErrorBody } from "../errors.js";
 import { keyEntryRoutes } from "./key-entries.js";
@@ -106,7 +105,10 @@ describe("Key Entry writes across a key reset", () => {
     runMigrations(db);
     initializeVault(db, {
       kdf: sampleKdf(),
-      authVerifier: await hashAuthKey(Buffer.alloc(32, 9).toString("base64")),
+      proofKeys: {
+        authStoredKeyHex: Buffer.alloc(32, 9).toString("hex"),
+        recoveryStoredKeyHex: Buffer.alloc(32, 10).toString("hex"),
+      },
       recoveryCodes: sampleRecoveryCodes(),
     });
     app = await buildTestApp(db);
@@ -347,7 +349,10 @@ describe("Key Entry import merge-by-id", () => {
     runMigrations(db);
     initializeVault(db, {
       kdf: sampleKdf(),
-      authVerifier: await hashAuthKey(Buffer.alloc(32, 9).toString("base64")),
+      proofKeys: {
+        authStoredKeyHex: Buffer.alloc(32, 9).toString("hex"),
+        recoveryStoredKeyHex: Buffer.alloc(32, 10).toString("hex"),
+      },
       recoveryCodes: sampleRecoveryCodes(),
     });
     app = await buildTestApp(db);

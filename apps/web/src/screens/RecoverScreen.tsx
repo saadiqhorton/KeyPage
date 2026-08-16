@@ -94,6 +94,19 @@ export function RecoverScreen() {
     }
   }
 
+  async function handleCancel() {
+    setError(null);
+    try {
+      await actions.cancelRecovery();
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not cancel recovery. Try again, or finish the reset.",
+      );
+    }
+  }
+
   if (step === 1) {
     return (
       <AuthShell
@@ -203,7 +216,14 @@ export function RecoverScreen() {
             Reset vault
           </Button>
         </form>
-        <Button type="button" variant="ghost" onClick={() => actions.cancelRecovery()}>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={working}
+          onClick={() => {
+            void handleCancel();
+          }}
+        >
           Cancel
         </Button>
       </div>

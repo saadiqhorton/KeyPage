@@ -14,6 +14,8 @@ export type KdfColumns = {
 export type VaultAuthRow = KdfColumns & {
   id: 1;
   auth_verifier: string;
+  auth_stored_key: string | null;
+  recovery_stored_key: string | null;
   key_version: number;
   created_at: string;
   updated_at: string;
@@ -47,6 +49,14 @@ export type RecoveryTicketRow = {
   created_at: string;
   expires_at: string;
   consumed_at: string | null;
+  challenge_nonce: string | null;
+};
+
+export type LoginChallengeRow = {
+  id: string;
+  nonce_b64: string;
+  created_at: string;
+  expires_at: string;
 };
 
 export type AuthThrottleRow = {

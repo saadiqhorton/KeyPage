@@ -22,6 +22,9 @@ export const HKDF_INFO_BACKUP_KEY = "keypage:v1:backup-key";
 export const BACKUP_AAD_PREFIX = "keypage:v1:backup:";
 export const RECOVERY_WRAP_AAD = "keypage:v1:recovery-wrap";
 export const RECOVERY_CODE_LOOKUP_PREFIX = "keypage:v1:recovery-code:";
+/** Prefix for vault_auth.auth_verifier when login uses stored-key proofs (SAA-170). */
+export const AUTH_VERIFIER_PROOF_V1 = "proof:v1";
+
 
 export const SESSION_COOKIE_NAME = "keypage_session";
 export const RECOVERY_CODE_COUNT = 10;
@@ -89,11 +92,16 @@ export type VaultStatusResponse = {
   lockout: LockoutState;
   recoveryLockout: LockoutState;
   session: { authenticated: boolean; idleTimeoutSeconds: number };
+  /** True once auth_stored_key is enrolled (challenge proofs). False on legacy vaults. */
+  proofReady: boolean;
 };
 
 export type VaultSetupRequest = {
   kdf: KdfParams;
-  authKeyB64: string;
+  /** SHA-256(HMAC(authKey)) hex — authKey never sent (SAA-170). */
+  authStoredKeyHex: string;
+  /** SHA-256(HMAC(masterKey)) hex — required for recovery reset proofs (SAA-173). */
+  recoveryStoredKeyHex: string;
   recoveryCodes: RecoveryCodeEnvelope[];
 };
 
@@ -103,7 +111,24 @@ export type VaultSetupResponse = {
   session: SessionInfo;
 };
 
-export type VaultLoginRequest = { authKeyB64: string };
+export type VaultLoginChallengeResponse = {
+  challengeId: string;
+  nonceB64: string;
+  expiresAt: string;
+};
+
+export type VaultLoginProofRequest = {
+  challengeId: string;
+  nonceB64: string;
+  clientProofB64: string;
+};
+
+/** One-shot enroll for pre-proof vaults (SAA-177). Rejected once proofReady. */
+export type VaultLoginEnrollRequest = {
+  authKeyB64: string;
+};
+
+export type VaultLoginRequest = VaultLoginProofRequest | VaultLoginEnrollRequest;
 export type VaultLoginResponse = { keyVersion: number; session: SessionInfo };
 
 export type VaultSessionResponse = {
@@ -116,6 +141,8 @@ export type VaultSessionResponse = {
 export type RecoveryClaimRequest = { lookupHash: string };
 export type RecoveryClaimResponse = {
   recoveryTicket: string;
+  /** Server nonce; client must prove masterKey possession over ticket+nonce at reset. */
+  challengeNonceB64: string;
   kdf: KdfParams;
   wrappedMasterKeyB64: string;
   keyVersion: number;
@@ -124,10 +151,19 @@ export type RecoveryClaimResponse = {
   entries: KeyEntry[];
 };
 
+export type RecoveryCancelRequest = {
+  recoveryTicket: string;
+};
+
 export type RecoveryResetRequest = {
   recoveryTicket: string;
+  /** Required when the ticket was minted with a challenge nonce. */
+  challengeNonceB64?: string;
+  /** Proof of unwrapped masterKey (SAA-173). Omitted only for pre-proof vaults. */
+  recoveryClientProofB64?: string;
   kdf: KdfParams;
-  authKeyB64: string;
+  authStoredKeyHex: string;
+  recoveryStoredKeyHex: string;
   recoveryCodes: RecoveryCodeEnvelope[];
   entries: ReencryptedKeyEntry[];
 };
@@ -148,9 +184,13 @@ export type ReencryptedKeyEntry = {
 };
 
 export type VaultPasswordChangeRequest = {
-  currentAuthKeyB64: string;
+  challengeId: string;
+  nonceB64: string;
+  /** Proof of current authKey via login challenge (SAA-170). */
+  currentClientProofB64: string;
   kdf: KdfParams;
-  authKeyB64: string;
+  authStoredKeyHex: string;
+  recoveryStoredKeyHex: string;
   recoveryCodes: RecoveryCodeEnvelope[];
   entries: ReencryptedKeyEntry[];
 };
@@ -163,7 +203,9 @@ export type VaultPasswordChangeResponse = {
 };
 
 export type RecoveryCodesRegenerateRequest = {
-  authKeyB64: string;
+  challengeId: string;
+  nonceB64: string;
+  clientProofB64: string;
   /** Vault key version the envelopes wrap, so a rotation mid-request is rejected. */
   keyVersion: number;
   recoveryCodes: RecoveryCodeEnvelope[];

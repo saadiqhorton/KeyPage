@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-import { RECOVERY_TICKET_TTL_SECONDS } from "@keypage/shared";
+import { RECOVERY_TICKET_TTL_SECONDS, AUTH_VERIFIER_PROOF_V1 } from "@keypage/shared";
 import type {
   KdfParams,
   RecoveryClaimResponse,
@@ -37,6 +37,11 @@ import {
   type SessionRequest,
 } from "./sessions.js";
 import { newId, randomToken, sha256Hex } from "./tokens.js";
+
+export type VaultProofKeys = {
+  authStoredKeyHex: string;
+  recoveryStoredKeyHex: string;
+};
 
 export function getVaultAuth(
   db: Database.Database,
@@ -138,6 +143,9 @@ export function claimRecoveryCode(
 
   const ticket = randomToken();
   const tokenHash = sha256Hex(ticket);
+  const challengeNonceB64 = Buffer.from(randomToken(), "utf8").toString(
+    "base64",
+  );
   const now = new Date();
   const nowIso = now.toISOString();
   const expiresAt = new Date(
@@ -157,9 +165,10 @@ export function claimRecoveryCode(
 
     db.prepare(
       `INSERT INTO recovery_tickets (
-         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at
-       ) VALUES (?, ?, ?, ?, ?, NULL)`,
-    ).run(newId(), tokenHash, code.id, nowIso, expiresAt);
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at,
+         challenge_nonce
+       ) VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    ).run(newId(), tokenHash, code.id, nowIso, expiresAt, challengeNonceB64);
 
     // Freeze other sessions so they cannot mutate the claim snapshot.
     revokeAllSessions(db);
@@ -175,6 +184,7 @@ export function claimRecoveryCode(
     ok: true,
     claim: {
       recoveryTicket: ticket,
+      challengeNonceB64,
       kdf: rowToKdfParams(code),
       wrappedMasterKeyB64: code.wrapped_master_key,
       keyVersion: vault.key_version,
@@ -182,6 +192,30 @@ export function claimRecoveryCode(
       entries: listKeyEntries(db),
     },
   };
+}
+
+/**
+ * Cancel / abandon an open recovery ticket (SAA-172). Idempotent for already
+ * consumed or unknown tickets — returns whether a live ticket was revoked.
+ */
+export function cancelRecoveryTicket(
+  db: Database.Database,
+  recoveryTicket: string,
+): boolean {
+  const tokenHash = sha256Hex(recoveryTicket);
+  const nowIso = new Date().toISOString();
+
+  const result = db
+    .prepare(
+      `UPDATE recovery_tickets
+       SET consumed_at = ?
+       WHERE token_hash = ?
+         AND consumed_at IS NULL
+         AND expires_at > ?`,
+    )
+    .run(nowIso, tokenHash, nowIso);
+
+  return result.changes > 0;
 }
 
 /**
@@ -213,7 +247,7 @@ export function assertKeyEntryMutationsAllowed(
 
 export type InitializeVaultInput = {
   kdf: KdfParams;
-  authVerifier: string;
+  proofKeys: VaultProofKeys;
   recoveryCodes: RecoveryCodeEnvelope[];
 };
 
@@ -259,22 +293,25 @@ export function replaceRecoveryCodes(
 function insertVaultAuth(
   db: Database.Database,
   kdf: KdfParams,
-  authVerifier: string,
+  proofKeys: VaultProofKeys,
   keyVersion: number,
   timestamp: string,
 ): void {
   db.prepare(
     `INSERT INTO vault_auth (
        id, kdf_algorithm, kdf_memory_kib, kdf_iterations, kdf_parallelism,
-       kdf_salt, auth_verifier, key_version, created_at, updated_at
-     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       kdf_salt, auth_verifier, auth_stored_key, recovery_stored_key,
+       key_version, created_at, updated_at
+     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     kdf.algorithm,
     kdf.memoryKiB ?? null,
     kdf.iterations,
     kdf.parallelism ?? null,
     kdf.saltB64,
-    authVerifier,
+    AUTH_VERIFIER_PROOF_V1,
+    proofKeys.authStoredKeyHex,
+    proofKeys.recoveryStoredKeyHex,
     keyVersion,
     timestamp,
     timestamp,
@@ -284,7 +321,7 @@ function insertVaultAuth(
 function updateVaultAuth(
   db: Database.Database,
   kdf: KdfParams,
-  authVerifier: string,
+  proofKeys: VaultProofKeys,
   keyVersion: number,
   timestamp: string,
 ): void {
@@ -296,6 +333,8 @@ function updateVaultAuth(
          kdf_parallelism = ?,
          kdf_salt = ?,
          auth_verifier = ?,
+         auth_stored_key = ?,
+         recovery_stored_key = ?,
          key_version = ?,
          updated_at = ?
      WHERE id = 1`,
@@ -305,10 +344,29 @@ function updateVaultAuth(
     kdf.iterations,
     kdf.parallelism ?? null,
     kdf.saltB64,
-    authVerifier,
+    AUTH_VERIFIER_PROOF_V1,
+    proofKeys.authStoredKeyHex,
+    proofKeys.recoveryStoredKeyHex,
     keyVersion,
     timestamp,
   );
+}
+
+export function enrollLegacyAuthStoredKey(
+  db: Database.Database,
+  storedKeyHex: string,
+): void {
+  const nowIso = new Date().toISOString();
+  const result = db
+    .prepare(
+      `UPDATE vault_auth
+       SET auth_stored_key = ?, auth_verifier = ?, updated_at = ?
+       WHERE id = 1 AND auth_stored_key IS NULL`,
+    )
+    .run(storedKeyHex, AUTH_VERIFIER_PROOF_V1, nowIso);
+  if (result.changes !== 1) {
+    throw new HttpInvalidRequest("legacy auth enrollment failed");
+  }
 }
 
 export function initializeVault(
@@ -322,7 +380,7 @@ export function initializeVault(
       throw new HttpVaultAlreadyInitialized();
     }
 
-    insertVaultAuth(db, input.kdf, input.authVerifier, 1, nowIso);
+    insertVaultAuth(db, input.kdf, input.proofKeys, 1, nowIso);
 
     replaceRecoveryCodes(db, input.recoveryCodes, 1, nowIso);
   });
@@ -343,8 +401,10 @@ export function initializeVault(
 
 export type ResetVaultFromRecoveryInput = {
   recoveryTicket: string;
+  /** Required when the ticket has a stored challenge_nonce (post-migration). */
+  challengeNonceB64?: string;
   kdf: KdfParams;
-  authVerifier: string;
+  proofKeys: VaultProofKeys;
   recoveryCodes: RecoveryCodeEnvelope[];
   entries: ReencryptedEntryInput[];
 };
@@ -360,7 +420,7 @@ type RotateVaultMaterialArgs = {
   /** Read by the caller inside the same transaction; supplies the pre-rotation key_version. */
   vault: VaultAuthRow;
   kdf: KdfParams;
-  authVerifier: string;
+  proofKeys: VaultProofKeys;
   recoveryCodes: RecoveryCodeEnvelope[];
   entries: ReencryptedEntryInput[];
   /**
@@ -439,7 +499,7 @@ function rotateVaultMaterial(
   updateVaultAuth(
     db,
     args.kdf,
-    args.authVerifier,
+    args.proofKeys,
     nextKeyVersion,
     args.nowIso,
   );
@@ -501,6 +561,12 @@ export function resetVaultFromRecovery(
       throw new HttpInvalidRecoveryTicket();
     }
 
+    if (ticket.challenge_nonce) {
+      if (ticket.challenge_nonce !== input.challengeNonceB64) {
+        throw new HttpInvalidRecoveryTicket();
+      }
+    }
+
     const vault = getVaultAuth(db);
     if (!vault) {
       throw new HttpInvalidRecoveryTicket();
@@ -509,7 +575,7 @@ export function resetVaultFromRecovery(
     return rotateVaultMaterial(db, {
       vault,
       kdf: input.kdf,
-      authVerifier: input.authVerifier,
+      proofKeys: input.proofKeys,
       recoveryCodes: input.recoveryCodes,
       entries: input.entries,
       consumeRecoveryTicketId: ticket.id,
@@ -524,7 +590,7 @@ export function resetVaultFromRecovery(
 
 export type ChangeMasterPasswordInput = {
   kdf: KdfParams;
-  authVerifier: string;
+  proofKeys: VaultProofKeys;
   recoveryCodes: RecoveryCodeEnvelope[];
   entries: ReencryptedEntryInput[];
 };
@@ -546,7 +612,7 @@ export function changeMasterPassword(
     return rotateVaultMaterial(db, {
       vault,
       kdf: input.kdf,
-      authVerifier: input.authVerifier,
+      proofKeys: input.proofKeys,
       recoveryCodes: input.recoveryCodes,
       entries: input.entries,
       req,
