@@ -156,7 +156,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
   app.post(
     "/challenge",
     { preHandler: [checkOrigin, requireSession] },
-    async () => createLoginChallenge(db),
+    async () => createLoginChallenge(db, "key-write"),
   );
 
   app.post(

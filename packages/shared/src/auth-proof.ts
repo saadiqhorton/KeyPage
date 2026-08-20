@@ -12,8 +12,9 @@ import { sha256 } from "@noble/hashes/sha2.js";
 export const LOGIN_CLIENT_KEY_LABEL = "keypage:v1:login-client-key";
 export const RECOVERY_CLIENT_KEY_LABEL = "keypage:v1:recovery-client-key";
 export const LOGIN_CHALLENGE_TTL_SECONDS = 60;
-/** Cap on unexpired login_challenges rows (SAA-177). */
+/** Cap on unexpired login_challenges rows per purpose (SAA-177 / SAA-171). */
 export const LOGIN_CHALLENGE_MAX_OPEN = 20;
+export type ChallengePurpose = "login" | "key-write";
 export const STORED_KEY_HEX_BYTES = 32;
 
 const textEncoder = new TextEncoder();

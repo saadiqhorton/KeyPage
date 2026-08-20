@@ -7,12 +7,14 @@ import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 
 import {
   SESSION_COOKIE_NAME,
+  LOGIN_CHALLENGE_MAX_OPEN,
   base64Encode,
   createLoginClientProof,
   keyEntryWriteAuthMessage,
   loginStoredKeyHexFromAuthKey,
 } from "@keypage/shared";
 
+import { createLoginChallenge } from "../auth/login-challenges.js";
 import { createSession } from "../auth/sessions.js";
 import { initializeVault } from "../auth/vault-repo.js";
 import { runMigrations } from "../db/migrations.js";
@@ -183,7 +185,25 @@ describe("Key Entry writes across a key reset", () => {
 
     assert.equal(response.statusCode, 401);
     assert.equal(response.json().error, "unauthenticated");
+    assert.equal(
+      response.json().message,
+      "Invalid or expired key possession proof",
+    );
     assert.equal(readRow(db, ENTRY_ID), undefined);
+  });
+
+  it("still issues key-write challenges when the login pool is full", async () => {
+    for (let i = 0; i < LOGIN_CHALLENGE_MAX_OPEN; i++) {
+      createLoginChallenge(db, "login");
+    }
+
+    const challenge = await app.inject({
+      method: "POST",
+      url: "/api/keys/challenge",
+      headers: { cookie },
+    });
+    assert.equal(challenge.statusCode, 200);
+    assert.ok(challenge.json().challengeId);
   });
 
   it("rejects session-only import, update, and delete", async () => {

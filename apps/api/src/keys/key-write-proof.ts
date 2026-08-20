@@ -15,6 +15,9 @@ export const KEY_WRITE_CHALLENGE_HEADER = "x-keypage-write-challenge";
 export const KEY_WRITE_NONCE_HEADER = "x-keypage-write-nonce";
 export const KEY_WRITE_PROOF_HEADER = "x-keypage-write-proof";
 
+/** Uniform 401 message — do not distinguish missing vs invalid proof components. */
+const PROOF_FAILURE_MESSAGE = "Invalid or expired key possession proof";
+
 function singleHeader(request: FastifyRequest, name: string): string | null {
   const value = request.headers[name];
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -29,20 +32,25 @@ export function requireKeyWriteProof(
   const nonceB64 = singleHeader(request, KEY_WRITE_NONCE_HEADER);
   const proofB64 = singleHeader(request, KEY_WRITE_PROOF_HEADER);
   if (!challengeId || !nonceB64 || !proofB64) {
-    throw new HttpUnauthenticated("Key possession proof required");
+    throw new HttpUnauthenticated(PROOF_FAILURE_MESSAGE);
   }
 
-  const challenge = consumeLoginChallenge(db, challengeId, nonceB64);
+  const challenge = consumeLoginChallenge(
+    db,
+    challengeId,
+    nonceB64,
+    "key-write",
+  );
   const vault = getVaultAuth(db);
   if (!challenge || !vault?.auth_stored_key) {
-    throw new HttpUnauthenticated("Invalid or expired key possession proof");
+    throw new HttpUnauthenticated(PROOF_FAILURE_MESSAGE);
   }
 
   let proof: Uint8Array;
   try {
     proof = base64Decode(proofB64);
   } catch {
-    throw new HttpUnauthenticated("Invalid or expired key possession proof");
+    throw new HttpUnauthenticated(PROOF_FAILURE_MESSAGE);
   }
 
   const message = keyEntryWriteAuthMessage({
@@ -53,6 +61,6 @@ export function requireKeyWriteProof(
     bodyJson: JSON.stringify(request.body),
   });
   if (!verifyClientProof(vault.auth_stored_key, message, proof)) {
-    throw new HttpUnauthenticated("Invalid or expired key possession proof");
+    throw new HttpUnauthenticated(PROOF_FAILURE_MESSAGE);
   }
 }
