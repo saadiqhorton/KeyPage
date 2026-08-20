@@ -9,6 +9,7 @@ import type Database from "better-sqlite3";
 import { config } from "./config.js";
 import type { InstanceRecord } from "./data-dir.js";
 import { HttpError, toApiErrorBody } from "./errors.js";
+import { registerRawJsonBodyParser } from "./plugins/raw-json-body.js";
 import { healthRoutes } from "./routes/health.js";
 import { keyEntryRoutes } from "./routes/key-entries.js";
 import { settingsRoutes } from "./routes/settings.js";
@@ -45,6 +46,7 @@ export async function buildServer(options: BuildServerOptions) {
   });
 
   await app.register(fastifyCookie);
+  registerRawJsonBodyParser(app);
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     if (error.validation) {

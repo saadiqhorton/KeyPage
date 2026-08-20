@@ -53,12 +53,17 @@ export function requireKeyWriteProof(
     throw new HttpUnauthenticated(PROOF_FAILURE_MESSAGE);
   }
 
+  const rawBody = request.rawBody;
+  if (rawBody === undefined) {
+    throw new HttpUnauthenticated(PROOF_FAILURE_MESSAGE);
+  }
+
   const message = keyEntryWriteAuthMessage({
     challengeId,
     nonceB64,
     method: request.method,
     path,
-    bodyJson: JSON.stringify(request.body),
+    bodyJson: rawBody,
   });
   if (!verifyClientProof(vault.auth_stored_key, message, proof)) {
     throw new HttpUnauthenticated(PROOF_FAILURE_MESSAGE);

@@ -19,6 +19,7 @@ import { createSession } from "../auth/sessions.js";
 import { initializeVault } from "../auth/vault-repo.js";
 import { runMigrations } from "../db/migrations.js";
 import { HttpError, toApiErrorBody } from "../errors.js";
+import { registerRawJsonBodyParser } from "../plugins/raw-json-body.js";
 import { keyEntryRoutes } from "./key-entries.js";
 
 const ENTRY_ID = "11111111-1111-4111-8111-111111111111";
@@ -109,6 +110,7 @@ function createBody(id: string, keyVersion: number, fill = 4) {
 async function buildTestApp(db: Database.Database): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await app.register(fastifyCookie);
+  registerRawJsonBodyParser(app);
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     if (error.validation) {
@@ -238,6 +240,41 @@ describe("Key Entry writes across a key reset", () => {
 
     assert.equal(readRow(db, OTHER_ENTRY_ID), undefined);
     assert.ok(readRow(db, ENTRY_ID));
+  });
+
+  it("accepts a write proof computed over the exact raw JSON body bytes", async () => {
+    const payload = createBody(ENTRY_ID, 1);
+    const bodyJson = JSON.stringify(payload, null, 2);
+    const challenge = await app.inject({
+      method: "POST",
+      url: "/api/keys/challenge",
+      headers: { cookie },
+    });
+    assert.equal(challenge.statusCode, 200);
+    const issued = challenge.json() as { challengeId: string; nonceB64: string };
+    const message = keyEntryWriteAuthMessage({
+      ...issued,
+      method: "POST",
+      path: "/api/keys",
+      bodyJson,
+    });
+    const proofB64 = base64Encode(createLoginClientProof(AUTH_KEY, message));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/keys",
+      headers: {
+        cookie,
+        "content-type": "application/json",
+        "x-keypage-write-challenge": issued.challengeId,
+        "x-keypage-write-nonce": issued.nonceB64,
+        "x-keypage-write-proof": proofB64,
+      },
+      payload: bodyJson,
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(readRow(db, ENTRY_ID)?.key_version, 1);
   });
 
   it("rejects proof replay and payload substitution", async () => {
