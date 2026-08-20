@@ -183,3 +183,14 @@ export function recoveryAuthMessage(
 ): string {
   return `recovery:${recoveryTicket}:${challengeNonceB64}`;
 }
+
+export function keyEntryWriteAuthMessage(args: {
+  challengeId: string;
+  nonceB64: string;
+  method: string;
+  path: string;
+  bodyJson: string;
+}): string {
+  const bodyDigestHex = hexEncode(sha256(utf8(args.bodyJson)));
+  return `key-write:${args.challengeId}:${args.nonceB64}:${args.method.toUpperCase()}:${args.path}:${bodyDigestHex}`;
+}
