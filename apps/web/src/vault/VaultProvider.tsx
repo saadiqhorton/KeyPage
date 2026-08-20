@@ -185,7 +185,11 @@ export function VaultProvider({ children }: VaultProviderProps) {
         recoveryCodes: envelopes,
       });
 
-      setEncryptionKey(derived.encryptionKey, response.keyVersion);
+      setEncryptionKey(
+        derived.encryptionKey,
+        response.keyVersion,
+        derived.authKeyB64,
+      );
       downloadRecoveryCodes(codes);
       parkRecoveryCodes(codes, "setup");
       setState({
@@ -223,7 +227,11 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const response = current.proofReady
         ? await postVaultLoginWithAuthKey(derived.authKeyB64)
         : await postVaultLogin({ authKeyB64: derived.authKeyB64 });
-      setEncryptionKey(derived.encryptionKey, response.keyVersion);
+      setEncryptionKey(
+        derived.encryptionKey,
+        response.keyVersion,
+        derived.authKeyB64,
+      );
       lockReasonRef.current = "initial";
       setState({
         phase: "unlocked",

@@ -35,6 +35,8 @@ import {
 import { assertKeyEntryMutationsAllowed } from "../auth/vault-repo.js";
 import { checkOrigin } from "../plugins/check-origin.js";
 import { createRequireSession } from "../plugins/require-session.js";
+import { createLoginChallenge } from "../auth/login-challenges.js";
+import { requireKeyWriteProof } from "../keys/key-write-proof.js";
 import { resolveClipboardClearSeconds, resolveIdleTimeoutSeconds } from "../settings.js";
 import { HttpInvalidRequest } from "../errors.js";
 
@@ -152,6 +154,12 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
   );
 
   app.post(
+    "/challenge",
+    { preHandler: [checkOrigin, requireSession] },
+    async () => createLoginChallenge(db, "key-write"),
+  );
+
+  app.post(
     "/",
     {
       bodyLimit: BODY_LIMIT,
@@ -183,6 +191,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
     },
     async (request, reply): Promise<KeyEntryCreateResponse> => {
       const body = request.body as KeyEntryCreateRequest;
+      requireKeyWriteProof(db, request, "/api/keys");
 
       validateKeyEntryId(body.id);
       const fields = normalizeKeyEntryWriteFields({
@@ -277,6 +286,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
     },
     async (request): Promise<KeyEntryImportResponse> => {
       const body = request.body as KeyEntryImportRequest;
+      requireKeyWriteProof(db, request, "/api/keys/import");
 
       const validatedEntries = body.entries.map((entry, index) =>
         validateImportEntry(entry, index),
@@ -398,6 +408,8 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
       const { id } = request.params as { id: string };
       validateKeyEntryId(id);
 
+      requireKeyWriteProof(db, request, `/api/keys/${encodeURIComponent(id)}`);
+
       const body = request.body as KeyEntryUpdateRequest;
       const fields = normalizeKeyEntryWriteFields({
         label: body.label,
@@ -461,6 +473,8 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
     async (request, reply) => {
       const { id } = request.params as { id: string };
       validateKeyEntryId(id);
+
+      requireKeyWriteProof(db, request, `/api/keys/${encodeURIComponent(id)}`);
 
       const body = request.body as { keyVersion: number };
       const occurredAt = new Date().toISOString();

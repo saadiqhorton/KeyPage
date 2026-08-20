@@ -142,6 +142,12 @@ CREATE TABLE login_challenges (
 );
 `;
 
+const MIGRATION_5_SQL = `
+-- SAA-171: isolate key-write challenges from the public login challenge quota.
+ALTER TABLE login_challenges ADD COLUMN purpose TEXT NOT NULL DEFAULT 'login'
+  CHECK (purpose IN ('login', 'key-write'));
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -169,6 +175,12 @@ export const MIGRATIONS: Migration[] = [
     version: 4,
     up(db) {
       db.exec(MIGRATION_4_SQL);
+    },
+  },
+  {
+    version: 5,
+    up(db) {
+      db.exec(MIGRATION_5_SQL);
     },
   },
 ];

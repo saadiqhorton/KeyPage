@@ -74,8 +74,8 @@ describe("login challenges", () => {
   it("does not consume an expired challenge", () => {
     const expiredAt = new Date(Date.now() - 1000).toISOString();
     db.prepare(
-      `INSERT INTO login_challenges (id, nonce_b64, created_at, expires_at)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO login_challenges (id, nonce_b64, created_at, expires_at, purpose)
+       VALUES (?, ?, ?, ?, 'login')`,
     ).run(
       "expired-challenge",
       Buffer.alloc(32, 2).toString("base64"),
@@ -97,8 +97,8 @@ describe("login challenges", () => {
     const expiredAt = new Date(Date.now() - 1000).toISOString();
     for (let i = 0; i < LOGIN_CHALLENGE_MAX_OPEN; i++) {
       db.prepare(
-        `INSERT INTO login_challenges (id, nonce_b64, created_at, expires_at)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO login_challenges (id, nonce_b64, created_at, expires_at, purpose)
+         VALUES (?, ?, ?, ?, 'login')`,
       ).run(
         `expired-${i}`,
         Buffer.alloc(32, i).toString("base64"),
@@ -127,5 +127,35 @@ describe("login challenges", () => {
         error instanceof HttpRateLimited &&
         error.retryAfterSeconds === LOGIN_CHALLENGE_TTL_SECONDS,
     );
+  });
+
+  it("keeps login and key-write challenge quotas separate", () => {
+    for (let i = 0; i < LOGIN_CHALLENGE_MAX_OPEN; i++) {
+      createLoginChallenge(db, "login");
+    }
+
+    assert.throws(() => createLoginChallenge(db, "login"), HttpRateLimited);
+
+    const writeChallenge = createLoginChallenge(db, "key-write");
+    assert.ok(writeChallenge.challengeId);
+
+    assert.equal(
+      consumeLoginChallenge(
+        db,
+        writeChallenge.challengeId,
+        writeChallenge.nonceB64,
+        "login",
+      ),
+      null,
+    );
+
+    const consumed = consumeLoginChallenge(
+      db,
+      writeChallenge.challengeId,
+      writeChallenge.nonceB64,
+      "key-write",
+    );
+    assert.ok(consumed);
+    assert.equal(consumed.purpose, "key-write");
   });
 });

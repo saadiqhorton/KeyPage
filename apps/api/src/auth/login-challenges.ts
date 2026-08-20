@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import {
   LOGIN_CHALLENGE_MAX_OPEN,
   LOGIN_CHALLENGE_TTL_SECONDS,
+  type ChallengePurpose,
 } from "@keypage/shared";
 
 import type { LoginChallengeRow } from "../db/rows.js";
@@ -19,17 +20,22 @@ export type IssuedLoginChallenge = {
 
 export function createLoginChallenge(
   db: Database.Database,
+  purpose: ChallengePurpose = "login",
 ): IssuedLoginChallenge {
   const now = new Date();
   const nowIso = now.toISOString();
   db.prepare(`DELETE FROM login_challenges WHERE expires_at < ?`).run(nowIso);
 
   const open = db
-    .prepare(`SELECT COUNT(*) AS count FROM login_challenges`)
-    .get() as { count: number };
+    .prepare(
+      `SELECT COUNT(*) AS count FROM login_challenges WHERE purpose = ?`,
+    )
+    .get(purpose) as { count: number };
   if (open.count >= LOGIN_CHALLENGE_MAX_OPEN) {
     throw new HttpRateLimited(
-      "Too many outstanding login challenges",
+      purpose === "key-write"
+        ? "Too many outstanding key-write challenges"
+        : "Too many outstanding login challenges",
       LOGIN_CHALLENGE_TTL_SECONDS,
     );
   }
@@ -41,29 +47,36 @@ export function createLoginChallenge(
   const nonceB64 = randomBytes(32).toString("base64");
 
   db.prepare(
-    `INSERT INTO login_challenges (id, nonce_b64, created_at, expires_at)
-     VALUES (?, ?, ?, ?)`,
-  ).run(challengeId, nonceB64, nowIso, expiresAt);
+    `INSERT INTO login_challenges (id, nonce_b64, created_at, expires_at, purpose)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(challengeId, nonceB64, nowIso, expiresAt, purpose);
 
   return { challengeId, nonceB64, expiresAt };
 }
 
 /**
- * Consume a challenge atomically. Returns the row if id+nonce match and unexpired.
+ * Consume a challenge atomically for the given purpose.
+ * Returns the row if id+nonce+purpose match and unexpired.
  */
 export function consumeLoginChallenge(
   db: Database.Database,
   challengeId: string,
   nonceB64: string,
+  purpose: ChallengePurpose = "login",
 ): LoginChallengeRow | null {
   const nowIso = new Date().toISOString();
   const row = db
     .prepare(
       `DELETE FROM login_challenges
-       WHERE id = ? AND nonce_b64 = ? AND expires_at > ?
-       RETURNING id, nonce_b64, created_at, expires_at`,
+       WHERE id = ? AND nonce_b64 = ? AND purpose = ? AND expires_at > ?
+       RETURNING id, nonce_b64, created_at, expires_at, purpose`,
     )
-    .get(challengeId, nonceB64, nowIso) as LoginChallengeRow | undefined;
+    .get(
+      challengeId,
+      nonceB64,
+      purpose,
+      nowIso,
+    ) as LoginChallengeRow | undefined;
 
   return row ?? null;
 }

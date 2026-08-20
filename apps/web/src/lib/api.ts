@@ -31,7 +31,14 @@ import type {
   VaultStatusResponse,
 } from "@keypage/shared";
 
+import {
+  base64Encode,
+  createLoginClientProof,
+  keyEntryWriteAuthMessage,
+} from "@keypage/shared";
+
 import { loginClientProofB64 } from "@/crypto/auth-proof.js";
+import { getAuthProofKey } from "@/vault/session-keys.js";
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
@@ -182,13 +189,49 @@ export function getKeyEntries(): Promise<KeyEntryListResponse> {
   return apiFetch<KeyEntryListResponse>("/api/keys");
 }
 
+async function keyEntryWrite<T>(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body: unknown,
+): Promise<T> {
+  const authKey = getAuthProofKey();
+  if (!authKey) {
+    throw new ApiError({
+      error: "session_expired",
+      message: "Vault is locked.",
+    });
+  }
+  const challenge = await apiFetch<{ challengeId: string; nonceB64: string }>(
+    "/api/keys/challenge",
+    { method: "POST" },
+  );
+  const bodyJson = JSON.stringify(body);
+  const message = keyEntryWriteAuthMessage({
+    ...challenge,
+    method,
+    path,
+    bodyJson,
+  });
+  const proof = createLoginClientProof(authKey, message);
+  try {
+    return await apiFetch<T>(path, {
+      method,
+      headers: {
+        "x-keypage-write-challenge": challenge.challengeId,
+        "x-keypage-write-nonce": challenge.nonceB64,
+        "x-keypage-write-proof": base64Encode(proof),
+      },
+      body: bodyJson,
+    });
+  } finally {
+    proof.fill(0);
+  }
+}
+
 export function postKeyEntry(
   body: KeyEntryCreateRequest,
 ): Promise<KeyEntryCreateResponse> {
-  return apiFetch<KeyEntryCreateResponse>("/api/keys", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  return keyEntryWrite<KeyEntryCreateResponse>("/api/keys", "POST", body);
 }
 
 export function postKeyEntryUse(
@@ -208,12 +251,11 @@ export function patchKeyEntry(
   id: string,
   body: KeyEntryUpdateRequest,
 ): Promise<KeyEntryUpdateResponse> {
-  return apiFetch<KeyEntryUpdateResponse>(
-    `/api/keys/${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    },
+  const path = `/api/keys/${encodeURIComponent(id)}`;
+  return keyEntryWrite<KeyEntryUpdateResponse>(
+    path,
+    "PATCH",
+    body,
   );
 }
 
@@ -221,19 +263,18 @@ export function deleteKeyEntry(
   id: string,
   body: KeyEntryDeleteRequest,
 ): Promise<void> {
-  return apiFetch<void>(`/api/keys/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    body: JSON.stringify(body),
-  });
+  const path = `/api/keys/${encodeURIComponent(id)}`;
+  return keyEntryWrite<void>(path, "DELETE", body);
 }
 
 export function postKeyEntryImport(
   body: KeyEntryImportRequest,
 ): Promise<KeyEntryImportResponse> {
-  return apiFetch<KeyEntryImportResponse>("/api/keys/import", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  return keyEntryWrite<KeyEntryImportResponse>(
+    "/api/keys/import",
+    "POST",
+    body,
+  );
 }
 
 export function postVaultPasswordChange(

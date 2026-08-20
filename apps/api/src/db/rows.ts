@@ -57,6 +57,7 @@ export type LoginChallengeRow = {
   nonce_b64: string;
   created_at: string;
   expires_at: string;
+  purpose: "login" | "key-write";
 };
 
 export type AuthThrottleRow = {

@@ -9,6 +9,7 @@ import {
   createLoginClientProof,
   createRecoveryClientProof,
   loginAuthMessage,
+  keyEntryWriteAuthMessage,
   loginStoredKeyHexFromAuthKey,
   recoveryAuthMessage,
   recoveryStoredKeyHexFromMasterKey,
@@ -36,6 +37,19 @@ describe("auth-proof", () => {
     const proof = createRecoveryClientProof(masterKey, message);
 
     assert.equal(verifyClientProof(storedHex, message, proof), true);
+  });
+
+  it("binds a key-entry write proof to method, path, and body", () => {
+    assert.equal(
+      keyEntryWriteAuthMessage({
+        challengeId: "chal-1",
+        nonceB64: "bm9uY2U=",
+        method: "patch",
+        path: "/api/keys/entry-1",
+        bodyJson: '{"label":"Changed","keyVersion":1}',
+      }),
+      "key-write:chal-1:bm9uY2U=:PATCH:/api/keys/entry-1:5b922702d5daa7d96d552485cadde7ddc30de6d8fd56e516850f9bbeca7999ba",
+    );
   });
 
   it("rejects a proof for a different secret", () => {

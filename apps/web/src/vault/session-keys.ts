@@ -11,6 +11,7 @@
  */
 
 import { zeroize, zeroizeAesKey, type AesKey } from "@/crypto/provider.js";
+import { base64Decode } from "@/crypto/encoding.js";
 
 const LOCK_CHANNEL = "keypage-lock";
 
@@ -28,6 +29,7 @@ function getTabId(): string {
 }
 
 let encryptionKey: AesKey | null = null;
+let authProofKey: Uint8Array | null = null;
 /**
  * Vault key version the in-memory key belongs to. Stored here rather than in
  * React state so it cannot drift from the key itself: every write stamps it, and
@@ -37,17 +39,36 @@ let encryptionKeyVersion: number | null = null;
 
 const keyClearedListeners = new Set<() => void>();
 
-export function setEncryptionKey(key: AesKey, keyVersion: number): void {
-  encryptionKey = key;
-  encryptionKeyVersion = keyVersion;
-}
-
-export function replaceEncryptionKey(key: AesKey, keyVersion: number): void {
+export function setEncryptionKey(
+  key: AesKey,
+  keyVersion: number,
+  authKeyB64?: string,
+): void {
   if (encryptionKey) {
     zeroizeAesKey(encryptionKey);
   }
+  if (authProofKey) {
+    zeroize(authProofKey);
+  }
   encryptionKey = key;
   encryptionKeyVersion = keyVersion;
+  authProofKey = authKeyB64 ? base64Decode(authKeyB64) : null;
+}
+
+export function replaceEncryptionKey(
+  key: AesKey,
+  keyVersion: number,
+  authKeyB64?: string,
+): void {
+  if (encryptionKey) {
+    zeroizeAesKey(encryptionKey);
+  }
+  if (authProofKey) {
+    zeroize(authProofKey);
+  }
+  encryptionKey = key;
+  encryptionKeyVersion = keyVersion;
+  authProofKey = authKeyB64 ? base64Decode(authKeyB64) : null;
 }
 
 export function getEncryptionKey(): AesKey | null {
@@ -58,12 +79,20 @@ export function getEncryptionKeyVersion(): number | null {
   return encryptionKeyVersion;
 }
 
+export function getAuthProofKey(): Uint8Array | null {
+  return authProofKey;
+}
+
 export function clearEncryptionKey(): void {
   if (encryptionKey?.kind === "fallback") {
     zeroize(encryptionKey.bytes);
   }
   encryptionKey = null;
   encryptionKeyVersion = null;
+  if (authProofKey) {
+    zeroize(authProofKey);
+  }
+  authProofKey = null;
   for (const listener of keyClearedListeners) {
     listener();
   }

@@ -5,16 +5,71 @@ import fastifyCookie from "@fastify/cookie";
 import Database from "better-sqlite3";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 
-import { SESSION_COOKIE_NAME } from "@keypage/shared";
+import {
+  SESSION_COOKIE_NAME,
+  LOGIN_CHALLENGE_MAX_OPEN,
+  base64Encode,
+  createLoginClientProof,
+  keyEntryWriteAuthMessage,
+  loginStoredKeyHexFromAuthKey,
+} from "@keypage/shared";
 
+import { createLoginChallenge } from "../auth/login-challenges.js";
 import { createSession } from "../auth/sessions.js";
 import { initializeVault } from "../auth/vault-repo.js";
 import { runMigrations } from "../db/migrations.js";
 import { HttpError, toApiErrorBody } from "../errors.js";
+import { registerRawJsonBodyParser } from "../plugins/raw-json-body.js";
 import { keyEntryRoutes } from "./key-entries.js";
 
 const ENTRY_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ENTRY_ID = "22222222-2222-4222-8222-222222222222";
+const AUTH_KEY = new Uint8Array(32).fill(9);
+
+async function injectWithProof(
+  app: FastifyInstance,
+  cookie: string,
+  options: {
+    method: "POST" | "PATCH" | "DELETE";
+    url: string;
+    headers?: Record<string, string>;
+    payload: unknown;
+  },
+) {
+  const proofHeaders = await keyWriteProofHeaders(app, cookie, options);
+  return app.inject({
+    ...options,
+    headers: { ...options.headers, ...proofHeaders },
+  });
+}
+
+async function keyWriteProofHeaders(
+  app: FastifyInstance,
+  cookie: string,
+  options: { method: "POST" | "PATCH" | "DELETE"; url: string; payload: unknown },
+) {
+  const challenge = await app.inject({
+    method: "POST",
+    url: "/api/keys/challenge",
+    headers: { cookie },
+  });
+  assert.equal(challenge.statusCode, 200);
+  const issued = challenge.json() as { challengeId: string; nonceB64: string };
+  const bodyJson = JSON.stringify(options.payload);
+  const message = keyEntryWriteAuthMessage({
+    ...issued,
+    method: options.method,
+    path: options.url,
+    bodyJson,
+  });
+  const proofB64 = base64Encode(createLoginClientProof(AUTH_KEY, message));
+  return {
+    cookie,
+    "x-keypage-write-challenge": issued.challengeId,
+    "x-keypage-write-nonce": issued.nonceB64,
+    "x-keypage-write-proof": proofB64,
+  };
+}
 
 function sampleKdf() {
   return {
@@ -55,6 +110,7 @@ function createBody(id: string, keyVersion: number, fill = 4) {
 async function buildTestApp(db: Database.Database): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await app.register(fastifyCookie);
+  registerRawJsonBodyParser(app);
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     if (error.validation) {
@@ -106,7 +162,7 @@ describe("Key Entry writes across a key reset", () => {
     initializeVault(db, {
       kdf: sampleKdf(),
       proofKeys: {
-        authStoredKeyHex: Buffer.alloc(32, 9).toString("hex"),
+        authStoredKeyHex: loginStoredKeyHexFromAuthKey(AUTH_KEY),
         recoveryStoredKeyHex: Buffer.alloc(32, 10).toString("hex"),
       },
       recoveryCodes: sampleRecoveryCodes(),
@@ -121,11 +177,134 @@ describe("Key Entry writes across a key reset", () => {
     db?.close();
   });
 
-  it("accepts a create that declares the current key version", async () => {
+  it("rejects create with a valid session but no key-possession proof", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/keys",
       headers: { cookie },
+      payload: createBody(ENTRY_ID, 1),
+    });
+
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().error, "unauthenticated");
+    assert.equal(
+      response.json().message,
+      "Invalid or expired key possession proof",
+    );
+    assert.equal(readRow(db, ENTRY_ID), undefined);
+  });
+
+  it("still issues key-write challenges when the login pool is full", async () => {
+    for (let i = 0; i < LOGIN_CHALLENGE_MAX_OPEN; i++) {
+      createLoginChallenge(db, "login");
+    }
+
+    const challenge = await app.inject({
+      method: "POST",
+      url: "/api/keys/challenge",
+      headers: { cookie },
+    });
+    assert.equal(challenge.statusCode, 200);
+    assert.ok(challenge.json().challengeId);
+  });
+
+  it("rejects session-only import, update, and delete", async () => {
+    const created = await injectWithProof(app, cookie, {
+      method: "POST",
+      url: "/api/keys",
+      payload: createBody(ENTRY_ID, 1),
+    });
+    assert.equal(created.statusCode, 201);
+
+    for (const request of [
+      {
+        method: "POST" as const,
+        url: "/api/keys/import",
+        payload: { entries: [createBody(OTHER_ENTRY_ID, 1)] },
+      },
+      {
+        method: "PATCH" as const,
+        url: `/api/keys/${ENTRY_ID}`,
+        payload: { keyVersion: 1, label: "Changed", serviceId: "openai", tags: [] },
+      },
+      {
+        method: "DELETE" as const,
+        url: `/api/keys/${ENTRY_ID}`,
+        payload: { keyVersion: 1 },
+      },
+    ]) {
+      const response = await app.inject({ ...request, headers: { cookie } });
+      assert.equal(response.statusCode, 401);
+      assert.equal(response.json().error, "unauthenticated");
+    }
+
+    assert.equal(readRow(db, OTHER_ENTRY_ID), undefined);
+    assert.ok(readRow(db, ENTRY_ID));
+  });
+
+  it("accepts a write proof computed over the exact raw JSON body bytes", async () => {
+    const payload = createBody(ENTRY_ID, 1);
+    const bodyJson = JSON.stringify(payload, null, 2);
+    const challenge = await app.inject({
+      method: "POST",
+      url: "/api/keys/challenge",
+      headers: { cookie },
+    });
+    assert.equal(challenge.statusCode, 200);
+    const issued = challenge.json() as { challengeId: string; nonceB64: string };
+    const message = keyEntryWriteAuthMessage({
+      ...issued,
+      method: "POST",
+      path: "/api/keys",
+      bodyJson,
+    });
+    const proofB64 = base64Encode(createLoginClientProof(AUTH_KEY, message));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/keys",
+      headers: {
+        cookie,
+        "content-type": "application/json",
+        "x-keypage-write-challenge": issued.challengeId,
+        "x-keypage-write-nonce": issued.nonceB64,
+        "x-keypage-write-proof": proofB64,
+      },
+      payload: bodyJson,
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(readRow(db, ENTRY_ID)?.key_version, 1);
+  });
+
+  it("rejects proof replay and payload substitution", async () => {
+    const request = {
+      method: "POST" as const,
+      url: "/api/keys",
+      payload: createBody(ENTRY_ID, 1),
+    };
+    const headers = await keyWriteProofHeaders(app, cookie, request);
+    const substituted = await app.inject({
+      ...request,
+      headers,
+      payload: createBody(ENTRY_ID, 1, 8),
+    });
+    assert.equal(substituted.statusCode, 401);
+    assert.equal(readRow(db, ENTRY_ID), undefined);
+
+    const validHeaders = await keyWriteProofHeaders(app, cookie, request);
+    const valid = await app.inject({ ...request, headers: validHeaders });
+    assert.equal(valid.statusCode, 201);
+
+    const replay = await app.inject({ ...request, headers: validHeaders });
+    assert.equal(replay.statusCode, 401);
+    assert.ok(readRow(db, ENTRY_ID));
+  });
+
+  it("accepts a create that declares the current key version", async () => {
+    const response = await injectWithProof(app, cookie, {
+      method: "POST",
+      url: "/api/keys",
       payload: createBody(ENTRY_ID, 1),
     });
 
@@ -136,10 +315,9 @@ describe("Key Entry writes across a key reset", () => {
   it("rejects a create that declares a superseded key version", async () => {
     bumpVaultKeyVersion(db);
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 1),
     });
 
@@ -149,10 +327,9 @@ describe("Key Entry writes across a key reset", () => {
   });
 
   it("rejects a create that declares a key version ahead of the vault", async () => {
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 2),
     });
 
@@ -167,10 +344,9 @@ describe("Key Entry writes across a key reset", () => {
     };
     delete body.cipher.keyVersion;
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: body,
     });
 
@@ -179,10 +355,9 @@ describe("Key Entry writes across a key reset", () => {
   });
 
   it("rejects a cipher replacement that declares a superseded key version", async () => {
-    const created = await app.inject({
+    const created = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 1),
     });
     assert.equal(created.statusCode, 201);
@@ -190,10 +365,9 @@ describe("Key Entry writes across a key reset", () => {
 
     bumpVaultKeyVersion(db);
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: `/api/keys/${ENTRY_ID}`,
-      headers: { cookie },
       payload: {
         keyVersion: 1,
         label: "Renamed",
@@ -212,20 +386,18 @@ describe("Key Entry writes across a key reset", () => {
   });
 
   it("allows a metadata-only update after a rotation", async () => {
-    const created = await app.inject({
+    const created = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 1),
     });
     assert.equal(created.statusCode, 201);
 
     bumpVaultKeyVersion(db);
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: `/api/keys/${ENTRY_ID}`,
-      headers: { cookie },
       payload: {
         keyVersion: 2,
         label: "Renamed",
@@ -239,20 +411,18 @@ describe("Key Entry writes across a key reset", () => {
   });
 
   it("rejects a metadata-only update with a superseded key version", async () => {
-    const created = await app.inject({
+    const created = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 1),
     });
     assert.equal(created.statusCode, 201);
 
     bumpVaultKeyVersion(db);
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: `/api/keys/${ENTRY_ID}`,
-      headers: { cookie },
       payload: {
         keyVersion: 1,
         label: "Renamed",
@@ -266,20 +436,18 @@ describe("Key Entry writes across a key reset", () => {
   });
 
   it("rejects delete with a superseded key version", async () => {
-    const created = await app.inject({
+    const created = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 1),
     });
     assert.equal(created.statusCode, 201);
 
     bumpVaultKeyVersion(db);
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "DELETE",
       url: `/api/keys/${ENTRY_ID}`,
-      headers: { cookie },
       payload: { keyVersion: 1 },
     });
 
@@ -291,10 +459,9 @@ describe("Key Entry writes across a key reset", () => {
   it("imports nothing when any entry declares a superseded key version", async () => {
     bumpVaultKeyVersion(db);
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys/import",
-      headers: { cookie },
       payload: {
         entries: [
           createBody(ENTRY_ID, 2, 4),
@@ -313,10 +480,9 @@ describe("Key Entry writes across a key reset", () => {
   });
 
   it("rejects a write from a session revoked by a rotation", async () => {
-    const created = await app.inject({
+    const created = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 1),
     });
     assert.equal(created.statusCode, 201);
@@ -350,7 +516,7 @@ describe("Key Entry import merge-by-id", () => {
     initializeVault(db, {
       kdf: sampleKdf(),
       proofKeys: {
-        authStoredKeyHex: Buffer.alloc(32, 9).toString("hex"),
+        authStoredKeyHex: loginStoredKeyHexFromAuthKey(AUTH_KEY),
         recoveryStoredKeyHex: Buffer.alloc(32, 10).toString("hex"),
       },
       recoveryCodes: sampleRecoveryCodes(),
@@ -366,10 +532,9 @@ describe("Key Entry import merge-by-id", () => {
   });
 
   it("skips existing ids, preserves originals, and dedupes duplicate ids in one payload", async () => {
-    const created = await app.inject({
+    const created = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys",
-      headers: { cookie },
       payload: createBody(ENTRY_ID, 1, 4),
     });
     assert.equal(created.statusCode, 201);
@@ -384,10 +549,9 @@ describe("Key Entry import merge-by-id", () => {
       cipher_text: string;
     };
 
-    const firstImport = await app.inject({
+    const firstImport = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys/import",
-      headers: { cookie },
       payload: {
         entries: [
           {
@@ -405,10 +569,9 @@ describe("Key Entry import merge-by-id", () => {
       skippedIds: [ENTRY_ID],
     });
 
-    const secondImport = await app.inject({
+    const secondImport = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys/import",
-      headers: { cookie },
       payload: {
         entries: [
           createBody(ENTRY_ID, 1, 6),
@@ -443,10 +606,9 @@ describe("Key Entry import merge-by-id", () => {
     assert.deepEqual(preserved, originalRow);
 
     const duplicatePayload = createBody(OTHER_ENTRY_ID, 1, 8);
-    const duplicateImport = await app.inject({
+    const duplicateImport = await injectWithProof(app, cookie, {
       method: "POST",
       url: "/api/keys/import",
-      headers: { cookie },
       payload: {
         entries: [duplicatePayload, duplicatePayload],
       },

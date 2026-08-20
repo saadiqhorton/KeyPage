@@ -131,6 +131,7 @@ export async function changeMasterPassword(
   let codes;
   let envelopes;
   let nextEncryptionKey: AesKey | undefined;
+  let nextAuthKeyB64: string | undefined;
   try {
     ({
       reencrypted,
@@ -145,6 +146,7 @@ export async function changeMasterPassword(
         onProgress?.("Deriving new encryption key…");
         kdf = await pickKdfParams();
         const next = await deriveVaultKeys(newPassword, kdf);
+        nextAuthKeyB64 = next.authKeyB64;
         nextProofKeys = proofKeysFromSecrets({
           authKeyB64: next.authKeyB64,
           masterKey: next.masterKey,
@@ -202,7 +204,7 @@ export async function changeMasterPassword(
     rethrowInvalidCredentials(error);
   }
 
-  replaceEncryptionKey(nextEncryptionKey, response.keyVersion);
+  replaceEncryptionKey(nextEncryptionKey, response.keyVersion, nextAuthKeyB64);
   downloadRecoveryCodes(codes);
 
   if (response.reEncrypted !== reencrypted.length) {
@@ -247,6 +249,7 @@ export async function completeVaultRecovery(
     | { authStoredKeyHex: string; recoveryStoredKeyHex: string }
     | undefined;
   let nextEncryptionKey: AesKey | undefined;
+  let nextAuthKeyB64: string | undefined;
 
   try {
     const { reencrypted, codes, envelopes, nextEncryptionKey: rotatedKey } =
@@ -258,7 +261,8 @@ export async function completeVaultRecovery(
           onProgress?.("Deriving new encryption key…");
           kdf = await pickKdfParams();
           const next = await deriveVaultKeys(newPassword, kdf);
-            nextProofKeys = proofKeysFromSecrets({
+          nextAuthKeyB64 = next.authKeyB64;
+          nextProofKeys = proofKeysFromSecrets({
             authKeyB64: next.authKeyB64,
             masterKey: next.masterKey,
           });
@@ -302,7 +306,7 @@ export async function completeVaultRecovery(
       );
     }
 
-    replaceEncryptionKey(nextEncryptionKey, response.keyVersion);
+    replaceEncryptionKey(nextEncryptionKey, response.keyVersion, nextAuthKeyB64);
     // Ownership transferred to session-keys; don't zeroize in the catch below.
     nextEncryptionKey = undefined;
 

@@ -26,10 +26,11 @@ import { HttpKeyVersionMismatch, HttpSetupRequired } from "../errors.js";
  * browser tab, while the AES key is per-tab in-memory state, so a tab that
  * missed a rotation still presents a perfectly valid session (SAA-134).
  *
- * This is an integrity guard against a stale client, not an authentication
- * control — a caller holding a session can always submit bytes of its choosing.
- * What it removes is the silent failure: ciphertext stamped with a key version
- * that cannot decrypt it.
+ * Key entry create/import/update/delete routes gate mutations with
+ * route-layer key-possession proof (`requireKeyWriteProof`) before repo writes.
+ * This check remains an integrity guard against a stale client (SAA-134), not
+ * that proof — it rejects ciphertext stamped with a key version that cannot
+ * decrypt it.
  */
 function assertCipherKeyVersion(
   vaultKeyVersion: number,
