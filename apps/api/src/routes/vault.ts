@@ -257,27 +257,12 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
     idleTimeoutSeconds(db),
   );
 
-  app.addContentTypeParser(
-    "application/json",
-    { parseAs: "string" },
-    (_request, body, done) => {
-      if (body === "" || (typeof body === "string" && body.trim() === "")) {
-        done(null, undefined);
-        return;
-      }
-
-      try {
-        done(null, JSON.parse(body as string));
-      } catch (error) {
-        done(error as Error, undefined);
-      }
-    },
-  );
+  // JSON parsing (incl. rawBody for write proofs) comes from the root
+  // registerRawJsonBodyParser — do not re-register application/json here.
 
   app.addHook("onSend", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
   });
-
   app.get("/status", async (request, reply): Promise<VaultStatusResponse> =>
     buildStatusResponse(db, request, reply),
   );
