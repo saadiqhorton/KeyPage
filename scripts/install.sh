@@ -210,6 +210,6 @@ say "App:      ${APP_URL}"
 say "Install:  ${KEYPAGE_DIR}"
 say "Data:     ${KEYPAGE_DIR}/data"
 printf '\n'
-note "First visit: create a Master Password (12+ chars) and save the recovery-codes download offline."
+note "First visit: paste the setup token, create a Master Password (12+ chars), and save the recovery-codes download offline."
 note "Later: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 printf '\n'
