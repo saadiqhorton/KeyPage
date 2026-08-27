@@ -4,6 +4,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import {
   RECOVERY_CODE_COUNT,
   SESSION_COOKIE_NAME,
+  SETUP_TOKEN_PATTERN,
   loginAuthMessage,
   loginStoredKeyHexFromAuthKey,
   recoveryAuthMessage,
@@ -25,6 +26,7 @@ import {
   validateKdfParams,
   validateRecoveryEnvelopes,
 } from "../auth/kdf-params.js";
+import type { SetupGate } from "../auth/setup-token.js";
 import {
   createLoginChallenge,
   consumeLoginChallenge,
@@ -71,6 +73,7 @@ import {
   HttpInvalidRecoveryCode,
   HttpInvalidRecoveryTicket,
   HttpInvalidRequest,
+  HttpInvalidSetupToken,
   HttpSetupRequired,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
@@ -85,6 +88,7 @@ const LOOKUP_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 export type VaultRouteOptions = {
   db: Database.Database;
+  setupGate: SetupGate;
 };
 
 function idleTimeoutSeconds(db: Database.Database): number {
@@ -248,7 +252,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
   app,
   options,
 ) => {
-  const { db } = options;
+  const { db, setupGate } = options;
   const requireSession = createRequireSession(db, () =>
     idleTimeoutSeconds(db),
   );
@@ -293,12 +297,14 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         body: {
           type: "object",
           required: [
+            "setupToken",
             "kdf",
             "authStoredKeyHex",
             "recoveryStoredKeyHex",
             "recoveryCodes",
           ],
           properties: {
+            setupToken: { type: "string", pattern: SETUP_TOKEN_PATTERN },
             kdf: kdfSchema,
             authStoredKeyHex: { type: "string" },
             recoveryStoredKeyHex: { type: "string" },
@@ -314,6 +320,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
     },
     async (request, reply): Promise<VaultSetupResponse> => {
       const body = request.body as {
+        setupToken: string;
         kdf: KdfParams;
         authStoredKeyHex: string;
         recoveryStoredKeyHex: string;
@@ -328,6 +335,9 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       if (isVaultInitialized(db)) {
         throw new HttpVaultAlreadyInitialized();
       }
+      if (!setupGate.verify(body.setupToken)) {
+        throw new HttpInvalidSetupToken();
+      }
 
       initializeVault(db, {
         kdf: body.kdf,
@@ -337,6 +347,8 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         },
         recoveryCodes: body.recoveryCodes,
       });
+
+      await setupGate.consume();
 
       const idleSeconds = idleTimeoutSeconds(db);
       const { token, info } = createSession(db, request, idleSeconds);

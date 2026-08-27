@@ -9,6 +9,7 @@ import type Database from "better-sqlite3";
 import { config } from "./config.js";
 import type { InstanceRecord } from "./data-dir.js";
 import { HttpError, toApiErrorBody } from "./errors.js";
+import type { SetupGate } from "./auth/setup-token.js";
 import { registerRawJsonBodyParser } from "./plugins/raw-json-body.js";
 import { healthRoutes } from "./routes/health.js";
 import { keyEntryRoutes } from "./routes/key-entries.js";
@@ -21,6 +22,7 @@ type BuildServerOptions = {
   logLevel: string;
   instance: InstanceRecord;
   db: Database.Database;
+  setupGate: SetupGate;
 };
 
 async function webDirExists(webDir: string): Promise<boolean> {
@@ -78,6 +80,7 @@ export async function buildServer(options: BuildServerOptions) {
   await app.register(vaultRoutes, {
     prefix: "/api/vault",
     db: options.db,
+    setupGate: options.setupGate,
   });
 
   await app.register(keyEntryRoutes, {

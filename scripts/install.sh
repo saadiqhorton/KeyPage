@@ -193,6 +193,13 @@ else
   warn "health check timed out — check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 fi
 
+if [[ -r data/setup-token ]]; then
+  say "Setup token: $(cat data/setup-token)"
+  note "Paste it on the setup screen. Also at ${KEYPAGE_DIR}/data/setup-token"
+else
+  note "Setup token is in the container log: cd ${KEYPAGE_DIR} && docker compose logs keypage"
+fi
+
 # ── 5. Open app ───────────────────────────────────────────────────────────
 stage "Open KeyPage"
 
