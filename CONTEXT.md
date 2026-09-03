@@ -48,6 +48,7 @@ Open source project — each deployment is single-user, but the code is public f
 - Clipboard auto-clear after configurable timeout (default 30s)
 - Password recovery via multiple alphanumeric codes (8-10 codes, any one can be used)
 - Login rate limiting: after N failed attempts (e.g. 5), lock login for a few minutes
+- First-boot claim: `POST /setup` requires a server-minted setup token, written to `<dataDir>/setup-token` (`0600`) and printed to stdout on the first boot of an unclaimed vault. Because the default bind is `0.0.0.0` and Cloudflare Tunnel arrives over loopback, no network-position gate can distinguish the owner; possession of the token is proof of host access. The token is deleted on successful setup (SAA-174).
 
 ## Encryption Boundary
 - Encryption happens in the browser, not on the server
@@ -105,6 +106,7 @@ Implemented on the Settings page:
 
 ## First-Time Setup
 - Setup wizard shown when database is empty
+- The wizard's first step collects the server-minted setup token alongside the Master Password
 - User creates master password via UI
 - Verification hash stored so login can be checked without keeping the password
 - Encryption key derived and held only in the browser for the session

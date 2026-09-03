@@ -34,6 +34,7 @@ Already have the repo checked out?
 
 ```bash
 docker compose up -d --build
+docker compose logs keypage | grep -A4 "setup token"
 ```
 
 Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. Port **9090** is the supported listen port everywhere in this project. Installer default directory: `~/keypage` (override with `KEYPAGE_DIR`).
@@ -62,19 +63,26 @@ The image includes a Docker `HEALTHCHECK` that hits `/api/health` on port 9090 i
 
 ## First run
 
-1. **Setup** — Open the app. If the vault is new, you are redirected to `/setup`. Choose a Master Password (minimum 12 characters). KeyPage derives your encryption key in the browser and sends only a login verifier to the server.
-2. **Recovery codes** — After setup, 10 one-time recovery codes are shown and a `keypage-recovery-codes-*.txt` file downloads automatically. Save this file offline before continuing. Any single unused code can reset your Master Password later.
-3. **Unlock** — After a page reload (or when the vault locks from inactivity), enter your Master Password on `/unlock` to decrypt keys in the browser. A valid session cookie alone does not unlock the vault - the encryption key lives only in memory until you log in again.
-4. **Dashboard** — Add Key Entries (label, Service, description, tags, key value). Switch between Card Grid, Table, and List views. Search and filter by tags. Keys are masked by default; use reveal and copy (clipboard auto-clears after a timeout).
-5. **Settings** — Change Master Password (re-encrypts all entries client-side), view or regenerate recovery codes, adjust session inactivity timeout (15/20/25/30 minutes), and export or import an encrypted backup file.
+1. **Get your setup token** — On first boot of an unclaimed vault, KeyPage prints a one-time setup token to the container log and writes it to `./data/setup-token` (mode `0600`). Retrieve it with any of:
+   - `docker compose logs keypage | grep -A4 "setup token"`
+   - `cat ./data/setup-token` on the host (bind mount)
+   - `docker compose exec keypage cat /app/data/setup-token`
+   The server binds `0.0.0.0` so anyone on your LAN or holding a Cloudflare Tunnel URL can reach the setup screen; the token is what stops them claiming your vault.
+2. **Setup** — Open the app. If the vault is new, you are redirected to `/setup`. Paste the setup token and choose a Master Password (minimum 12 characters). KeyPage derives your encryption key in the browser and sends only a login verifier to the server.
+3. **Recovery codes** — After setup, 10 one-time recovery codes are shown and a `keypage-recovery-codes-*.txt` file downloads automatically. Save this file offline before continuing. Any single unused code can reset your Master Password later.
+4. **Unlock** — After a page reload (or when the vault locks from inactivity), enter your Master Password on `/unlock` to decrypt keys in the browser. A valid session cookie alone does not unlock the vault - the encryption key lives only in memory until you log in again.
+5. **Dashboard** — Add Key Entries (label, Service, description, tags, key value). Switch between Card Grid, Table, and List views. Search and filter by tags. Keys are masked by default; use reveal and copy (clipboard auto-clears after a timeout).
+6. **Settings** — Change Master Password (re-encrypts all entries client-side), view or regenerate recovery codes, adjust session inactivity timeout (15/20/25/30 minutes), and export or import an encrypted backup file.
 
 To start over with a fresh vault (destroys all stored data):
 
 ```bash
-docker compose down && rm -f data/keypage.db*
+docker compose down && rm -f data/keypage.db* data/setup-token
 ```
 
-For local development without Docker, delete `data/keypage.db`, `data/keypage.db-wal`, and `data/keypage.db-shm` instead.
+For local development without Docker, delete `data/keypage.db`, `data/keypage.db-wal`, `data/keypage.db-shm`, and `data/setup-token` instead.
+
+**Lost the setup token?** Stop the app, delete `data/setup-token`, and start it again — a new token is minted and printed. Only possible with host access, which is the point.
 
 ## Data persistence and the `./data` volume
 
@@ -84,6 +92,7 @@ SQLite and all runtime state live under **`./data`** at the repository root. Doc
 |-------------|---------|
 | `keypage.db` | Main SQLite database (encrypted key blobs, metadata, sessions, settings) |
 | `keypage.db-wal`, `keypage.db-shm` | SQLite WAL sidecar files (present while the DB is open) |
+| `setup-token` | First-boot setup token (mode `0600`); deleted once the vault is claimed |
 
 The `data/` directory is listed in `.gitignore` - never commit your vault.
 

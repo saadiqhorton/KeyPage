@@ -17,7 +17,7 @@ import {
 import { zeroize } from "@/crypto/provider.js";
 import { ApiError, getVaultStatus, postRecoveryCancel, postRecoveryClaim, postVaultLock, postVaultLogin, postVaultLoginWithAuthKey, postVaultSetup } from "@/lib/api.js";
 import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
-import { normalizeRecoveryCode } from "@keypage/shared";
+import { normalizeRecoveryCode, SETUP_TOKEN_PATTERN } from "@keypage/shared";
 
 import {
   changeMasterPassword,
@@ -165,7 +165,15 @@ export function VaultProvider({ children }: VaultProviderProps) {
     setWizard({ kind: "setup", step: 1 });
   }, []);
 
-  const submitSetup = useCallback(async (password: string) => {
+  const submitSetup = useCallback(async (password: string, setupToken: string) => {
+    if (!new RegExp(SETUP_TOKEN_PATTERN).test(setupToken)) {
+      throw new ApiError({
+        error: "invalid_setup_token",
+        message:
+          "That setup token doesn't look right. Copy it from the server log or ./data/setup-token.",
+      });
+    }
+
     setIssuingRecoveryCodes(true);
     setState({ phase: "working", label: "Deriving your encryption key…" });
     try {
@@ -179,6 +187,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       zeroize(derived.masterKey);
 
       const response = await postVaultSetup({
+        setupToken,
         kdf,
         authStoredKeyHex: proofKeys.authStoredKeyHex,
         recoveryStoredKeyHex: proofKeys.recoveryStoredKeyHex,

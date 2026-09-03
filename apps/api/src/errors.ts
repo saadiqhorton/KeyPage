@@ -103,6 +103,12 @@ export class HttpInvalidRecoveryTicket extends HttpError {
   }
 }
 
+export class HttpInvalidSetupToken extends HttpError {
+  constructor(message = "Setup token is invalid") {
+    super(401, "invalid_setup_token", message);
+  }
+}
+
 export class HttpInternalError extends HttpError {
   constructor(message = "Internal server error") {
     super(500, "internal_error", message);

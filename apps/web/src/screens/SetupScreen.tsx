@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/PasswordStrengthHint";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
+import { TextField } from "@/components/ui/TextField";
 import { ApiError } from "@/lib/api.js";
 import { useVault } from "@/vault/useVault";
 
@@ -24,9 +25,11 @@ const SETUP_STEPS = [
 export function SetupScreen() {
   const navigate = useNavigate();
   const { state, wizard, actions } = useVault();
+  const [setupToken, setSetupToken] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [setupTokenError, setSetupTokenError] = useState<string | null>(null);
 
   useEffect(() => {
     if (state.phase === "setup_required" && wizard.kind === "none") {
@@ -44,6 +47,7 @@ export function SetupScreen() {
   async function handlePasswordSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setSetupTokenError(null);
 
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`Master Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
@@ -55,10 +59,15 @@ export function SetupScreen() {
     }
 
     try {
-      await actions.submitSetup(password);
+      await actions.submitSetup(password, setupToken.trim());
+      setSetupToken("");
       setPassword("");
       setConfirm("");
     } catch (err) {
+      if (err instanceof ApiError && err.code === "invalid_setup_token") {
+        setSetupTokenError(err.message);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : "Setup failed.");
     }
   }
@@ -68,10 +77,21 @@ export function SetupScreen() {
       <AuthShell chip="FIRST-RUN SETUP" title="Create your vault with a Master Password.">
         <StepIndicator steps={SETUP_STEPS} currentStep={1} />
         <form className="flex flex-col gap-4" onSubmit={handlePasswordSubmit}>
+          <TextField
+            label="Setup token"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            autoFocus
+            value={setupToken}
+            onChange={(e) => setSetupToken(e.target.value)}
+            disabled={working}
+            hint="Printed in the server log the first time KeyPage starts. Docker: `docker compose logs keypage | grep -A4 'setup token'`, or `cat ./data/setup-token`."
+            error={setupTokenError ?? undefined}
+          />
           <PasswordField
             label="Master Password"
             autoComplete="new-password"
-            autoFocus
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={working}

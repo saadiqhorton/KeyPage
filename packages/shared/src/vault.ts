@@ -24,6 +24,8 @@ export const RECOVERY_WRAP_AAD = "keypage:v1:recovery-wrap";
 export const RECOVERY_CODE_LOOKUP_PREFIX = "keypage:v1:recovery-code:";
 /** Prefix for vault_auth.auth_verifier when login uses stored-key proofs (SAA-170). */
 export const AUTH_VERIFIER_PROOF_V1 = "proof:v1";
+/** base64url of 32 random bytes, as minted by the API's randomToken(). */
+export const SETUP_TOKEN_PATTERN = "^[A-Za-z0-9_-]{43}$";
 
 
 export const SESSION_COOKIE_NAME = "keypage_session";
@@ -49,6 +51,7 @@ export type ApiErrorCode =
   | "session_expired"
   | "invalid_recovery_code"
   | "invalid_recovery_ticket"
+  | "invalid_setup_token"
   | "key_version_mismatch"
   | "internal_error";
 
@@ -97,6 +100,8 @@ export type VaultStatusResponse = {
 };
 
 export type VaultSetupRequest = {
+  /** First-boot proof of host access; minted by the server (SAA-174). */
+  setupToken: string;
   kdf: KdfParams;
   /** SHA-256(HMAC(authKey)) hex — authKey never sent (SAA-170). */
   authStoredKeyHex: string;

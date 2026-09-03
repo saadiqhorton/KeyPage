@@ -79,7 +79,16 @@ async function buildTestApp(db: Database.Database): Promise<FastifyInstance> {
     return reply.status(statusCode).send(toApiErrorBody(error));
   });
 
-  await app.register(vaultRoutes, { prefix: "/api/vault", db });
+  await app.register(vaultRoutes, {
+    prefix: "/api/vault",
+    db,
+    setupGate: {
+      token: null,
+      filePath: "",
+      verify: () => false,
+      consume: async () => {},
+    },
+  });
   await app.ready();
   return app;
 }

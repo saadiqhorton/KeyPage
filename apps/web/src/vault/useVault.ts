@@ -48,7 +48,7 @@ export type RecoveryCodesAckOutcome = {
 export type VaultActions = {
   refreshStatus(): Promise<void>;
   startSetup(): void;
-  submitSetup(password: string): Promise<void>;
+  submitSetup(password: string, setupToken: string): Promise<void>;
   unlock(password: string): Promise<void>;
   lock(reason: LockReason): Promise<void>;
   /** Lock this tab only — does not broadcast to other tabs or revoke the session. */

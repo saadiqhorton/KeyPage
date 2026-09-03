@@ -1,4 +1,6 @@
 import { config } from "./config.js";
+import { openSetupGate } from "./auth/setup-token.js";
+import { isVaultInitialized } from "./auth/vault-repo.js";
 import { ensureDataDir } from "./data-dir.js";
 import { closeDatabase, openDatabase } from "./db/index.js";
 import { runHousekeeping } from "./db/housekeeping.js";
@@ -17,13 +19,32 @@ async function main() {
     );
   }
 
+  const setupGate = await openSetupGate({
+    dataDir: config.dataDir,
+    vaultInitialized: isVaultInitialized(db),
+  });
+
   const app = await buildServer({
     dataDir: config.dataDir,
     webDir: config.webDir,
     logLevel: config.logLevel,
     instance,
     db,
+    setupGate,
   });
+
+  if (setupGate.token) {
+    console.log(`────────────────────────────────────────────────────────────────
+  KeyPage first-boot setup token
+
+    ${setupGate.token}
+
+  Paste it on the setup screen to claim this vault.
+  Also readable at: ${setupGate.filePath}
+  Anyone who can reach this server but cannot read this token
+  cannot claim the vault.
+────────────────────────────────────────────────────────────────`);
+  }
 
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`listening on ${config.host}:${config.port}`);

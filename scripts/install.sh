@@ -193,6 +193,13 @@ else
   warn "health check timed out — check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 fi
 
+if [[ -r data/setup-token ]]; then
+  say "Setup token: $(cat data/setup-token)"
+  note "Paste it on the setup screen. Also at ${KEYPAGE_DIR}/data/setup-token"
+else
+  note "Setup token is in the container log: cd ${KEYPAGE_DIR} && docker compose logs keypage"
+fi
+
 # ── 5. Open app ───────────────────────────────────────────────────────────
 stage "Open KeyPage"
 
@@ -203,6 +210,6 @@ say "App:      ${APP_URL}"
 say "Install:  ${KEYPAGE_DIR}"
 say "Data:     ${KEYPAGE_DIR}/data"
 printf '\n'
-note "First visit: create a Master Password (12+ chars) and save the recovery-codes download offline."
+note "First visit: paste the setup token, create a Master Password (12+ chars), and save the recovery-codes download offline."
 note "Later: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 printf '\n'
