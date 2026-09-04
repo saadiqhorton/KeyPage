@@ -15,3 +15,4 @@ A fresh KeyPage instance has a different vault encryption key. Re-exporting opaq
 - The backup file is a single point of failure: anyone with the backup file and Master Password gets every key at once.
 - Export briefly holds all plaintext keys in browser memory (same as viewing every entry).
 - Independent backup KDF means the backup password can differ from the vault Master Password on import (by design for cross-instance restore).
+- Import validates the cleartext header KDF against the exact presets KeyPage export has ever emitted, rejecting anything else before any key derivation (compatible tightening of v1; no format change).
