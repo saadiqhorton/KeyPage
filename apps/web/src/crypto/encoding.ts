@@ -3,7 +3,7 @@ export function utf8Bytes(text: string): Uint8Array {
 }
 
 export function base64Encode(data: Uint8Array): string {
-  const binString = Array.from(data, (byte) => String.fromCharCode(byte)).join(
+  const binString = Array.from(data, (byte) => String.fromCodePoint(byte)).join(
     "",
   );
   return btoa(binString);
@@ -13,21 +13,21 @@ export function base64Decode(text: string): Uint8Array {
   const binString = atob(text);
   const bytes = new Uint8Array(binString.length);
   for (let i = 0; i < binString.length; i++) {
-    bytes[i] = binString.charCodeAt(i);
+    bytes[i] = binString.codePointAt(i) ?? 0;
   }
   return bytes;
 }
 
 export function base64urlEncode(data: Uint8Array): string {
   return base64Encode(data)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }
 
 export function base64urlDecode(text: string): Uint8Array {
   const padded =
-    text.replace(/-/g, "+").replace(/_/g, "/") +
+    text.replaceAll("-", "+").replaceAll("_", "/") +
     "=".repeat((4 - (text.length % 4)) % 4);
   return base64Decode(padded);
 }

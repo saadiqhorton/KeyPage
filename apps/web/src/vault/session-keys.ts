@@ -39,7 +39,7 @@ let encryptionKeyVersion: number | null = null;
 
 const keyClearedListeners = new Set<() => void>();
 
-export function setEncryptionKey(
+function installEncryptionKey(
   key: AesKey,
   keyVersion: number,
   authKeyB64?: string,
@@ -55,20 +55,20 @@ export function setEncryptionKey(
   authProofKey = authKeyB64 ? base64Decode(authKeyB64) : null;
 }
 
+export function setEncryptionKey(
+  key: AesKey,
+  keyVersion: number,
+  authKeyB64?: string,
+): void {
+  installEncryptionKey(key, keyVersion, authKeyB64);
+}
+
 export function replaceEncryptionKey(
   key: AesKey,
   keyVersion: number,
   authKeyB64?: string,
 ): void {
-  if (encryptionKey) {
-    zeroizeAesKey(encryptionKey);
-  }
-  if (authProofKey) {
-    zeroize(authProofKey);
-  }
-  encryptionKey = key;
-  encryptionKeyVersion = keyVersion;
-  authProofKey = authKeyB64 ? base64Decode(authKeyB64) : null;
+  installEncryptionKey(key, keyVersion, authKeyB64);
 }
 
 export function getEncryptionKey(): AesKey | null {

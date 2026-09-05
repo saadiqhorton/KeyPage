@@ -12,8 +12,10 @@ import {
 import {
   BackupFormatError,
   BackupPasswordError,
+  backupAad,
   backupFileName,
   decryptBackup,
+  deriveBackupKey,
   encryptBackup,
   parseBackupFile,
   serializeBackupFile,
@@ -285,12 +287,154 @@ describe("backup crypto", () => {
     );
   });
 
+  it("rejects payload-level shape errors", () => {
+    assert.throws(() => validateBackupPayload(null), BackupFormatError);
+    assert.throws(() => validateBackupPayload("x"), BackupFormatError);
+    assert.throws(
+      () => validateBackupPayload({ ...samplePayload(), formatVersion: 99 }),
+      BackupFormatError,
+    );
+    assert.throws(
+      () => validateBackupPayload({ ...samplePayload(), createdAt: 1 }),
+      BackupFormatError,
+    );
+    assert.throws(
+      () => validateBackupPayload({ ...samplePayload(), entryCount: 1.5 }),
+      BackupFormatError,
+    );
+    assert.throws(
+      () => validateBackupPayload({ ...samplePayload(), entries: "nope" }),
+      BackupFormatError,
+    );
+  });
+
+  it("rejects entries with invalid identity and optional fields", () => {
+    assert.throws(
+      () =>
+        validateBackupPayload(
+          samplePayload([sampleEntry({ label: 1 as unknown as string })]),
+        ),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        validateBackupPayload(
+          samplePayload([sampleEntry({ serviceId: "" })]),
+        ),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        validateBackupPayload(
+          samplePayload([sampleEntry({ tags: [1 as unknown as string] })]),
+        ),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        validateBackupPayload(
+          samplePayload([sampleEntry({ createdAt: 1 as unknown as string })]),
+        ),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        validateBackupPayload(
+          samplePayload([sampleEntry({ updatedAt: 1 as unknown as string })]),
+        ),
+      BackupFormatError,
+    );
+  });
+
+
   it("formats backup file names", () => {
     assert.equal(
       backupFileName(new Date("2026-08-01T12:34:56.000Z")),
       "keypage-backup-2026-08-01.json",
     );
   });
+
+  it("uses today's UTC date when no date is provided", () => {
+    const name = backupFileName();
+    assert.match(name, /^keypage-backup-\d{4}-\d{2}-\d{2}\.json$/);
+  });
+
+  it("builds backup AAD from the format version", () => {
+    const aad = backupAad(BACKUP_FORMAT_VERSION);
+    assert.ok(aad.byteLength > 0);
+  });
+
+  it("round-trips serialize then parse for a real file", async () => {
+    const file = await encryptBackup(
+      "backup-password",
+      samplePayload(),
+      PRESET_KDF,
+    );
+    const parsed = parseBackupFile(serializeBackupFile(file));
+    assert.equal(parsed.magic, "keypage-backup");
+    assert.equal(parsed.formatVersion, BACKUP_FORMAT_VERSION);
+    const decrypted = await decryptBackup(parsed, "backup-password");
+    assert.deepEqual(decrypted, samplePayload());
+  });
+
+  it("rejects more parse-header failures", () => {
+    assert.throws(() => parseBackupFile("[]"), BackupFormatError);
+    const base = headerBase(PRESET_KDF);
+    assert.throws(
+      () => parseBackupFile(JSON.stringify({ ...base, createdAt: 1 })),
+      BackupFormatError,
+    );
+    assert.throws(
+      () => parseBackupFile(JSON.stringify({ ...base, kdf: "nope" })),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        parseBackupFile(
+          JSON.stringify({ ...base, kdf: { ...PRESET_KDF, saltB64: 1 } }),
+        ),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        parseBackupFile(
+          JSON.stringify({ ...base, kdf: { ...PRESET_KDF, iterations: 1.5 } }),
+        ),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        parseBackupFile(
+          JSON.stringify({
+            ...base,
+            cipher: { algorithm: "chacha", ivB64: "a", ciphertextB64: "b" },
+          }),
+        ),
+      BackupFormatError,
+    );
+    assert.throws(
+      () =>
+        parseBackupFile(
+          JSON.stringify({
+            ...base,
+            cipher: { algorithm: "aes-256-gcm", ivB64: 1, ciphertextB64: "b" },
+          }),
+        ),
+      BackupFormatError,
+    );
+  });
+
+  it("derives a backup key for argon2id parameters", async () => {
+    const key = await deriveBackupKey("backup-password", {
+      algorithm: "argon2id",
+      saltB64: base64Encode(new Uint8Array(16).fill(7)),
+      iterations: 1,
+      memoryKiB: 1024,
+      parallelism: 1,
+    });
+    assert.ok(key.kind === "webcrypto" || key.kind === "fallback");
+  });
+
 
   it("accepts blank labels and empty tag strings in backup payloads", () => {
     assert.throws(
@@ -302,6 +446,43 @@ describe("backup crypto", () => {
         ),
       BackupFormatError,
     );
+  });
+
+  it("rejects backup entries with invalid field shapes", () => {
+    const cases: Array<{ entry: unknown; message: string }> = [
+      { entry: "not-an-object", message: "Entry 0 is invalid" },
+      {
+        entry: sampleEntry({ customServiceName: 1 as unknown as string }),
+        message: "Entry 0 has an invalid customServiceName",
+      },
+      {
+        entry: sampleEntry({ description: 1 as unknown as string }),
+        message: "Entry 0 has an invalid description",
+      },
+      {
+        entry: sampleEntry({ keyValue: "" }),
+        message: "Entry 0 has an invalid keyValue",
+      },
+      {
+        entry: sampleEntry({ lastUsedAt: 1 as unknown as string }),
+        message: "Entry 0 has an invalid lastUsedAt",
+      },
+    ];
+    for (const { entry, message } of cases) {
+      assert.throws(
+        () =>
+          validateBackupPayload({
+            ...samplePayload(),
+            entries: [entry],
+            entryCount: 1,
+          }),
+        (error: unknown) => {
+          assert.ok(error instanceof BackupFormatError);
+          assert.equal(error.message, message);
+          return true;
+        },
+      );
+    }
   });
 });
 

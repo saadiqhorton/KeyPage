@@ -13,17 +13,14 @@ export function TagFilterChips({
   counts,
   selected,
   onToggle,
-}: TagFilterChipsProps) {
+}: Readonly<TagFilterChipsProps>) {
   if (facets.length === 0) {
     return null;
   }
 
   return (
-    <div
-      role="group"
-      aria-label="Filter by tag"
-      className="flex flex-wrap gap-1.5"
-    >
+    <fieldset className="m-0 flex min-w-0 [min-inline-size:0] flex-wrap gap-1.5 border-0 p-0">
+      <legend className="sr-only float-none p-0 [display:inherit]">Filter by tag</legend>
       {facets.map((facet) => {
         const isSelected = selected.includes(facet.key);
         const count = counts.get(facet.key) ?? 0;
@@ -52,6 +49,6 @@ export function TagFilterChips({
           </button>
         );
       })}
-    </div>
+    </fieldset>
   );
 }

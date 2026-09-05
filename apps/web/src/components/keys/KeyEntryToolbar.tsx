@@ -28,7 +28,7 @@ export function KeyEntryToolbar({
   onToggleTag,
   visibleCount,
   totalCount,
-}: KeyEntryToolbarProps) {
+}: Readonly<KeyEntryToolbarProps>) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap flex-col gap-3 sm:flex-row sm:items-center">

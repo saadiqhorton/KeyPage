@@ -23,7 +23,7 @@ export function DashboardShell({
   onLock,
   footer,
   className,
-}: DashboardShellProps) {
+}: Readonly<DashboardShellProps>) {
   return (
     <div className={cn("flex min-h-dvh flex-col", className)}>
       <header className="border-b border-hairline bg-surface/40 px-4 py-4 md:px-12 lg:px-20">

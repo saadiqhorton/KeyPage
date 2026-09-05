@@ -225,77 +225,105 @@ function isUuidV4(id: string): boolean {
   return UUID_V4_PATTERN.test(id);
 }
 
-function validateBackupEntry(entry: unknown, index: number): void {
-  if (!isRecord(entry)) {
-    throw new BackupFormatError(`Entry ${index} is invalid`);
-  }
+function invalidBackupEntry(index: number, detail: string): never {
+  throw new BackupFormatError(`Entry ${index} ${detail}`);
+}
 
+function assertBackupEntryIdentity(
+  entry: Record<string, unknown>,
+  index: number,
+): void {
   const id = entry.id;
   const label = entry.label;
   const serviceId = entry.serviceId;
+
+  if (typeof id !== "string" || !isUuidV4(id)) {
+    invalidBackupEntry(index, "has an invalid id");
+  }
+  if (typeof label !== "string") {
+    invalidBackupEntry(index, "has an invalid label");
+  }
+  if (typeof serviceId !== "string" || serviceId.length === 0) {
+    invalidBackupEntry(index, "has an invalid serviceId");
+  }
+}
+
+function assertBackupEntryOptionalFields(
+  entry: Record<string, unknown>,
+  index: number,
+): void {
   const customServiceName = entry.customServiceName;
   const description = entry.description;
   const tags = entry.tags;
+
+  if (customServiceName !== null && typeof customServiceName !== "string") {
+    invalidBackupEntry(index, "has an invalid customServiceName");
+  }
+  if (description !== null && typeof description !== "string") {
+    invalidBackupEntry(index, "has an invalid description");
+  }
+  if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== "string")) {
+    invalidBackupEntry(index, "has invalid tags");
+  }
+}
+
+function assertBackupEntryNormalized(
+  entry: Record<string, unknown>,
+  index: number,
+): void {
+  const label = entry.label as string;
+  const description = entry.description as string | null;
+  const tags = entry.tags as string[];
+  const serviceId = entry.serviceId as string;
+  const customServiceName = entry.customServiceName as string | null;
+
+  try {
+    normalizeLabel(label);
+    normalizeDescription(description ?? undefined);
+    normalizeTags(tags);
+    const resolved = resolveServiceForImport(serviceId, customServiceName);
+    validateService(resolved.serviceId, resolved.customServiceName);
+  } catch (error) {
+    if (error instanceof KeyEntryFieldError) {
+      const field = error.details[0]?.field ?? "fields";
+      invalidBackupEntry(index, `has invalid ${field}`);
+    }
+    throw error;
+  }
+}
+
+function assertBackupEntrySecretsAndDates(
+  entry: Record<string, unknown>,
+  index: number,
+): void {
   const keyValue = entry.keyValue;
   const createdAt = entry.createdAt;
   const updatedAt = entry.updatedAt;
   const lastUsedAt = entry.lastUsedAt;
 
-  if (typeof id !== "string" || !isUuidV4(id)) {
-    throw new BackupFormatError(`Entry ${index} has an invalid id`);
-  }
-  if (typeof label !== "string") {
-    throw new BackupFormatError(`Entry ${index} has an invalid label`);
-  }
-  if (typeof serviceId !== "string" || serviceId.length === 0) {
-    throw new BackupFormatError(`Entry ${index} has an invalid serviceId`);
-  }
-  if (
-    customServiceName !== null &&
-    typeof customServiceName !== "string"
-  ) {
-    throw new BackupFormatError(
-      `Entry ${index} has an invalid customServiceName`,
-    );
-  }
-  if (description !== null && typeof description !== "string") {
-    throw new BackupFormatError(`Entry ${index} has an invalid description`);
-  }
-  if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== "string")) {
-    throw new BackupFormatError(`Entry ${index} has invalid tags`);
-  }
-
-  try {
-    normalizeLabel(label);
-    normalizeDescription(description === null ? undefined : description);
-    normalizeTags(tags);
-    const resolved = resolveServiceForImport(
-      serviceId,
-      customServiceName,
-    );
-    validateService(resolved.serviceId, resolved.customServiceName);
-  } catch (error) {
-    if (error instanceof KeyEntryFieldError) {
-      const field = error.details[0]?.field ?? "fields";
-      throw new BackupFormatError(
-        `Entry ${index} has invalid ${field}`,
-      );
-    }
-    throw error;
-  }
-
   if (typeof keyValue !== "string" || keyValue.length === 0) {
-    throw new BackupFormatError(`Entry ${index} has an invalid keyValue`);
+    invalidBackupEntry(index, "has an invalid keyValue");
   }
   if (typeof createdAt !== "string") {
-    throw new BackupFormatError(`Entry ${index} has an invalid createdAt`);
+    invalidBackupEntry(index, "has an invalid createdAt");
   }
   if (typeof updatedAt !== "string") {
-    throw new BackupFormatError(`Entry ${index} has an invalid updatedAt`);
+    invalidBackupEntry(index, "has an invalid updatedAt");
   }
   if (lastUsedAt !== null && typeof lastUsedAt !== "string") {
-    throw new BackupFormatError(`Entry ${index} has an invalid lastUsedAt`);
+    invalidBackupEntry(index, "has an invalid lastUsedAt");
   }
+}
+
+function validateBackupEntry(entry: unknown, index: number): void {
+  if (!isRecord(entry)) {
+    throw new BackupFormatError(`Entry ${index} is invalid`);
+  }
+
+  assertBackupEntryIdentity(entry, index);
+  assertBackupEntryOptionalFields(entry, index);
+  assertBackupEntryNormalized(entry, index);
+  assertBackupEntrySecretsAndDates(entry, index);
 }
 
 export function validateBackupPayload(value: unknown): BackupPayload {

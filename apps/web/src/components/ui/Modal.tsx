@@ -1,7 +1,6 @@
 import {
   type AnimationEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -57,7 +56,7 @@ export function Modal({
   const generatedTitleId = useId();
   const titleId = labelledById ?? generatedTitleId;
   const descriptionId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDialogElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(open);
   const closeTimeoutRef = useRef<number | null>(null);
@@ -75,7 +74,7 @@ export function Modal({
   const restoreFocus = useCallback(() => {
     const previous = previousFocusRef.current;
     previousFocusRef.current = null;
-    if (!previous || !previous.isConnected) return;
+    if (!previous?.isConnected) return;
     previous.focus({ preventScroll: true });
   }, []);
 
@@ -166,25 +165,19 @@ export function Modal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [busy, isClosing, mounted, onClose]);
 
-  function handleBackdropClick(event: MouseEvent<HTMLDivElement>) {
-    if (busy || event.target !== event.currentTarget) return;
-    onClose();
-  }
-
-  function handlePanelKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+  function handlePanelKeyDown(event: ReactKeyboardEvent<HTMLDialogElement>) {
     if (event.key !== "Tab") return;
 
     const panel = panelRef.current;
     if (!panel) return;
 
     const focusable = getFocusableElements(panel);
-    if (focusable.length === 0) {
+    const first = focusable.at(0);
+    const last = focusable.at(-1);
+    if (!first || !last) {
       event.preventDefault();
       return;
     }
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
     const active = document.activeElement as HTMLElement | null;
 
     if (event.shiftKey) {
@@ -218,23 +211,33 @@ export function Modal({
         backdropClass,
         "bg-obsidian/80 backdrop-blur-sm",
       )}
-      onClick={handleBackdropClick}
       onAnimationEnd={handleAnimationEnd}
     >
-      <div
+      <button
+        type="button"
+        tabIndex={-1}
+        disabled={busy}
+        aria-label="Dismiss"
+        className="absolute inset-0 cursor-default bg-transparent p-0"
+        onClick={() => {
+          if (!busy) onClose();
+        }}
+      />
+      <dialog
         ref={panelRef}
-        role="dialog"
-        aria-modal="true"
+        open
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={cn(
-          "bezel-shell flex max-h-[min(90dvh,720px)] w-full max-w-lg flex-col outline-none",
-          "shadow-[0_24px_80px_rgba(0,0,0,0.55)]",
+          "bezel-shell relative z-10 m-0 flex max-h-[min(90dvh,720px)] w-full max-w-lg flex-col outline-none",
+          "left-auto right-auto shadow-[0_24px_80px_rgba(0,0,0,0.55)]",
           panelClass,
         )}
+        onCancel={(event) => {
+          event.preventDefault();
+        }}
         onKeyDown={handlePanelKeyDown}
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="bezel-core flex min-h-0 flex-1 flex-col overflow-hidden">
           <header className="border-b border-hairline px-5 py-4">
@@ -262,7 +265,7 @@ export function Modal({
             </footer>
           ) : null}
         </div>
-      </div>
+      </dialog>
     </div>,
     document.body,
   );

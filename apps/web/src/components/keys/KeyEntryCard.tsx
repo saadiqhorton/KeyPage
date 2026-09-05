@@ -30,7 +30,7 @@ export function KeyEntryCard({
   onCopy,
   onEdit,
   onDelete,
-}: KeyEntryCardProps) {
+}: Readonly<KeyEntryCardProps>) {
   const displayName = serviceDisplayName(entry);
 
   return (

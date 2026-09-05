@@ -15,7 +15,7 @@ const sizeClasses: Record<ServiceIconSize, string> = {
   md: "size-10 text-sm",
 };
 
-function monogram(displayName: string): string {
+export function monogram(displayName: string): string {
   const words = displayName.trim().split(/\s+/).filter(Boolean);
   if (words.length >= 2) {
     return words
@@ -27,7 +27,7 @@ function monogram(displayName: string): string {
   return (words[0]?.[0] ?? "?").toUpperCase();
 }
 
-export function ServiceIcon({ serviceId, size = "md", className }: ServiceIconProps) {
+export function ServiceIcon({ serviceId, size = "md", className }: Readonly<ServiceIconProps>) {
   const entry = getService(serviceId);
   const glyph = monogram(entry.displayName);
 

@@ -6,10 +6,12 @@ import {
   recoveryAuthMessage,
   recoveryStoredKeyHexFromMasterKey,
   base64Encode,
-  base64Decode,
 } from "@keypage/shared";
 
 import { base64Decode as webB64Decode } from "./encoding.js";
+
+/** Re-export decode used when verifying local vectors in tests. */
+export { base64Decode } from "@keypage/shared";
 
 export function authKeyBytesFromB64(authKeyB64: string): Uint8Array {
   return webB64Decode(authKeyB64);
@@ -58,6 +60,3 @@ export function recoveryClientProofB64(
   );
   return base64Encode(proof);
 }
-
-/** Re-export decode used when verifying local vectors in tests. */
-export { base64Decode };

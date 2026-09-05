@@ -11,10 +11,9 @@ const sizeClasses = {
   md: "size-5 border-2",
 };
 
-export function Spinner({ size = "md", className, label = "Loading" }: SpinnerProps) {
+export function Spinner({ size = "md", className, label = "Loading" }: Readonly<SpinnerProps>) {
   return (
-    <span
-      role="status"
+    <output
       aria-label={label}
       className={cn(
         "inline-block shrink-0 animate-spin rounded-full border-brass/30 border-t-brass",

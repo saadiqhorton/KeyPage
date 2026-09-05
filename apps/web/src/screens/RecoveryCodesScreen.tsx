@@ -12,7 +12,7 @@ const SETUP_STEPS = [
   "Vault ready",
 ];
 
-function titleForReason(
+export function titleForReason(
   reason: "setup" | "recovery" | "password_change" | "regen",
 ): string {
   switch (reason) {
@@ -39,6 +39,23 @@ export function RecoveryCodesScreen() {
   const locked = state.phase !== "unlocked" && !unavailable;
   const title = titleForReason(wizard.reason);
 
+  let vaultStateCallout = null;
+  if (unavailable) {
+    vaultStateCallout = (
+      <Callout tone="info">
+        The server could not be reached. Save these codes before leaving this
+        page, then choose Done.
+      </Callout>
+    );
+  } else if (locked) {
+    vaultStateCallout = (
+      <Callout tone="info">
+        The vault locked while these codes were on screen. Save them, then
+        choose Done to go back to the unlock screen.
+      </Callout>
+    );
+  }
+
   return (
     <AuthShell chip="RECOVERY CODES" title={title}>
       <div className="flex flex-col gap-4">
@@ -50,17 +67,7 @@ export function RecoveryCodesScreen() {
             ? "These codes are shown only once. They are not stored anywhere you can read them again."
             : "These codes replace your previous set and are shown only once. They are not stored anywhere you can read them again."}
         </Callout>
-        {unavailable ? (
-          <Callout tone="info">
-            The server could not be reached. Save these codes before leaving this
-            page, then choose Done.
-          </Callout>
-        ) : locked ? (
-          <Callout tone="info">
-            The vault locked while these codes were on screen. Save them, then
-            choose Done to go back to the unlock screen.
-          </Callout>
-        ) : null}
+        {vaultStateCallout}
         <RecoveryCodesPanel
           codes={wizard.codes}
           onAcknowledged={() => {

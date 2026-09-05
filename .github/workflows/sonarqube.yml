@@ -19,15 +19,10 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - name: Run tests with native Node coverage
-        continue-on-error: true
-        run: |
-          mkdir -p coverage
-          (cd apps/api && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/api.lcov || true)
-          (cd apps/web && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.{ts,tsx}" > ../../coverage/web.lcov || true)
-          (cd packages/shared && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/shared.lcov || true)
-          cat coverage/api.lcov coverage/web.lcov coverage/shared.lcov > coverage/lcov.info || true
-          ls -la coverage
+        run: bash scripts/run-sonar-coverage.sh
       - name: SonarQube Scan
+        id: sonar_scan
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -37,4 +32,67 @@ jobs:
             -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.sources=apps,packages
-            -Dsonar.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js,**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
+            -Dsonar.tests=apps,packages
+            -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
+            -Dsonar.coverage.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.ws.timeout=120
+      - name: SonarQube Scan retry
+        if: steps.sonar_scan.outcome == 'failure'
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: http://177.7.36.102:9000
+        with:
+          args: >
+            -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.sources=apps,packages
+            -Dsonar.tests=apps,packages
+            -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
+            -Dsonar.coverage.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.ws.timeout=120
+      - name: Read Sonar quality gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          python3 <<'PY'
+          import base64, json, os, time, urllib.request
+
+          token = os.environ["SONAR_TOKEN"]
+          host = "http://177.7.36.102:9000"
+          key = "saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503"
+          auth = base64.b64encode(f"{token}:".encode()).decode()
+
+          def get(path):
+              req = urllib.request.Request(
+                  host + path,
+                  headers={"Authorization": f"Basic {auth}"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)
+
+          status = ""
+          for _ in range(30):
+              qg = get(f"/api/qualitygates/project_status?projectKey={key}")
+              status = qg.get("projectStatus", {}).get("status", "")
+              print("quality_gate", status)
+              print("conditions", json.dumps(qg.get("projectStatus", {}).get("conditions"), indent=2))
+              if status in ("OK", "ERROR"):
+                  break
+              time.sleep(5)
+
+          measures = get(
+              f"/api/measures/component?component={key}&metricKeys=coverage,uncovered_lines,bugs,vulnerabilities,code_smells,alert_status,ncloc,new_coverage,new_violations,violations"
+          )
+          print("measures")
+          for row in sorted(measures["component"]["measures"], key=lambda item: item["metric"]):
+              value = row.get("value") or (row.get("period") or {}).get("value")
+              print(f"  {row['metric']}={value}")
+
+          issues = get(f"/api/issues/search?componentKeys={key}&resolved=false&ps=5")
+          print("open_issues", issues.get("total"))
+          for issue in issues.get("issues", []):
+              print(" ", issue.get("rule"), issue.get("severity"), issue.get("component"), issue.get("line"))
+          PY

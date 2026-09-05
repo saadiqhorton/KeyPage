@@ -6,7 +6,7 @@ type SettingsCardProps = {
   children: ReactNode;
 };
 
-export function SettingsCard({ title, description, children }: SettingsCardProps) {
+export function SettingsCard({ title, description, children }: Readonly<SettingsCardProps>) {
   return (
     <div className="bezel-shell">
       <div className="bezel-core flex flex-col gap-4 p-5">

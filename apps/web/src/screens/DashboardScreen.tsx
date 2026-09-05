@@ -8,6 +8,7 @@ import { KeyEntryList } from "@/components/keys/KeyEntryList";
 import { KeyEntryModal } from "@/components/keys/KeyEntryModal";
 import { KeyEntryTable } from "@/components/keys/KeyEntryTable";
 import { KeyEntryToolbar } from "@/components/keys/KeyEntryToolbar";
+import type { KeyEntryActionProps, KeyEntryRevealProps } from "@/components/keys/key-entry-view-props";
 import { NoFilterMatchesState } from "@/components/keys/NoFilterMatchesState";
 import { DashboardShell } from "@/components/DashboardShell";
 import { EmptyVaultState } from "@/components/EmptyVaultState";
@@ -31,6 +32,59 @@ import { useIdleLock } from "@/vault/useIdleLock";
 import { useKeyEntries } from "@/vault/useKeyEntries.js";
 import { useKeyEntrySecret } from "@/vault/useKeyEntrySecret.js";
 import { useVault } from "@/vault/useVault";
+import type { KeyEntryView } from "@/lib/view-mode";
+
+type DashboardContentProps = {
+  vaultUnlocked: boolean;
+  status: "loading" | "ready" | "error";
+  error: string | null;
+  entries: KeyEntry[];
+  visible: KeyEntry[];
+  view: KeyEntryView;
+  revealProps: KeyEntryRevealProps;
+  actionProps: KeyEntryActionProps;
+  onAddKey: () => void;
+  onClearFilters: () => void;
+};
+
+export function renderDashboardContent({
+  vaultUnlocked,
+  status,
+  error,
+  entries,
+  visible,
+  view,
+  revealProps,
+  actionProps,
+  onAddKey,
+  onClearFilters,
+}: DashboardContentProps): ReactNode {
+  if (!vaultUnlocked || status === "loading") {
+    return (
+      <div className="flex flex-1 items-center justify-center py-16">
+        <Spinner label="Loading key entries" />
+      </div>
+    );
+  }
+  if (status === "error") {
+    return (
+      <Callout tone="danger">{error ?? "Failed to load key entries."}</Callout>
+    );
+  }
+  if (entries.length === 0) {
+    return <EmptyVaultState onAddKey={onAddKey} />;
+  }
+  if (visible.length === 0) {
+    return <NoFilterMatchesState onClearFilters={onClearFilters} />;
+  }
+  if (view === "table") {
+    return <KeyEntryTable entries={visible} {...revealProps} {...actionProps} />;
+  }
+  if (view === "list") {
+    return <KeyEntryList entries={visible} {...revealProps} {...actionProps} />;
+  }
+  return <KeyEntryCardGrid entries={visible} {...revealProps} {...actionProps} />;
+}
 
 export function DashboardScreen() {
   const navigate = useNavigate();
@@ -140,29 +194,18 @@ export function DashboardScreen() {
 
   const showToolbar = vaultUnlocked && status === "ready" && entries.length > 0;
 
-  let content: ReactNode;
-
-  if (!vaultUnlocked || status === "loading") {
-    content = (
-      <div className="flex flex-1 items-center justify-center py-16">
-        <Spinner label="Loading key entries" />
-      </div>
-    );
-  } else if (status === "error") {
-    content = (
-      <Callout tone="danger">{error ?? "Failed to load key entries."}</Callout>
-    );
-  } else if (entries.length === 0) {
-    content = <EmptyVaultState onAddKey={openAddKey} />;
-  } else if (visible.length === 0) {
-    content = <NoFilterMatchesState onClearFilters={clearFilters} />;
-  } else if (view === "table") {
-    content = <KeyEntryTable entries={visible} {...revealProps} {...actionProps} />;
-  } else if (view === "list") {
-    content = <KeyEntryList entries={visible} {...revealProps} {...actionProps} />;
-  } else {
-    content = <KeyEntryCardGrid entries={visible} {...revealProps} {...actionProps} />;
-  }
+  const content = renderDashboardContent({
+    vaultUnlocked,
+    status,
+    error,
+    entries,
+    visible,
+    view,
+    revealProps,
+    actionProps,
+    onAddKey: openAddKey,
+    onClearFilters: clearFilters,
+  });
 
   const headerActions =
     vaultUnlocked && status === "ready" ? (

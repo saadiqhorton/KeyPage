@@ -17,7 +17,7 @@ type ToastContent = {
 
 const TOAST_OUT_MS = 140;
 
-export function Toast({ message, tone = "default" }: ToastProps) {
+export function Toast({ message, tone = "default" }: Readonly<ToastProps>) {
   // Stable identity while message/tone are unchanged — a fresh object each
   // render would retrigger useExitTransition's effect and loop setState.
   const value = useMemo<ToastContent | null>(

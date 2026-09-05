@@ -58,9 +58,7 @@ export async function decryptAllKeyEntries(
         baseIvB64: entry.cipher.ivB64,
       });
     } catch {
-      if (!firstFailedEntry) {
-        firstFailedEntry = { label: entry.label, id: entry.id };
-      }
+      firstFailedEntry ??= { label: entry.label, id: entry.id };
     }
   }
 

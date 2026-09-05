@@ -184,5 +184,5 @@ export function isSessionActive(db: Database.Database, sessionId: string): boole
     )
     .get(sessionId) as { revoked_at: string | null } | undefined;
 
-  return row !== undefined && row.revoked_at === null;
+  return row?.revoked_at === null;
 }

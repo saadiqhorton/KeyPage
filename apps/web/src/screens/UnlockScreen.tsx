@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useState } from "react";
+import { type SubmitEvent, useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AuthShell } from "@/components/AuthShell";
@@ -8,14 +8,14 @@ import { Callout } from "@/components/ui/Callout";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api.js";
-import { useVault } from "@/vault/useVault";
+import { useVault, type VaultState } from "@/vault/useVault";
 
-function formatIdleLockMinutes(idleTimeoutSeconds: number): string {
+export function formatIdleLockMinutes(idleTimeoutSeconds: number): string {
   const minutes = Math.round(idleTimeoutSeconds / 60);
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
 }
 
-function formatUnlockError(error: ApiError): string {
+export function formatUnlockError(error: ApiError): string {
   if (
     error.code === "invalid_credentials" &&
     error.body.attemptsRemaining !== undefined
@@ -24,6 +24,29 @@ function formatUnlockError(error: ApiError): string {
     return `Incorrect Master Password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before a temporary lockout.`;
   }
   return error.message;
+}
+
+export function lockReasonBanner(state: VaultState): string | null {
+  if (state.phase !== "locked") {
+    return null;
+  }
+  if (state.reason === "idle") {
+    return `Locked after ${formatIdleLockMinutes(state.idleTimeoutSeconds)} of inactivity.`;
+  }
+  if (state.reason === "session_expired") {
+    return "Your session expired.";
+  }
+  if (state.reason === "rekeyed") {
+    return "Your Master Password was changed somewhere else. Unlock with the new one.";
+  }
+  return null;
+}
+
+export function workingStatusLabel(state: VaultState): string {
+  if (state.phase === "working") {
+    return state.label;
+  }
+  return "Working…";
 }
 
 export function UnlockScreen() {
@@ -35,12 +58,13 @@ export function UnlockScreen() {
   const locked = state.phase === "locked";
   const lockout = locked ? state.lockout : null;
   const lockoutActive = lockout?.locked ?? false;
+  const reasonBanner = lockReasonBanner(state);
 
   const handleLockoutExpired = useCallback(() => {
     void actions.refreshStatus();
   }, [actions]);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
@@ -55,15 +79,6 @@ export function UnlockScreen() {
       }
     }
   }
-
-  const reasonBanner =
-    locked && state.reason === "idle"
-      ? `Locked after ${formatIdleLockMinutes(state.idleTimeoutSeconds)} of inactivity.`
-      : locked && state.reason === "session_expired"
-        ? "Your session expired."
-        : locked && state.reason === "rekeyed"
-          ? "Your Master Password was changed somewhere else. Unlock with the new one."
-          : null;
 
   return (
     <AuthShell chip="VAULT LOCKED" title="Enter your Master Password to unlock.">
@@ -96,7 +111,7 @@ export function UnlockScreen() {
           {working ? (
             <div className="flex items-center gap-2 text-sm text-muted">
               <Spinner size="sm" />
-              <span>{state.phase === "working" ? state.label : "Working…"}</span>
+              <span>{workingStatusLabel(state)}</span>
             </div>
           ) : null}
           <Button

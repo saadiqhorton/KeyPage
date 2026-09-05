@@ -9,10 +9,14 @@ import {
 
 import { HttpInvalidRequest } from "../errors.js";
 import {
+  normalizeDescription,
+  normalizeKeyEntryWriteFields,
+  normalizeLabel,
   normalizeTags,
   normalizeImportTimestamp,
   validateCipherInput,
   validateCipherPayload,
+  validateKeyEntryId,
   validateService,
 } from "./validate.js";
 
@@ -86,17 +90,68 @@ describe("key entry validate", () => {
   });
 
   it("accepts a well-formed client cipher", () => {
-    validateCipherInput({ ...validPayload(), keyVersion: 3 });
+    assert.doesNotThrow(() =>
+      validateCipherInput({ ...validPayload(), keyVersion: 3 }),
+    );
   });
 
   it("accepts a rotation payload that carries no key version", () => {
-    validateCipherPayload(validPayload());
+    assert.doesNotThrow(() => validateCipherPayload(validPayload()));
   });
 
   it("rejects unknown serviceId", () => {
     assertInvalidRequest(
       () => validateService("not-a-service", undefined),
       "serviceId",
+    );
+  });
+
+  it("accepts a catalog service and a custom service name", () => {
+    assert.deepEqual(validateService("openai", undefined), {
+      customServiceName: null,
+    });
+    assert.equal(
+      validateService("custom", "My Service").customServiceName,
+      "My Service",
+    );
+  });
+
+  it("normalizes label and description", () => {
+    assert.equal(normalizeLabel("  Hello  "), "Hello");
+    assert.equal(normalizeDescription(undefined), null);
+    assert.equal(normalizeDescription("  notes  "), "notes");
+  });
+
+  it("rejects a blank label", () => {
+    assertInvalidRequest(() => normalizeLabel("   "), "label");
+  });
+
+  it("rejects an invalid key entry id", () => {
+    assertInvalidRequest(() => validateKeyEntryId("not-a-uuid"), "id");
+    assert.doesNotThrow(() =>
+      validateKeyEntryId("11111111-1111-4111-8111-111111111111"),
+    );
+  });
+
+  it("normalizeKeyEntryWriteFields returns trimmed fields", () => {
+    const fields = normalizeKeyEntryWriteFields({
+      label: "  API  ",
+      serviceId: "openai",
+      tags: [" one ", "one"],
+    });
+    assert.equal(fields.label, "API");
+    assert.deepEqual(fields.tags, ["one"]);
+    assert.equal(fields.customServiceName, null);
+  });
+
+  it("rejects an unknown cipher algorithm", () => {
+    assertInvalidRequest(
+      () =>
+        validateCipherPayload({
+          ...validPayload(),
+          algorithm: "aes-128-gcm" as never,
+        }),
+      "cipher.algorithm",
     );
   });
 
@@ -136,6 +191,13 @@ describe("normalizeImportTimestamp", () => {
   it("accepts a valid ISO timestamp", () => {
     const value = "2026-01-01T00:00:00.000Z";
     assert.equal(normalizeImportTimestamp(value, "createdAt"), value);
+  });
+
+  it("rejects a non-string timestamp", () => {
+    assertInvalidRequest(
+      () => normalizeImportTimestamp(12 as unknown as string, "createdAt"),
+      "createdAt",
+    );
   });
 
   it("rejects timestamps longer than 40 characters", () => {

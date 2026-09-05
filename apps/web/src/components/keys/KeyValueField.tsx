@@ -16,7 +16,7 @@ type KeyValueFieldProps = {
 const controlButtonClass =
   "pressable rounded-sm p-1.5 text-muted hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/70 disabled:cursor-not-allowed disabled:opacity-50";
 
-function EyeIcon({ className }: { className?: string }) {
+function EyeIcon({ className }: Readonly<{ className?: string }>) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -35,7 +35,7 @@ function EyeIcon({ className }: { className?: string }) {
   );
 }
 
-function EyeOffIcon({ className }: { className?: string }) {
+function EyeOffIcon({ className }: Readonly<{ className?: string }>) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -60,9 +60,11 @@ function KeyValueControls({
   busy,
   onToggleReveal,
   onCopy,
-}: Pick<
-  KeyValueFieldProps,
-  "entryLabel" | "revealed" | "busy" | "onToggleReveal" | "onCopy"
+}: Readonly<
+  Pick<
+    KeyValueFieldProps,
+    "entryLabel" | "revealed" | "busy" | "onToggleReveal" | "onCopy"
+  >
 >) {
   const revealLabel = revealed
     ? `Hide API Key (${entryLabel})`
@@ -101,7 +103,7 @@ function KeyValueDisplay({
   revealed,
   value,
   density,
-}: Pick<KeyValueFieldProps, "revealed" | "value" | "density">) {
+}: Readonly<Pick<KeyValueFieldProps, "revealed" | "value" | "density">>) {
   const textSize = density === "card" ? "text-sm" : "text-xs";
 
   if (revealed) {
@@ -135,7 +137,7 @@ export function KeyValueField({
   onToggleReveal,
   onCopy,
   className,
-}: KeyValueFieldProps) {
+}: Readonly<KeyValueFieldProps>) {
   const content = (
     <>
       <KeyValueDisplay revealed={revealed} value={value} density={density} />

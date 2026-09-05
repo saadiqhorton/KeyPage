@@ -13,7 +13,6 @@ import {
   type RecoveryClaimResponse,
   type RecoveryCodesRegenerateResponse,
   type RecoveryResetResponse,
-  type SessionInfo,
   type VaultLoginChallengeResponse,
   type VaultLoginResponse,
   type VaultPasswordChangeResponse,
@@ -404,10 +403,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         try {
           return db.transaction(() => {
             const currentVault = getVaultAuth(db);
-            if (
-              !currentVault ||
-              currentVault.auth_stored_key !== storedKeyHex
-            ) {
+            if (currentVault?.auth_stored_key !== storedKeyHex) {
+              throw new HttpInvalidCredentials("Incorrect Master Password", 0);
+            }
+            if (currentVault == null) {
               throw new HttpInvalidCredentials("Incorrect Master Password", 0);
             }
 

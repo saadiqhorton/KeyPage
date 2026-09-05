@@ -17,7 +17,7 @@ export function RecoveryCodesPanel({
   codes,
   onAcknowledged,
   acknowledgeLabel = "I've saved my recovery codes somewhere safe.",
-}: RecoveryCodesPanelProps) {
+}: Readonly<RecoveryCodesPanelProps>) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);

@@ -131,4 +131,45 @@ describe("auth throttle", () => {
     assert.doesNotThrow(() => assertNotLocked(db, "recovery"));
     assert.equal(recordFailure(db, "recovery"), 4);
   });
+
+  it("clears an expired lockout on assertNotLocked and reports unlocked", () => {
+    const expired = new Date(Date.now() - 1000).toISOString();
+    db.prepare(
+      `UPDATE auth_throttle SET locked_until = ?, failed_count = 4 WHERE scope = 'login'`,
+    ).run(expired);
+
+    assert.deepEqual(readLockout(db, "login"), {
+      locked: false,
+      retryAfterSeconds: 0,
+    });
+    assert.doesNotThrow(() => assertNotLocked(db, "login"));
+
+    const row = db
+      .prepare(
+        `SELECT locked_until, failed_count FROM auth_throttle WHERE scope = 'login'`,
+      )
+      .get() as { locked_until: string | null; failed_count: number };
+    assert.equal(row.locked_until, null);
+    assert.equal(row.failed_count, 0);
+  });
+
+  it("records a failure after an expired lockout window", () => {
+    const expired = new Date(Date.now() - 1000).toISOString();
+    db.prepare(
+      `UPDATE auth_throttle
+       SET locked_until = ?, failed_count = 0, first_failed_at = NULL
+       WHERE scope = 'login'`,
+    ).run(expired);
+
+    assert.equal(recordFailure(db, "login"), 4);
+  });
+
+  it("treats a missing throttle row as unlocked", () => {
+    db.prepare(`DELETE FROM auth_throttle WHERE scope = 'login'`).run();
+    assert.deepEqual(readLockout(db, "login"), {
+      locked: false,
+      retryAfterSeconds: 0,
+    });
+    assert.doesNotThrow(() => assertNotLocked(db, "login"));
+  });
 });

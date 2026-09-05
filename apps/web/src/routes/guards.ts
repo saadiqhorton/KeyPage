@@ -20,6 +20,84 @@ function redirect(to: string): GuardDecision {
   return { kind: "redirect", to };
 }
 
+function resolveRecoveryCodesGuard(
+  phase: VaultState["phase"],
+  wizard: WizardState,
+): GuardDecision {
+  // Fallback when nothing parked (stale URL / post-ack race)
+  if (wizard.kind === "setup" && wizard.step === 3) {
+    return redirect("/setup");
+  }
+  if (phase === "unlocked") {
+    return redirect("/settings");
+  }
+  return redirect("/unlock");
+}
+
+function resolveUnlockedGuard(
+  phase: VaultState["phase"],
+  wizard: WizardState,
+): GuardDecision {
+  if (phase === "unlocked" && wizard.kind === "none") {
+    return RENDER;
+  }
+  if (wizard.kind === "setup") {
+    return redirect("/setup");
+  }
+  if (wizard.kind === "recovery") {
+    return redirect("/recover");
+  }
+  if (phase === "setup_required") {
+    return redirect("/setup");
+  }
+  return redirect("/unlock");
+}
+
+function resolveSetupWizardGuard(
+  phase: VaultState["phase"],
+  wizard: WizardState,
+): GuardDecision {
+  if (phase === "setup_required" || wizard.kind === "setup") {
+    return RENDER;
+  }
+  if (phase === "unlocked" && wizard.kind === "none") {
+    return redirect("/");
+  }
+  return redirect("/unlock");
+}
+
+function resolveRecoveryWizardGuard(
+  phase: VaultState["phase"],
+  wizard: WizardState,
+): GuardDecision {
+  if (phase === "locked" || wizard.kind === "recovery") {
+    return RENDER;
+  }
+  if (phase === "unlocked" && wizard.kind === "none") {
+    return redirect("/");
+  }
+  return redirect("/setup");
+}
+
+function resolveLockedGuard(
+  phase: VaultState["phase"],
+  wizard: WizardState,
+): GuardDecision {
+  if ((phase === "locked" || phase === "working") && wizard.kind === "none") {
+    return RENDER;
+  }
+  if (wizard.kind === "setup") {
+    return redirect("/setup");
+  }
+  if (wizard.kind === "recovery") {
+    return redirect("/recover");
+  }
+  if (phase === "unlocked") {
+    return redirect("/");
+  }
+  return redirect("/setup");
+}
+
 /**
  * Decides what a route should do for a given vault phase and wizard state.
  *
@@ -41,63 +119,16 @@ export function resolveGuard(
   }
 
   if (guard === "recovery-codes") {
-    // Fallback when nothing parked (stale URL / post-ack race)
-    if (wizard.kind === "setup" && wizard.step === 3) {
-      return redirect("/setup");
-    }
-    if (phase === "unlocked") {
-      return redirect("/settings");
-    }
-    return redirect("/unlock");
+    return resolveRecoveryCodesGuard(phase, wizard);
   }
-
   if (guard === "unlocked") {
-    if (phase === "unlocked" && wizard.kind === "none") {
-      return RENDER;
-    }
-    if (wizard.kind === "setup") {
-      return redirect("/setup");
-    }
-    if (wizard.kind === "recovery") {
-      return redirect("/recover");
-    }
-    if (phase === "setup_required") {
-      return redirect("/setup");
-    }
-    return redirect("/unlock");
+    return resolveUnlockedGuard(phase, wizard);
   }
-
   if (guard === "setup-wizard") {
-    if (phase === "setup_required" || wizard.kind === "setup") {
-      return RENDER;
-    }
-    if (phase === "unlocked" && wizard.kind === "none") {
-      return redirect("/");
-    }
-    return redirect("/unlock");
+    return resolveSetupWizardGuard(phase, wizard);
   }
-
   if (guard === "recovery-wizard") {
-    if (phase === "locked" || wizard.kind === "recovery") {
-      return RENDER;
-    }
-    if (phase === "unlocked" && wizard.kind === "none") {
-      return redirect("/");
-    }
-    return redirect("/setup");
+    return resolveRecoveryWizardGuard(phase, wizard);
   }
-
-  if ((phase === "locked" || phase === "working") && wizard.kind === "none") {
-    return RENDER;
-  }
-  if (wizard.kind === "setup") {
-    return redirect("/setup");
-  }
-  if (wizard.kind === "recovery") {
-    return redirect("/recover");
-  }
-  if (phase === "unlocked") {
-    return redirect("/");
-  }
-  return redirect("/setup");
+  return resolveLockedGuard(phase, wizard);
 }

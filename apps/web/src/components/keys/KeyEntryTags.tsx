@@ -6,7 +6,7 @@ type KeyEntryTagsProps = {
   className?: string;
 };
 
-export function KeyEntryTags({ tags, max, className }: KeyEntryTagsProps) {
+export function KeyEntryTags({ tags, max, className }: Readonly<KeyEntryTagsProps>) {
   if (tags.length === 0) {
     return null;
   }

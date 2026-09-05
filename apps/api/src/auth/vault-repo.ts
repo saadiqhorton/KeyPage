@@ -132,7 +132,10 @@ export function claimRecoveryCode(
   lookupHash: string,
 ): RecoveryClaimResult {
   const code = findRecoveryCodeByLookupHash(db, lookupHash);
-  if (!code || code.used_at !== null) {
+  if (code?.used_at !== null) {
+    return { ok: false };
+  }
+  if (code == null) {
     return { ok: false };
   }
 
@@ -553,11 +556,10 @@ export function resetVaultFromRecovery(
 
   const apply = db.transaction(() => {
     const ticket = findRecoveryTicketByTokenHash(db, tokenHash);
-    if (
-      !ticket ||
-      ticket.consumed_at !== null ||
-      Date.parse(ticket.expires_at) <= now.getTime()
-    ) {
+    if (ticket?.consumed_at !== null) {
+      throw new HttpInvalidRecoveryTicket();
+    }
+    if (ticket == null || Date.parse(ticket.expires_at) <= now.getTime()) {
       throw new HttpInvalidRecoveryTicket();
     }
 

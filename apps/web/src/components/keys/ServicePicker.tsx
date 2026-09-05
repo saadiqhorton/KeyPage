@@ -24,7 +24,7 @@ export function ServicePicker({
   onCustomNameChange,
   error,
   disabled = false,
-}: ServicePickerProps) {
+}: Readonly<ServicePickerProps>) {
   const groupId = useId();
   const labelId = `${groupId}-label`;
   const errorId = error ? `${groupId}-error` : undefined;
@@ -44,7 +44,7 @@ export function ServicePicker({
     if (disabled) return;
 
     const currentIndex = SERVICE_CATALOG.findIndex((entry) => entry.id === value);
-    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const safeIndex = Math.max(currentIndex, 0);
 
     switch (event.key) {
       case "ArrowRight":
@@ -83,10 +83,11 @@ export function ServicePicker({
       </span>
       <div
         role="radiogroup"
+        tabIndex={-1}
         aria-labelledby={labelId}
         aria-describedby={errorId}
         aria-invalid={error ? true : undefined}
-        className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+        className="grid grid-cols-2 gap-2 outline-none sm:grid-cols-3"
         onKeyDown={handleKeyDown}
       >
         {SERVICE_CATALOG.map((entry, index) => {

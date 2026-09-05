@@ -36,7 +36,7 @@ export function TagInput({
   hint,
   error,
   disabled = false,
-}: TagInputProps) {
+}: Readonly<TagInputProps>) {
   const fieldId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const errorId = error ? `${fieldId}-error` : undefined;
@@ -95,16 +95,14 @@ export function TagInput({
       <label htmlFor={fieldId} className="text-sm text-text">
         {label}
       </label>
-      <div
+      <label
+        htmlFor={fieldId}
         className={cn(
           "flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-obsidian/60 px-2 py-1.5",
           "focus-within:ring-1 focus-within:ring-brass/70",
           disabled && "cursor-not-allowed opacity-50",
           error && "border-danger/50",
         )}
-        onClick={() => {
-          if (!disabled) inputRef.current?.focus();
-        }}
       >
         {value.map((tag, index) => (
           <span
@@ -143,10 +141,10 @@ export function TagInput({
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={() => {
-            void commitDraft(draft);
+            commitDraft(draft);
           }}
         />
-      </div>
+      </label>
       {hint ? (
         <div id={hintId} className="text-xs text-muted">
           {hint}

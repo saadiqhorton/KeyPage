@@ -13,15 +13,17 @@ function isPermissionError(error: unknown): boolean {
   return code === "EACCES" || code === "EPERM";
 }
 
+function isMissingFile(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
 function permissionErrorMessage(dir: string, action: string): Error {
   return new Error(
     `Cannot ${action} data directory at ${dir}. Check bind-mount ownership and permissions.`,
   );
 }
 
-export async function ensureDataDir(dir: string): Promise<InstanceRecord> {
-  const instancePath = path.join(dir, "instance.json");
-
+async function mkdirDataDir(dir: string): Promise<void> {
   try {
     await fs.mkdir(dir, { recursive: true });
   } catch (error) {
@@ -30,63 +32,77 @@ export async function ensureDataDir(dir: string): Promise<InstanceRecord> {
     }
     throw error;
   }
+}
 
+async function writeInstanceFile(
+  dir: string,
+  instancePath: string,
+  record: InstanceRecord,
+): Promise<void> {
+  try {
+    await fs.writeFile(
+      instancePath,
+      `${JSON.stringify(record, null, 2)}\n`,
+      "utf8",
+    );
+  } catch (writeError) {
+    if (isPermissionError(writeError)) {
+      throw permissionErrorMessage(dir, "write to");
+    }
+    throw writeError;
+  }
+}
+
+async function createInstanceRecord(
+  dir: string,
+  instancePath: string,
+): Promise<InstanceRecord> {
+  const record: InstanceRecord = {
+    firstBootAt: new Date().toISOString(),
+    schemaVersion: DATA_DIR_SCHEMA_VERSION,
+  };
+  await writeInstanceFile(dir, instancePath, record);
+  return record;
+}
+
+async function maybeUpgradeRecord(
+  dir: string,
+  instancePath: string,
+  record: InstanceRecord,
+): Promise<InstanceRecord> {
+  if (record.schemaVersion >= DATA_DIR_SCHEMA_VERSION) {
+    return record;
+  }
+
+  const upgraded: InstanceRecord = {
+    ...record,
+    schemaVersion: DATA_DIR_SCHEMA_VERSION,
+  };
+  await writeInstanceFile(dir, instancePath, upgraded);
+  return upgraded;
+}
+
+async function readOrCreateInstance(
+  dir: string,
+  instancePath: string,
+): Promise<InstanceRecord> {
   try {
     const raw = await fs.readFile(instancePath, "utf8");
     const record = JSON.parse(raw) as InstanceRecord;
-
-    if (record.schemaVersion < DATA_DIR_SCHEMA_VERSION) {
-      const upgraded: InstanceRecord = {
-        ...record,
-        schemaVersion: DATA_DIR_SCHEMA_VERSION,
-      };
-
-      try {
-        await fs.writeFile(
-          instancePath,
-          `${JSON.stringify(upgraded, null, 2)}\n`,
-          "utf8",
-        );
-      } catch (writeError) {
-        if (isPermissionError(writeError)) {
-          throw permissionErrorMessage(dir, "write to");
-        }
-        throw writeError;
-      }
-
-      return upgraded;
-    }
-
-    return record;
+    return maybeUpgradeRecord(dir, instancePath, record);
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-
-    if (code === "ENOENT") {
-      const record: InstanceRecord = {
-        firstBootAt: new Date().toISOString(),
-        schemaVersion: DATA_DIR_SCHEMA_VERSION,
-      };
-
-      try {
-        await fs.writeFile(
-          instancePath,
-          `${JSON.stringify(record, null, 2)}\n`,
-          "utf8",
-        );
-      } catch (writeError) {
-        if (isPermissionError(writeError)) {
-          throw permissionErrorMessage(dir, "write to");
-        }
-        throw writeError;
-      }
-
-      return record;
+    if (isMissingFile(error)) {
+      return createInstanceRecord(dir, instancePath);
     }
-
     if (isPermissionError(error)) {
       throw permissionErrorMessage(dir, "read from");
     }
-
     throw error;
   }
+}
+
+export async function ensureDataDir(dir: string): Promise<InstanceRecord> {
+  const instancePath = path.join(dir, "instance.json");
+  await mkdirDataDir(dir);
+  return readOrCreateInstance(dir, instancePath);
 }

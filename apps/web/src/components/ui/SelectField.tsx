@@ -9,7 +9,7 @@ type SelectFieldProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & 
   children: ReactNode;
 };
 
-function ChevronIcon({ className }: { className?: string }) {
+function ChevronIcon({ className }: Readonly<{ className?: string }>) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -38,7 +38,7 @@ export function SelectField({
   disabled,
   children,
   ...props
-}: SelectFieldProps) {
+}: Readonly<SelectFieldProps>) {
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const errorId = error ? `${fieldId}-error` : undefined;

@@ -1,4 +1,4 @@
-import { FormEvent, useRef, useState } from "react";
+import { type SubmitEvent, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
@@ -21,7 +21,7 @@ type ParsedBackupPreview = {
   createdAt: string;
 };
 
-export function BackupImportCard({ busy, onImport }: BackupImportCardProps) {
+export function BackupImportCard({ busy, onImport }: Readonly<BackupImportCardProps>) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileText, setFileText] = useState<string | null>(null);
   const [preview, setPreview] = useState<ParsedBackupPreview | null>(null);
@@ -60,7 +60,7 @@ export function BackupImportCard({ busy, onImport }: BackupImportCardProps) {
     }
   }
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setResult(null);

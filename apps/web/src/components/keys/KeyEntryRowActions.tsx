@@ -14,7 +14,7 @@ export function KeyEntryRowActions({
   onEdit,
   onDelete,
   className,
-}: KeyEntryRowActionsProps) {
+}: Readonly<KeyEntryRowActionsProps>) {
   return (
     <KebabMenu
       label={`Actions for ${entry.label}`}

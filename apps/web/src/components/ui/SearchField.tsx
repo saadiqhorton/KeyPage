@@ -16,7 +16,7 @@ export function SearchField({
   placeholder = "Search label, Service, description…",
   "aria-label": ariaLabel,
   className,
-}: SearchFieldProps) {
+}: Readonly<SearchFieldProps>) {
   const fieldId = useId();
 
   return (
