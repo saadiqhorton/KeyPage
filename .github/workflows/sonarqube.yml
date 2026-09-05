@@ -1,0 +1,22 @@
+name: SonarQube
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  sonarqube:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${ secrets.SONAR_TOKEN }
+          SONAR_HOST_URL: http://177.7.36.102:9000
+        with:
+          args: >
+            -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
