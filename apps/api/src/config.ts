@@ -36,29 +36,33 @@ function readPositiveIntEnv(name: string, fallback: number): number {
   return Math.round(parsed);
 }
 
-export const config = {
-  port: Number(process.env.PORT ?? 9090),
-  host: process.env.HOST ?? "0.0.0.0",
-  dataDir: path.resolve(process.env.KEYPAGE_DATA_DIR ?? "./data"),
-  webDir: path.resolve(
-    process.env.KEYPAGE_WEB_DIR ?? path.join(packageRoot, "../web/dist"),
-  ),
-  logLevel: process.env.LOG_LEVEL ?? "info",
-  trustProxy: readBoolEnv("KEYPAGE_TRUST_PROXY", false),
-  sessionIdleMinutes: readPositiveIntEnv(
-    "KEYPAGE_SESSION_IDLE_MINUTES",
-    DEFAULT_SESSION_IDLE_MINUTES,
-  ),
-  sessionAbsoluteHours: readPositiveIntEnv(
-    "KEYPAGE_SESSION_ABSOLUTE_HOURS",
-    SESSION_ABSOLUTE_HOURS,
-  ),
-  loginMaxAttempts: readPositiveIntEnv(
-    "KEYPAGE_LOGIN_MAX_ATTEMPTS",
-    LOGIN_MAX_ATTEMPTS,
-  ),
-  loginLockoutMinutes: readPositiveIntEnv(
-    "KEYPAGE_LOGIN_LOCKOUT_MINUTES",
-    LOGIN_LOCKOUT_SECONDS / 60,
-  ),
-} as const;
+export function loadConfig() {
+  return {
+    port: Number(process.env.PORT ?? 9090),
+    host: process.env.HOST ?? "0.0.0.0",
+    dataDir: path.resolve(process.env.KEYPAGE_DATA_DIR ?? "./data"),
+    webDir: path.resolve(
+      process.env.KEYPAGE_WEB_DIR ?? path.join(packageRoot, "../web/dist"),
+    ),
+    logLevel: process.env.LOG_LEVEL ?? "info",
+    trustProxy: readBoolEnv("KEYPAGE_TRUST_PROXY", false),
+    sessionIdleMinutes: readPositiveIntEnv(
+      "KEYPAGE_SESSION_IDLE_MINUTES",
+      DEFAULT_SESSION_IDLE_MINUTES,
+    ),
+    sessionAbsoluteHours: readPositiveIntEnv(
+      "KEYPAGE_SESSION_ABSOLUTE_HOURS",
+      SESSION_ABSOLUTE_HOURS,
+    ),
+    loginMaxAttempts: readPositiveIntEnv(
+      "KEYPAGE_LOGIN_MAX_ATTEMPTS",
+      LOGIN_MAX_ATTEMPTS,
+    ),
+    loginLockoutMinutes: readPositiveIntEnv(
+      "KEYPAGE_LOGIN_LOCKOUT_MINUTES",
+      LOGIN_LOCKOUT_SECONDS / 60,
+    ),
+  };
+}
+
+export const config = loadConfig();

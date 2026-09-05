@@ -1,4 +1,7 @@
-import { config } from "./config.js";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { loadConfig } from "./config.js";
 import { openSetupGate } from "./auth/setup-token.js";
 import { isVaultInitialized } from "./auth/vault-repo.js";
 import { ensureDataDir } from "./data-dir.js";
@@ -7,9 +10,16 @@ import { runHousekeeping } from "./db/housekeeping.js";
 import { buildServer } from "./server.js";
 import { resolveIdleTimeoutSeconds } from "./settings.js";
 
-async function main() {
-  const instance = await ensureDataDir(config.dataDir);
-  const db = openDatabase(config.dataDir);
+export type BootstrappedApp = {
+  app: Awaited<ReturnType<typeof buildServer>>;
+  db: ReturnType<typeof openDatabase>;
+};
+
+export async function bootstrapApp(
+  cfg: ReturnType<typeof loadConfig> = loadConfig(),
+): Promise<BootstrappedApp> {
+  const instance = await ensureDataDir(cfg.dataDir);
+  const db = openDatabase(cfg.dataDir);
   runHousekeeping(db);
 
   const idleMinutes = resolveIdleTimeoutSeconds(db) / 60;
@@ -20,14 +30,14 @@ async function main() {
   }
 
   const setupGate = await openSetupGate({
-    dataDir: config.dataDir,
+    dataDir: cfg.dataDir,
     vaultInitialized: isVaultInitialized(db),
   });
 
   const app = await buildServer({
-    dataDir: config.dataDir,
-    webDir: config.webDir,
-    logLevel: config.logLevel,
+    dataDir: cfg.dataDir,
+    webDir: cfg.webDir,
+    logLevel: cfg.logLevel,
     instance,
     db,
     setupGate,
@@ -46,27 +56,39 @@ async function main() {
 ────────────────────────────────────────────────────────────────`);
   }
 
-  await app.listen({ port: config.port, host: config.host });
-  app.log.info(`listening on ${config.host}:${config.port}`);
-
-  const shutdown = async (signal: string) => {
-    app.log.info(`received ${signal}, shutting down`);
-    await app.close();
-    closeDatabase(db);
-    process.exit(0);
-  };
-
-  process.on("SIGTERM", () => {
-    void shutdown("SIGTERM");
-  });
-  process.on("SIGINT", () => {
-    void shutdown("SIGINT");
-  });
+  return { app, db };
 }
 
-try {
-  await main();
-} catch (error: unknown) {
-  console.error(error);
-  process.exit(1);
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (!entry) {
+    return false;
+  }
+  return pathToFileURL(path.resolve(entry)).href === import.meta.url;
+}
+
+if (isDirectRun()) {
+  try {
+    const cfg = loadConfig();
+    const { app, db } = await bootstrapApp(cfg);
+    await app.listen({ port: cfg.port, host: cfg.host });
+    app.log.info(`listening on ${cfg.host}:${cfg.port}`);
+
+    const shutdown = async (signal: string) => {
+      app.log.info(`received ${signal}, shutting down`);
+      await app.close();
+      closeDatabase(db);
+      process.exit(0);
+    };
+
+    process.on("SIGTERM", () => {
+      void shutdown("SIGTERM");
+    });
+    process.on("SIGINT", () => {
+      void shutdown("SIGINT");
+    });
+  } catch (error: unknown) {
+    console.error(error);
+    process.exit(1);
+  }
 }

@@ -5,6 +5,7 @@ import { HttpInvalidRequest } from "../errors.js";
 import {
   validateAuthKeyB64,
   validateClientProofB64,
+  validateStoredKeyHex,
 } from "./vault-request.js";
 
 const valid32 = Buffer.alloc(32, 9).toString("base64");
@@ -34,6 +35,32 @@ describe("validateAuthKeyB64 / validateClientProofB64", () => {
       (error: unknown) =>
         error instanceof HttpInvalidRequest &&
         error.details?.[0]?.message === "must decode to exactly 32 bytes",
+    );
+  });
+
+  it("rejects empty authKeyB64", () => {
+    assert.throws(
+      () => validateAuthKeyB64(""),
+      (error: unknown) => error instanceof HttpInvalidRequest,
+    );
+  });
+});
+
+describe("validateStoredKeyHex", () => {
+  it("accepts 64 lowercase hex characters", () => {
+    assert.doesNotThrow(() => validateStoredKeyHex("a".repeat(64), "authStoredKeyHex"));
+  });
+
+  it("rejects uppercase, short, and non-hex values", () => {
+    assert.throws(
+      () => validateStoredKeyHex("A".repeat(64), "authStoredKeyHex"),
+      HttpInvalidRequest,
+    );
+    assert.throws(
+      () => validateStoredKeyHex("ab", "recoveryStoredKeyHex"),
+      (error: unknown) =>
+        error instanceof HttpInvalidRequest &&
+        error.details?.[0]?.field === "recoveryStoredKeyHex",
     );
   });
 });

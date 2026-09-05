@@ -99,4 +99,18 @@ describe("setup token gate (SAA-174)", () => {
     await assert.rejects(() => fs.stat(filePath), { code: "ENOENT" });
     assert.equal(gate.verify("anything"), false);
   });
+
+  it("maps EACCES while minting a token to a bind-mount error", async () => {
+    const dataDir = await makeTempDir();
+    await fs.chmod(dataDir, 0o500);
+
+    try {
+      await assert.rejects(
+        () => openSetupGate({ dataDir, vaultInitialized: false }),
+        /Cannot write the first-boot setup token/,
+      );
+    } finally {
+      await fs.chmod(dataDir, 0o700);
+    }
+  });
 });

@@ -158,4 +158,18 @@ describe("login challenges", () => {
     assert.ok(consumed);
     assert.equal(consumed.purpose, "key-write");
   });
+
+  it("uses the key-write rate-limit message when that quota is full", () => {
+    for (let i = 0; i < LOGIN_CHALLENGE_MAX_OPEN; i++) {
+      createLoginChallenge(db, "key-write");
+    }
+
+    assert.throws(
+      () => createLoginChallenge(db, "key-write"),
+      (error: unknown) =>
+        error instanceof HttpRateLimited &&
+        error.message === "Too many outstanding key-write challenges" &&
+        error.retryAfterSeconds === LOGIN_CHALLENGE_TTL_SECONDS,
+    );
+  });
 });

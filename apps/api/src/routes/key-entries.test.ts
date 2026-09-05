@@ -629,3 +629,153 @@ describe("Key Entry import merge-by-id", () => {
     );
   });
 });
+
+describe("Key Entry list, use, duplicate, and origin", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+  let cookie: string;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    runMigrations(db);
+    initializeVault(db, {
+      kdf: sampleKdf(),
+      proofKeys: {
+        authStoredKeyHex: loginStoredKeyHexFromAuthKey(AUTH_KEY),
+        recoveryStoredKeyHex: Buffer.alloc(32, 10).toString("hex"),
+      },
+      recoveryCodes: sampleRecoveryCodes(),
+    });
+    app = await buildTestApp(db);
+    const { token } = createSession(db, {}, 1200);
+    cookie = `${SESSION_COOKIE_NAME}=${token}`;
+  });
+
+  afterEach(async () => {
+    await app?.close();
+    db?.close();
+  });
+
+  it("rejects list without a session", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/keys" });
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().error, "unauthenticated");
+  });
+
+  it("rejects a cross-origin list request", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/keys",
+      headers: {
+        cookie,
+        host: "localhost:9090",
+        origin: "http://evil.example",
+      },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, "invalid_request");
+  });
+
+  it("lists entries and records revealed/copied use events", async () => {
+    const created = await injectWithProof(app, cookie, {
+      method: "POST",
+      url: "/api/keys",
+      payload: createBody(ENTRY_ID, 1),
+    });
+    assert.equal(created.statusCode, 201);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/keys",
+      headers: { cookie },
+    });
+    assert.equal(list.statusCode, 200);
+    assert.equal(list.json().entries.length, 1);
+    assert.equal(list.json().entries[0].id, ENTRY_ID);
+    assert.equal(typeof list.json().clipboardClearSeconds, "number");
+
+    const revealed = await app.inject({
+      method: "POST",
+      url: `/api/keys/${ENTRY_ID}/use`,
+      headers: { cookie },
+      payload: { action: "revealed" },
+    });
+    assert.equal(revealed.statusCode, 200);
+    assert.equal(typeof revealed.json().entry.lastUsedAt, "string");
+
+    const copied = await app.inject({
+      method: "POST",
+      url: `/api/keys/${ENTRY_ID}/use`,
+      headers: { cookie },
+      payload: { action: "copied" },
+    });
+    assert.equal(copied.statusCode, 200);
+
+    const actions = db
+      .prepare(
+        `SELECT action FROM activity_events WHERE key_entry_id = ? ORDER BY rowid`,
+      )
+      .all() as Array<{ action: string }>;
+    assert.deepEqual(
+      actions.map((row) => row.action),
+      ["created", "revealed", "copied"],
+    );
+  });
+
+  it("rejects use and delete of an unknown id", async () => {
+    const missingId = "33333333-3333-4333-8333-333333333333";
+    const use = await app.inject({
+      method: "POST",
+      url: `/api/keys/${missingId}/use`,
+      headers: { cookie },
+      payload: { action: "revealed" },
+    });
+    assert.equal(use.statusCode, 400);
+    assert.equal(use.json().error, "invalid_request");
+
+    const del = await injectWithProof(app, cookie, {
+      method: "DELETE",
+      url: `/api/keys/${missingId}`,
+      payload: { keyVersion: 1 },
+    });
+    assert.equal(del.statusCode, 400);
+    assert.equal(del.json().error, "invalid_request");
+  });
+
+  it("rejects a duplicate create id", async () => {
+    const first = await injectWithProof(app, cookie, {
+      method: "POST",
+      url: "/api/keys",
+      payload: createBody(ENTRY_ID, 1),
+    });
+    assert.equal(first.statusCode, 201);
+
+    const duplicate = await injectWithProof(app, cookie, {
+      method: "POST",
+      url: "/api/keys",
+      payload: createBody(ENTRY_ID, 1, 8),
+    });
+    assert.equal(duplicate.statusCode, 400);
+    assert.equal(duplicate.json().error, "invalid_request");
+    assert.match(duplicate.json().message, /Duplicate key entry id/);
+  });
+
+  it("prefixes import validation errors with the entry index", async () => {
+    const response = await injectWithProof(app, cookie, {
+      method: "POST",
+      url: "/api/keys/import",
+      payload: {
+        entries: [
+          {
+            ...createBody(ENTRY_ID, 1),
+            id: "not-a-uuid",
+          },
+        ],
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().details?.[0]?.field, "entries[0].id");
+  });
+});
