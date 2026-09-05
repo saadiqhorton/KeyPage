@@ -21,6 +21,8 @@ jobs:
       - name: Run tests with native Node coverage
         run: bash scripts/run-sonar-coverage.sh
       - name: SonarQube Scan
+        id: sonar_scan
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -34,3 +36,20 @@ jobs:
             -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
             -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
             -Dsonar.coverage.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.ws.timeout=120
+      - name: SonarQube Scan retry
+        if: steps.sonar_scan.outcome == 'failure'
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: http://177.7.36.102:9000
+        with:
+          args: >
+            -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.sources=apps,packages
+            -Dsonar.tests=apps,packages
+            -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
+            -Dsonar.coverage.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.ws.timeout=120
