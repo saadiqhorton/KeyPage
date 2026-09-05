@@ -13,4 +13,4 @@ Listen port is **9090** — do not invent another port for demos or verification
 
 ## Out of scope for this file
 
-Issue tracking, triage labels, and agent skill packs live outside the public product tree. Do not commit `.agents/`, `skills-lock.json`, `docs/plans/`, `docs/agents/`, `docs/evidence/`, or `.odw/` scratch.
+Issue tracking, triage labels, and agent skill packs live outside the public product tree. Do not commit `.cursor/`, `.agents/`, `skills-lock.json`, `docs/plans/`, `docs/agents/`, `docs/evidence/`, or `.odw/` scratch.
