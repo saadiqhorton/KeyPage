@@ -1,9 +1,11 @@
-import { SERVICE_CATALOG } from "@keypage/shared";
 import type { HealthState } from "@/hooks/useHealth";
 import { cn } from "@/lib/cn";
+import { formatKeyCount } from "@/lib/format";
 
 type StatusPanelProps = {
   health: HealthState;
+  /** Key Entry count when the vault is unlocked and loaded; omit when unknown. */
+  entryCount?: number | null;
 };
 
 function formatFirstBoot(isoDate: string): string {
@@ -13,12 +15,7 @@ function formatFirstBoot(isoDate: string): string {
   }).format(new Date(isoDate));
 }
 
-export function StatusPanel({ health }: StatusPanelProps) {
-  const catalogCount =
-    health.status === "ok"
-      ? health.data.serviceCatalogSize
-      : SERVICE_CATALOG.length;
-
+export function StatusPanel({ health, entryCount = null }: StatusPanelProps) {
   const statusLabel =
     health.status === "loading"
       ? "Checking API"
@@ -46,7 +43,7 @@ export function StatusPanel({ health }: StatusPanelProps) {
         />
         {statusLabel}
       </span>
-      <span>{catalogCount} services</span>
+      {entryCount != null ? <span>{formatKeyCount(entryCount)}</span> : null}
       {health.status === "ok" ? (
         <span>since {formatFirstBoot(health.data.firstBootAt)}</span>
       ) : null}
