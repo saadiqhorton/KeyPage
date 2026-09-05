@@ -48,7 +48,7 @@ type MenuPosition = {
   left: number;
 };
 
-function computeMenuPosition(
+export function computeMenuPosition(
   triggerRect: DOMRect,
   menuHeight: number,
 ): MenuPosition {

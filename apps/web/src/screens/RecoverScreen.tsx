@@ -22,7 +22,7 @@ import { useVault, type VaultState } from "@/vault/useVault";
 
 const MIN_PASSWORD_LENGTH = 12;
 
-function formatRecoveryError(error: ApiError): string {
+export function formatRecoveryError(error: ApiError): string {
   if (
     (error.code === "invalid_recovery_code" || error.code === "rate_limited") &&
     error.body.attemptsRemaining !== undefined
@@ -36,7 +36,7 @@ function formatRecoveryError(error: ApiError): string {
   return error.message;
 }
 
-function workingStatusLabel(state: VaultState): string {
+export function workingStatusLabel(state: VaultState): string {
   if (state.phase === "working") {
     return state.label;
   }
@@ -56,7 +56,7 @@ type RecoverCodeStepProps = {
   onBack(): void;
 };
 
-function RecoverCodeStep({
+export function RecoverCodeStep({
   code,
   onCodeChange,
   error,
@@ -146,7 +146,7 @@ type RecoverPasswordStepProps = {
   onCancel(): void;
 };
 
-function RecoverPasswordStep({
+export function RecoverPasswordStep({
   password,
   confirm,
   error,

@@ -8,6 +8,7 @@ import {
   base64urlEncode,
   hexDecode,
   hexEncode,
+  utf8Bytes,
 } from "./encoding.js";
 
 describe("encoding", () => {
@@ -32,4 +33,19 @@ describe("encoding", () => {
     assert.equal(hexEncode(data), "000aff");
     assert.deepEqual(hexDecode("000aff"), data);
   });
+
+  it("encodes UTF-8 text", () => {
+    assert.deepEqual(utf8Bytes("Hi"), new TextEncoder().encode("Hi"));
+  });
+
+  it("rejects odd-length hex", () => {
+    assert.throws(() => hexDecode("abc"), /Invalid hex string/);
+  });
+
+  it("round-trips padded base64url", () => {
+    const data = Uint8Array.from([1, 2, 3]);
+    const encoded = base64urlEncode(data);
+    assert.deepEqual(base64urlDecode(encoded), data);
+  });
 });
+

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
   ClipboardWriteError,
+  clearScheduledClipboardClear,
   createClipboardCopier,
   type ClipboardEnv,
 } from "./clipboard.ts";
@@ -230,4 +231,39 @@ describe("createClipboardCopier", () => {
     assert.equal(writeCount, 2);
     assert.equal(spy.wasCalled(), false);
   });
+
+  it("leaves the clipboard alone when readText no longer matches", async () => {
+    const writes: string[] = [];
+    const mockClipboard = {
+      writeText: async (text: string) => {
+        writes.push(text);
+      },
+      readText: async () => "something-else",
+    };
+    const { env, flushDue } = createTimerEnv(mockClipboard);
+    const copier = createClipboardCopier(env);
+
+    await copier.copyTextWithAutoClear("secret", 1000);
+    await runDueTimers(flushDue, 1000);
+    assert.deepEqual(writes, ["secret"]);
+  });
 });
+
+describe("clearScheduledClipboardClear", () => {
+  it("cancels a window timeout", () => {
+    const prior = globalThis.window;
+    let cleared: number | undefined;
+    globalThis.window = {
+      clearTimeout(id: number) {
+        cleared = id;
+      },
+    } as unknown as Window & typeof globalThis;
+    try {
+      clearScheduledClipboardClear(42);
+      assert.equal(cleared, 42);
+    } finally {
+      globalThis.window = prior;
+    }
+  });
+});
+

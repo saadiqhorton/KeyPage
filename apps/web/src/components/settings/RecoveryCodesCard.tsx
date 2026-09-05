@@ -15,7 +15,7 @@ type RecoveryCodesCardProps = {
   onRegenerate(password: string): Promise<void>;
 };
 
-function remainingCodesSummary(
+export function remainingCodesSummary(
   remaining: number | null,
   loadingRemaining: boolean,
 ) {

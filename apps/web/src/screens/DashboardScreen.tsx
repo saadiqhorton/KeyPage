@@ -47,7 +47,7 @@ type DashboardContentProps = {
   onClearFilters: () => void;
 };
 
-function renderDashboardContent({
+export function renderDashboardContent({
   vaultUnlocked,
   status,
   error,

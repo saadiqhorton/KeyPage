@@ -15,7 +15,7 @@ const sizeClasses: Record<ServiceIconSize, string> = {
   md: "size-10 text-sm",
 };
 
-function monogram(displayName: string): string {
+export function monogram(displayName: string): string {
   const words = displayName.trim().split(/\s+/).filter(Boolean);
   if (words.length >= 2) {
     return words

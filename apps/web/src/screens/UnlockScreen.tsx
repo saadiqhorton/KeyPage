@@ -10,12 +10,12 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api.js";
 import { useVault, type VaultState } from "@/vault/useVault";
 
-function formatIdleLockMinutes(idleTimeoutSeconds: number): string {
+export function formatIdleLockMinutes(idleTimeoutSeconds: number): string {
   const minutes = Math.round(idleTimeoutSeconds / 60);
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
 }
 
-function formatUnlockError(error: ApiError): string {
+export function formatUnlockError(error: ApiError): string {
   if (
     error.code === "invalid_credentials" &&
     error.body.attemptsRemaining !== undefined
@@ -26,7 +26,7 @@ function formatUnlockError(error: ApiError): string {
   return error.message;
 }
 
-function lockReasonBanner(state: VaultState): string | null {
+export function lockReasonBanner(state: VaultState): string | null {
   if (state.phase !== "locked") {
     return null;
   }
@@ -42,7 +42,7 @@ function lockReasonBanner(state: VaultState): string | null {
   return null;
 }
 
-function workingStatusLabel(state: VaultState): string {
+export function workingStatusLabel(state: VaultState): string {
   if (state.phase === "working") {
     return state.label;
   }

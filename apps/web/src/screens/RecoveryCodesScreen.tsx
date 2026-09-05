@@ -12,7 +12,7 @@ const SETUP_STEPS = [
   "Vault ready",
 ];
 
-function titleForReason(
+export function titleForReason(
   reason: "setup" | "recovery" | "password_change" | "regen",
 ): string {
   switch (reason) {

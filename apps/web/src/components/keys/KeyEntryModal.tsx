@@ -43,7 +43,7 @@ type KeyEntryModalProps =
       onSubmit(values: EditKeyEntryInput): Promise<unknown>;
     };
 
-type FieldErrors = {
+export type FieldErrors = {
   label?: string;
   service?: string;
   customServiceName?: string;
@@ -52,7 +52,7 @@ type FieldErrors = {
   keyValue?: string;
 };
 
-type PrefillState = "idle" | "loading" | "ready" | "failed";
+export type PrefillState = "idle" | "loading" | "ready" | "failed";
 
 const INITIAL_FORM = {
   label: "",
@@ -63,7 +63,7 @@ const INITIAL_FORM = {
   keyValue: "",
 };
 
-function mapSharedFieldErrors(issues: KeyEntryFieldIssue[]): FieldErrors {
+export function mapSharedFieldErrors(issues: KeyEntryFieldIssue[]): FieldErrors {
   const errors: FieldErrors = {};
   for (const detail of issues) {
     switch (detail.code) {
@@ -113,7 +113,7 @@ type ValidateFormInput = {
   keyValue: string;
 };
 
-function validateForm(
+export function validateForm(
   input: ValidateFormInput,
 ): { errors: FieldErrors; fields: KeyEntryWriteFields | null } {
   const {
@@ -169,7 +169,7 @@ function validateForm(
   return { errors, fields };
 }
 
-function seedFromEntry(entry: KeyEntry) {
+export function seedFromEntry(entry: KeyEntry) {
   return {
     label: entry.label,
     serviceId: entry.serviceId,
@@ -200,7 +200,7 @@ function optionalMetadata(fields: KeyEntryWriteFields) {
   };
 }
 
-function buildCreateValues(
+export function buildCreateValues(
   fields: KeyEntryWriteFields,
   keyValue: string,
 ): NewKeyEntryInput {
@@ -230,7 +230,7 @@ function applyEditKeyValue(
   }
 }
 
-function buildEditValues(
+export function buildEditValues(
   fields: KeyEntryWriteFields,
   prefillState: PrefillState,
   keyValue: string,
@@ -246,7 +246,7 @@ function buildEditValues(
   return values;
 }
 
-function keyValueHintFor(
+export function keyValueHintFor(
   isCreate: boolean,
   prefillState: PrefillState,
 ): string | undefined {
@@ -262,7 +262,7 @@ function keyValueHintFor(
   return undefined;
 }
 
-function submitErrorMessage(err: unknown, mode: "create" | "edit"): string {
+export function submitErrorMessage(err: unknown, mode: "create" | "edit"): string {
   if (err instanceof ApiError) {
     return err.message;
   }
