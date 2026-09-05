@@ -9,3 +9,12 @@ data/
 *.log
 .turbo/
 .odw/
+
+# Agent / local-only tooling (not part of the product)
+.agents/
+skills-lock.json
+docs/plans/
+docs/agents/
+docs/evidence/
+*.mp4
+*.webm
