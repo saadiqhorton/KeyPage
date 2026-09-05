@@ -15,7 +15,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: pnpm
       - run: pnpm install
       - name: Install coverage tool
@@ -24,10 +24,10 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p coverage
-          (cd apps/api && c8 --reporter=text --reporter=lcov --reports-dir=../../coverage/api node --import tsx --test "src/**/*.test.ts" || true)
-          (cd apps/web && c8 --reporter=text --reporter=lcov --reports-dir=../../coverage/web node --import tsx --test "src/**/*.test.{ts,tsx}" || true)
-          (cd packages/shared && c8 --reporter=text --reporter=lcov --reports-dir=../../coverage/shared node --import tsx --test "src/**/*.test.ts" || true)
-          cat coverage/api/lcov.info coverage/web/lcov.info coverage/shared/lcov.info > coverage/lcov.info
+          (cd apps/api && c8 --all --reporter=text --reporter=lcov --reports-dir=../../coverage/api node --import tsx --test --test-isolation=none "src/**/*.test.ts" || true)
+          (cd apps/web && c8 --all --reporter=text --reporter=lcov --reports-dir=../../coverage/web node --import tsx --test --test-isolation=none "src/**/*.test.{ts,tsx}" || true)
+          (cd packages/shared && c8 --all --reporter=text --reporter=lcov --reports-dir=../../coverage/shared node --import tsx --test --test-isolation=none "src/**/*.test.ts" || true)
+          cat coverage/api/lcov.info coverage/web/lcov.info coverage/shared/lcov.info > coverage/lcov.info || true
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7
         env:
