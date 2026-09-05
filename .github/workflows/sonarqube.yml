@@ -12,6 +12,24 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - run: pnpm install
+      - name: Install coverage tool
+        run: npm install -g c8
+      - name: Run tests with coverage across monorepo
+        continue-on-error: true
+        run: |
+          mkdir -p coverage
+          (cd apps/api && c8 --reporter=text --reporter=lcov --reports-dir=../../coverage/api node --import tsx --test "src/**/*.test.ts" || true)
+          (cd apps/web && c8 --reporter=text --reporter=lcov --reports-dir=../../coverage/web node --import tsx --test "src/**/*.test.{ts,tsx}" || true)
+          (cd packages/shared && c8 --reporter=text --reporter=lcov --reports-dir=../../coverage/shared node --import tsx --test "src/**/*.test.ts" || true)
+          cat coverage/api/lcov.info coverage/web/lcov.info coverage/shared/lcov.info > coverage/lcov.info
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7
         env:
@@ -20,3 +38,6 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.sources=apps,packages
+            -Dsonar.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js,**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
