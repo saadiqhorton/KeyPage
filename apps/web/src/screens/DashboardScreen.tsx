@@ -205,7 +205,14 @@ export function DashboardScreen() {
           warningVisible ? formatCountdown(secondsRemaining) : null
         }
         actions={headerActions}
-        footer={<StatusPanel health={health} />}
+        footer={
+          <StatusPanel
+            health={health}
+            entryCount={
+              vaultUnlocked && status === "ready" ? entries.length : null
+            }
+          />
+        }
         content={content}
       >
         {toolbar}

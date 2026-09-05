@@ -20,6 +20,10 @@ export function formatCountdown(seconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+export function formatKeyCount(count: number): string {
+  return count === 1 ? "1 key" : `${count} keys`;
+}
+
 const RECOVERY_INPUT_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const MAX_RECOVERY_CHARS = RECOVERY_CODE_GROUPS * RECOVERY_CODE_GROUP_LENGTH;
 

@@ -1,9 +1,4 @@
-import {
-  APP_NAME,
-  APP_VERSION,
-  SERVICE_CATALOG,
-  type HealthResponse,
-} from "@keypage/shared";
+import { APP_NAME, APP_VERSION, type HealthResponse } from "@keypage/shared";
 import type { FastifyPluginAsync } from "fastify";
 
 import type { InstanceRecord } from "../data-dir.js";
@@ -23,6 +18,5 @@ export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (
     version: APP_VERSION,
     dataDir: options.dataDir,
     firstBootAt: options.instance.firstBootAt,
-    serviceCatalogSize: SERVICE_CATALOG.length,
   }));
 };

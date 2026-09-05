@@ -4,5 +4,4 @@ export type HealthResponse = {
   version: string;
   dataDir: string;
   firstBootAt: string;
-  serviceCatalogSize: number;
 };
