@@ -20,6 +20,24 @@ Self-hosted, single-user API key vault.
 - **SQLite on a bind mount** — all persistent state lives under `./data` on the host.
 - **Docker on your LAN** — one container on port **9090**; reach it from other devices on your network.
 
+## Screenshots
+
+Unlock with your Master Password:
+
+![Unlock screen](docs/images/unlock.png)
+
+Card Grid dashboard (default view):
+
+![Dashboard card grid](docs/images/dashboard-cards.png)
+
+Table view with search and tag filters:
+
+![Dashboard table view](docs/images/dashboard-table.png)
+
+Settings — Master Password, recovery codes, session timeout, and encrypted backup:
+
+![Settings](docs/images/settings.png)
+
 ## Quick start (Docker)
 
 One-shot install (clones into `~/keypage`, builds, and starts):
