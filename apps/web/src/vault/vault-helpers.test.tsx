@@ -125,9 +125,77 @@ describe("session-keys extras", () => {
   });
 
   it("broadcastLock and subscribeLockBroadcast fail closed without BroadcastChannel", () => {
-    broadcastLock("manual");
-    const stop = subscribeLockBroadcast(() => undefined);
-    stop();
+    const original = globalThis.BroadcastChannel;
+    globalThis.BroadcastChannel = class {
+      constructor(_name: string) {
+        throw new Error("BroadcastChannel unavailable");
+      }
+    } as unknown as typeof BroadcastChannel;
+
+    try {
+      assert.doesNotThrow(() => broadcastLock("manual"));
+      const stop = subscribeLockBroadcast(() => undefined);
+      assert.equal(typeof stop, "function");
+      assert.doesNotThrow(() => stop());
+    } finally {
+      globalThis.BroadcastChannel = original;
+    }
+  });
+
+  it("subscribeLockBroadcast ignores same-tab locks and handles other tabs", () => {
+    const channels: Array<{
+      name: string;
+      onmessage: ((event: MessageEvent) => void) | null;
+      closed: boolean;
+    }> = [];
+
+    const original = globalThis.BroadcastChannel;
+    globalThis.BroadcastChannel = class {
+      name: string;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      closed = false;
+
+      constructor(name: string) {
+        this.name = name;
+        channels.push(this);
+      }
+
+      postMessage(data: unknown) {
+        for (const channel of channels) {
+          if (channel.name === this.name && !channel.closed && channel.onmessage) {
+            channel.onmessage({ data } as MessageEvent);
+          }
+        }
+      }
+
+      close() {
+        this.closed = true;
+      }
+    } as unknown as typeof BroadcastChannel;
+
+    try {
+      setEncryptionKey({ kind: "fallback", bytes: new Uint8Array(32).fill(1) }, 1);
+
+      const reasons: string[] = [];
+      const stop = subscribeLockBroadcast((reason) => {
+        reasons.push(reason);
+      });
+
+      broadcastLock("manual");
+      assert.equal(reasons.length, 0);
+      assert.notEqual(getEncryptionKey(), null);
+
+      const subscriber = channels.find((channel) => channel.onmessage !== null)!;
+      subscriber.onmessage!({
+        data: { type: "lock", reason: "idle", tabId: "other-tab" },
+      } as MessageEvent);
+      assert.deepEqual(reasons, ["idle"]);
+      assert.equal(getEncryptionKey(), null);
+
+      assert.doesNotThrow(() => stop());
+    } finally {
+      globalThis.BroadcastChannel = original;
+    }
   });
 });
 
