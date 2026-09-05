@@ -19,8 +19,8 @@ export function TagFilterChips({
   }
 
   return (
-    <fieldset className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0">
-      <legend className="sr-only">Filter by tag</legend>
+    <fieldset className="m-0 flex min-w-0 [min-inline-size:0] flex-wrap gap-1.5 border-0 p-0">
+      <legend className="sr-only float-none p-0 [display:inherit]">Filter by tag</legend>
       {facets.map((facet) => {
         const isSelected = selected.includes(facet.key);
         const count = counts.get(facet.key) ?? 0;

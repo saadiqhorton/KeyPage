@@ -227,7 +227,6 @@ export function Modal({
       <dialog
         ref={panelRef}
         open
-        aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
@@ -240,7 +239,6 @@ export function Modal({
           event.preventDefault();
         }}
         onKeyDown={handlePanelKeyDown}
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="bezel-core flex min-h-0 flex-1 flex-col overflow-hidden">
           <header className="border-b border-hairline px-5 py-4">

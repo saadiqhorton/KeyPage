@@ -252,7 +252,7 @@ export function KebabMenu({ label, items, className }: KebabMenuProps) {
             <div
               ref={menuRef}
               role="menu"
-              tabIndex={0}
+              tabIndex={-1}
               className={cn(
                 "menu-pop-in fixed z-50 min-w-[9rem] rounded-sm border border-hairline bg-surface p-1 shadow-[0_16px_40px_rgba(0,0,0,0.55)] outline-none",
               )}

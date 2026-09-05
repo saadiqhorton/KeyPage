@@ -83,7 +83,7 @@ export function ServicePicker({
       </span>
       <div
         role="radiogroup"
-        tabIndex={0}
+        tabIndex={-1}
         aria-labelledby={labelId}
         aria-describedby={errorId}
         aria-invalid={error ? true : undefined}
