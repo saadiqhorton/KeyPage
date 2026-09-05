@@ -15,7 +15,7 @@ function formatFirstBoot(isoDate: string): string {
   }).format(new Date(isoDate));
 }
 
-export function StatusPanel({ health, entryCount = null }: StatusPanelProps) {
+export function StatusPanel({ health, entryCount = null }: Readonly<StatusPanelProps>) {
   const statusLabel =
     health.status === "loading"
       ? "Checking API"
