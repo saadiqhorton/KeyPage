@@ -13,8 +13,7 @@ const sizeClasses = {
 
 export function Spinner({ size = "md", className, label = "Loading" }: SpinnerProps) {
   return (
-    <span
-      role="status"
+    <output
       aria-label={label}
       className={cn(
         "inline-block shrink-0 animate-spin rounded-full border-brass/30 border-t-brass",

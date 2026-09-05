@@ -14,11 +14,8 @@ type ViewToggleProps = {
 
 export function ViewToggle({ value, onChange }: ViewToggleProps) {
   return (
-    <div
-      role="group"
-      aria-label="Key Entry view"
-      className="inline-flex rounded-sm border border-hairline bg-obsidian/55 p-0.5"
-    >
+    <fieldset className="m-0 inline-flex min-w-0 rounded-sm border border-hairline bg-obsidian/55 p-0.5">
+      <legend className="sr-only">Key Entry view</legend>
       {KEY_ENTRY_VIEWS.map((view) => {
         const selected = value === view;
         return (
@@ -39,6 +36,6 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
           </button>
         );
       })}
-    </div>
+    </fieldset>
   );
 }

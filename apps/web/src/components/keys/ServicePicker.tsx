@@ -83,10 +83,11 @@ export function ServicePicker({
       </span>
       <div
         role="radiogroup"
+        tabIndex={0}
         aria-labelledby={labelId}
         aria-describedby={errorId}
         aria-invalid={error ? true : undefined}
-        className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+        className="grid grid-cols-2 gap-2 outline-none sm:grid-cols-3"
         onKeyDown={handleKeyDown}
       >
         {SERVICE_CATALOG.map((entry, index) => {

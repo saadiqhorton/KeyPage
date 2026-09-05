@@ -95,16 +95,14 @@ export function TagInput({
       <label htmlFor={fieldId} className="text-sm text-text">
         {label}
       </label>
-      <div
+      <label
+        htmlFor={fieldId}
         className={cn(
           "flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-obsidian/60 px-2 py-1.5",
           "focus-within:ring-1 focus-within:ring-brass/70",
           disabled && "cursor-not-allowed opacity-50",
           error && "border-danger/50",
         )}
-        onClick={() => {
-          if (!disabled) inputRef.current?.focus();
-        }}
       >
         {value.map((tag, index) => (
           <span
@@ -146,7 +144,7 @@ export function TagInput({
             commitDraft(draft);
           }}
         />
-      </div>
+      </label>
       {hint ? (
         <div id={hintId} className="text-xs text-muted">
           {hint}
