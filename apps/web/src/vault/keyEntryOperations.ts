@@ -15,7 +15,11 @@ import {
   type KeyEntryUseResponse,
 } from "@keypage/shared";
 
-import type { ClipboardAutoClearHandle } from "@/lib/clipboard.js";
+import {
+  ClipboardWriteError,
+  type ClipboardAutoClearHandle,
+  type ClipboardWriteErrorReason,
+} from "@/lib/clipboard.js";
 import type { KeyVersionPin } from "@/vault/key-version-pin.js";
 
 export type NewKeyEntryInput = {
@@ -54,7 +58,8 @@ export type CopySecretResult =
       lastUsedAt?: string | null;
       activityFailed?: boolean;
     }
-  | { ok: false; reason: "decrypt" | "clipboard" };
+  | { ok: false; reason: "decrypt" }
+  | { ok: false; reason: "clipboard"; clipboard: ClipboardWriteErrorReason };
 
 export type KeyEntryOperationsPorts = {
   pin: KeyVersionPin;
@@ -204,8 +209,10 @@ export function createKeyEntryOperations(
 
       try {
         await ports.copyTextWithAutoClear(value, options.clipboardClearMs);
-      } catch {
-        return { ok: false, reason: "clipboard" };
+      } catch (err) {
+        const clipboard: ClipboardWriteErrorReason =
+          err instanceof ClipboardWriteError ? err.reason : "denied";
+        return { ok: false, reason: "clipboard", clipboard };
       }
 
       const clearSeconds = Math.round(options.clipboardClearMs / 1000);

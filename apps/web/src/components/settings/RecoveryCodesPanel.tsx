@@ -2,7 +2,8 @@ import { useCallback, useState } from "react";
 
 import { RecoveryCodeGrid } from "@/components/RecoveryCodeGrid";
 import { Button } from "@/components/ui/Button";
-import { copyTextWithAutoClear } from "@/lib/clipboard.js";
+import { ClipboardWriteError, copyTextWithAutoClear } from "@/lib/clipboard.js";
+import { clipboardFailureMessage } from "@/lib/clipboard-messages.js";
 import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
 import { formatRecoveryCode } from "@keypage/shared";
 
@@ -19,6 +20,7 @@ export function RecoveryCodesPanel({
 }: RecoveryCodesPanelProps) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [clipboardError, setClipboardError] = useState<string | null>(null);
 
   const handleDownload = useCallback(() => {
     downloadRecoveryCodes(codes);
@@ -28,10 +30,14 @@ export function RecoveryCodesPanel({
     const text = codes.map((code) => formatRecoveryCode(code)).join("\n");
     try {
       await copyTextWithAutoClear(text, 30_000);
+      setClipboardError(null);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } catch (err) {
       setCopied(false);
+      const reason =
+        err instanceof ClipboardWriteError ? err.reason : "denied";
+      setClipboardError(clipboardFailureMessage(reason, "recoveryCodes"));
     }
   }, [codes]);
 
@@ -51,6 +57,9 @@ export function RecoveryCodesPanel({
           {copied ? "Copied" : "Copy all"}
         </Button>
       </div>
+      {clipboardError ? (
+        <p className="text-sm leading-relaxed text-muted">{clipboardError}</p>
+      ) : null}
       {onAcknowledged ? (
         <>
           <label className="flex items-start gap-3 text-sm leading-relaxed text-muted">
