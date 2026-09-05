@@ -18,16 +18,15 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install
-      - name: Install coverage tool
-        run: npm install -g c8
-      - name: Run tests with coverage across monorepo
+      - name: Run tests with native Node coverage
         continue-on-error: true
         run: |
           mkdir -p coverage
-          (cd apps/api && c8 --all --reporter=text --reporter=lcov --reports-dir=../../coverage/api node --import tsx --test --test-isolation=none "src/**/*.test.ts" || true)
-          (cd apps/web && c8 --all --reporter=text --reporter=lcov --reports-dir=../../coverage/web node --import tsx --test --test-isolation=none "src/**/*.test.{ts,tsx}" || true)
-          (cd packages/shared && c8 --all --reporter=text --reporter=lcov --reports-dir=../../coverage/shared node --import tsx --test --test-isolation=none "src/**/*.test.ts" || true)
-          cat coverage/api/lcov.info coverage/web/lcov.info coverage/shared/lcov.info > coverage/lcov.info || true
+          (cd apps/api && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/api.lcov || true)
+          (cd apps/web && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.{ts,tsx}" > ../../coverage/web.lcov || true)
+          (cd packages/shared && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/shared.lcov || true)
+          cat coverage/api.lcov coverage/web.lcov coverage/shared.lcov > coverage/lcov.info || true
+          ls -la coverage
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7
         env:
