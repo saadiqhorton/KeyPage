@@ -15,7 +15,10 @@ import type {
 } from "@keypage/shared";
 
 import { ApiError } from "@/lib/api.js";
-import type { ClipboardAutoClearHandle } from "@/lib/clipboard.js";
+import {
+  ClipboardWriteError,
+  type ClipboardAutoClearHandle,
+} from "@/lib/clipboard.js";
 import type { KeyVersionPin } from "./key-version-pin.js";
 import {
   createKeyEntryOperations,
@@ -400,7 +403,43 @@ describe("keyEntryOperations.copySecret", () => {
     assert.equal(calls.decryptKeyValue.length, 1);
   });
 
-  it("returns clipboard failure", async () => {
+  it("returns clipboard failure with denied reason", async () => {
+    const { ports } = createFakePorts({
+      copyTextWithAutoClear: async () => {
+        throw new ClipboardWriteError("denied");
+      },
+    });
+    const ops = createKeyEntryOperations(ports);
+
+    const result = await ops.copySecret(SAMPLE_ENTRY, {
+      clipboardClearMs: 15_000,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      reason: "clipboard",
+      clipboard: "denied",
+    });
+  });
+
+  it("returns clipboard failure with unavailable reason", async () => {
+    const { ports } = createFakePorts({
+      copyTextWithAutoClear: async () => {
+        throw new ClipboardWriteError("unavailable");
+      },
+    });
+    const ops = createKeyEntryOperations(ports);
+
+    const result = await ops.copySecret(SAMPLE_ENTRY, {
+      clipboardClearMs: 15_000,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      reason: "clipboard",
+      clipboard: "unavailable",
+    });
+  });
+
+  it("maps unknown clipboard errors to denied", async () => {
     const { ports } = createFakePorts({
       copyTextWithAutoClear: async () => {
         throw new Error("clipboard denied");
@@ -411,7 +450,11 @@ describe("keyEntryOperations.copySecret", () => {
     const result = await ops.copySecret(SAMPLE_ENTRY, {
       clipboardClearMs: 15_000,
     });
-    assert.deepEqual(result, { ok: false, reason: "clipboard" });
+    assert.deepEqual(result, {
+      ok: false,
+      reason: "clipboard",
+      clipboard: "denied",
+    });
   });
 });
 

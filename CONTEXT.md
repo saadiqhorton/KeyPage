@@ -46,6 +46,7 @@ Open source project — each deployment is single-user, but the code is public f
 - Keys decrypted on-demand in the browser for viewing/copying
 - Prefer HTTPS when exposed beyond LAN (Cloudflare Tunnel covers this)
 - Clipboard auto-clear after configurable timeout (default 30s)
+- Clipboard copy requires a secure context (HTTPS or localhost); on LAN HTTP, Copy fails closed and never places plaintext in the DOM for clipboard
 - Password recovery via multiple alphanumeric codes (8-10 codes, any one can be used)
 - Login rate limiting: after N failed attempts (e.g. 5), lock login for a few minutes
 - First-boot claim: `POST /setup` requires a server-minted setup token, written to `<dataDir>/setup-token` (`0600`) and printed to stdout on the first boot of an unclaimed vault. Because the default bind is `0.0.0.0` and Cloudflare Tunnel arrives over loopback, no network-position gate can distinguish the owner; possession of the token is proof of host access. The token is deleted on successful setup (SAA-174).
