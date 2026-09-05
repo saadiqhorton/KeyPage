@@ -28,7 +28,8 @@ run_pkg() {
   done
 
   echo "Running ${#rel[@]} tests in ${pkg}"
-  (cd "$pkg" && node --import tsx --test --experimental-test-coverage --test-concurrency=1 \
+  (cd "$pkg" && pnpm exec node --import tsx --test --experimental-test-coverage \
+    --test-reporter=spec --test-reporter-destination=stdout \
     --test-reporter=lcov --test-reporter-destination="$root/$dest" \
     "${rel[@]}")
 }
