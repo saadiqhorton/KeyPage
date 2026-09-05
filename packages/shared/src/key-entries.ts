@@ -33,8 +33,6 @@ export type KeyEntryCipherInput = KeyEntryCipherPayload & {
   keyVersion: number;
 };
 
-export type KeyEntryCipher = KeyEntryCipherInput;
-
 export type KeyEntry = {
   id: string;
   label: string;
@@ -42,7 +40,7 @@ export type KeyEntry = {
   customServiceName: string | null;
   description: string | null;
   tags: string[];
-  cipher: KeyEntryCipher;
+  cipher: KeyEntryCipherInput;
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;

@@ -68,7 +68,7 @@ export function base64Encode(data: Uint8Array): string {
   }
   let bin = "";
   for (const byte of data) {
-    bin += String.fromCharCode(byte);
+    bin += String.fromCodePoint(byte);
   }
   return btoa(bin);
 }
@@ -80,7 +80,7 @@ export function base64Decode(text: string): Uint8Array {
   const bin = atob(text);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) {
-    bytes[i] = bin.charCodeAt(i);
+    bytes[i] = bin.codePointAt(i) ?? 0;
   }
   return bytes;
 }
