@@ -193,9 +193,16 @@ export async function load(url, context, nextLoad) {
   import.meta.url,
 );
 
+type RouteElementProps = {
+  to?: string;
+  replace?: boolean;
+  guard?: string;
+  children?: unknown;
+};
+
 type RouteTableEntry = {
   path?: string;
-  element?: ReactElement;
+  element?: ReactElement<RouteElementProps>;
   children?: RouteTableEntry[];
 };
 
