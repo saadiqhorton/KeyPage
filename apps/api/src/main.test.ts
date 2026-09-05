@@ -78,7 +78,7 @@ describe("bootstrapApp", () => {
     }
   });
 
-  it("warns when the idle timeout is outside 15-30 minutes", async () => {
+  it("clamps an out-of-band KEYPAGE_SESSION_IDLE_MINUTES env value at bootstrap", async () => {
     snapshotEnv();
     const dataDir = await makeTempDir();
     process.env.KEYPAGE_DATA_DIR = dataDir;
@@ -86,21 +86,12 @@ describe("bootstrapApp", () => {
     process.env.LOG_LEVEL = "silent";
     process.env.KEYPAGE_SESSION_IDLE_MINUTES = "10";
 
-    const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args.map(String).join(" "));
-    };
-
     const { app, db } = await bootstrapApp(loadConfig());
     try {
-      assert.ok(
-        warnings.some((line) =>
-          line.includes("outside the recommended 15-30 minute band"),
-        ),
-      );
+      const status = await app.inject({ method: "GET", url: "/api/vault/status" });
+      assert.equal(status.statusCode, 200);
+      assert.equal(status.json().session.idleTimeoutSeconds, 15 * 60);
     } finally {
-      console.warn = originalWarn;
       await app.close();
       closeDatabase(db);
     }

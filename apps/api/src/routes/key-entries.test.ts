@@ -716,7 +716,7 @@ describe("Key Entry list, use, duplicate, and origin", () => {
       .prepare(
         `SELECT action FROM activity_events WHERE key_entry_id = ? ORDER BY rowid`,
       )
-      .all() as Array<{ action: string }>;
+      .all(ENTRY_ID) as Array<{ action: string }>;
     assert.deepEqual(
       actions.map((row) => row.action),
       ["created", "revealed", "copied"],

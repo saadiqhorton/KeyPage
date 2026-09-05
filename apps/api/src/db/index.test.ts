@@ -41,7 +41,7 @@ describe("openDatabase / closeDatabase", () => {
       closeDatabase(db);
     }
 
-    assert.throws(() => db.prepare("SELECT 1").get(), /closed/i);
+      assert.throws(() => db.prepare("SELECT 1").get(), /not open/i);
   });
 
   it("creates nested data directories when they do not exist", () => {

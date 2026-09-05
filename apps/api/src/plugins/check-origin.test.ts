@@ -86,15 +86,25 @@ describe("checkOrigin", () => {
     });
   });
 
-  it("skips the host comparison when Host is missing", async () => {
-    await buildApp();
-    const response = await app.inject({
-      method: "GET",
-      url: "/ok",
-      headers: { origin: "http://localhost:9090" },
-    });
+  it("returns without sending when Origin is set but host cannot be resolved", async () => {
+    (config as { trustProxy: boolean }).trustProxy = false;
+    let sent = false;
+    const request = {
+      headers: { origin: "http://evil.example" },
+    } as Parameters<typeof checkOrigin>[0];
+    const reply = {
+      status() {
+        sent = true;
+        return {
+          send: async () => undefined,
+        };
+      },
+    } as unknown as Parameters<typeof checkOrigin>[1];
 
-    assert.equal(response.statusCode, 200);
+    await checkOrigin(request, reply);
+
+    assert.equal(requestHostForOriginCheck(request), undefined);
+    assert.equal(sent, false);
   });
 
   it("uses the first X-Forwarded-Host value when trustProxy is on", async () => {

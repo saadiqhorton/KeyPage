@@ -100,9 +100,11 @@ describe("setup token gate (SAA-174)", () => {
     assert.equal(gate.verify("anything"), false);
   });
 
-  it("maps EACCES while minting a token to a bind-mount error", async () => {
+  it("maps EACCES while reading an existing token file to a bind-mount error", async () => {
     const dataDir = await makeTempDir();
-    await fs.chmod(dataDir, 0o500);
+    const filePath = path.join(dataDir, SETUP_TOKEN_FILENAME);
+    await fs.writeFile(filePath, "stale-token\n", { mode: 0o600 });
+    await fs.chmod(filePath, 0o000);
 
     try {
       await assert.rejects(
@@ -110,7 +112,7 @@ describe("setup token gate (SAA-174)", () => {
         /Cannot write the first-boot setup token/,
       );
     } finally {
-      await fs.chmod(dataDir, 0o700);
+      await fs.chmod(filePath, 0o600);
     }
   });
 });

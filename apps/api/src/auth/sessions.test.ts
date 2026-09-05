@@ -156,12 +156,13 @@ describe("sessions", () => {
     touchSession(db, row.id);
     assert.equal(sessionRow(db, token).last_seen_at, originalSeen);
 
+    const stale = new Date(Date.now() - 20_000).toISOString();
     db.prepare(`UPDATE sessions SET last_seen_at = ? WHERE id = ?`).run(
-      new Date(Date.now() - 20_000).toISOString(),
+      stale,
       row.id,
     );
     touchSession(db, row.id);
-    assert.notEqual(sessionRow(db, token).last_seen_at, originalSeen);
+    assert.notEqual(sessionRow(db, token).last_seen_at, stale);
     assert.equal(isSessionActive(db, row.id), true);
   });
 
