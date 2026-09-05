@@ -220,7 +220,9 @@ export function KebabMenu({ label, items, className }: Readonly<KebabMenuProps>)
 
     if (event.key === "End") {
       event.preventDefault();
-      itemRefs.current[enabledIndices.at(-1)]?.focus();
+      const lastEnabled = enabledIndices.at(-1);
+      if (lastEnabled === undefined) return;
+      itemRefs.current[lastEnabled]?.focus();
     }
   }
 
