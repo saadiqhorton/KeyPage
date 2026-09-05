@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import { describe, it } from "node:test";
-import { createElement, isValidElement } from "react";
+import { createElement, isValidElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Navigate } from "react-router-dom";
 
 type StubNode = {
   tagName: string;
@@ -192,27 +193,42 @@ export async function load(url, context, nextLoad) {
   import.meta.url,
 );
 
-function collectRoutePaths(routes: Array<{ path?: string; children?: unknown }> | undefined): string[] {
-  const paths: string[] = [];
-  for (const route of routes ?? []) {
-    if (typeof route.path === "string") {
-      paths.push(route.path);
-    }
-    if (Array.isArray(route.children)) {
-      paths.push(
-        ...collectRoutePaths(route.children as Array<{ path?: string; children?: unknown }>),
-      );
-    }
-  }
-  return paths;
+type RouteTableEntry = {
+  path?: string;
+  element?: ReactElement;
+  children?: RouteTableEntry[];
+};
+
+const PRODUCT_ROUTE_GUARDS: Record<string, string> = {
+  "/": "unlocked",
+  "/settings": "unlocked",
+  "/recovery-codes": "recovery-codes",
+  "/setup": "setup-wizard",
+  "/unlock": "locked",
+  "/recover": "recovery-wizard",
+};
+
+function assertRouteElement(
+  element: ReactElement | undefined,
+  expectedType: unknown,
+  label: string,
+): void {
+  assert.ok(element && isValidElement(element), `${label} must be a React element`);
+  assert.equal(element.type, expectedType, `${label} component`);
 }
 
 describe("browser router table", () => {
   it("wires every product path through LoadingGate", async () => {
     const { router, Guarded, LoadingGate } = await import("@/routes/router.js");
-    assert.equal(typeof Guarded, "function");
-    assert.equal(typeof LoadingGate, "function");
-    assert.deepEqual(collectRoutePaths(router.routes), [
+    const routes = router.routes as RouteTableEntry[];
+    assert.equal(routes.length, 1, "router should have a single layout route");
+
+    const layout = routes[0];
+    assertRouteElement(layout.element, LoadingGate, "layout route");
+    assert.ok(Array.isArray(layout.children), "layout route must declare child routes");
+
+    const childPaths = layout.children.map((route) => route.path);
+    assert.deepEqual(childPaths, [
       "/",
       "/settings",
       "/recovery-codes",
@@ -221,6 +237,27 @@ describe("browser router table", () => {
       "/recover",
       "*",
     ]);
+
+    for (const route of layout.children) {
+      const path = route.path;
+      assert.ok(typeof path === "string", "each child route must have a path");
+
+      if (path === "*") {
+        assertRouteElement(route.element, Navigate, `route ${path}`);
+        assert.equal(route.element?.props.to, "/", `route ${path} should redirect to /`);
+        assert.equal(route.element?.props.replace, true, `route ${path} should replace history`);
+        continue;
+      }
+
+      const expectedGuard = PRODUCT_ROUTE_GUARDS[path];
+      assert.ok(expectedGuard, `unexpected product path ${path}`);
+      assertRouteElement(route.element, Guarded, `route ${path}`);
+      assert.equal(route.element?.props.guard, expectedGuard, `route ${path} guard`);
+      assert.ok(
+        isValidElement(route.element?.props.children),
+        `route ${path} should render a screen inside Guarded`,
+      );
+    }
   });
 });
 
