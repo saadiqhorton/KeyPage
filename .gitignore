@@ -11,7 +11,9 @@ data/
 .odw/
 
 # Agent / local-only tooling (not part of the product)
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 .agents/
 skills-lock.json
 docs/plans/
