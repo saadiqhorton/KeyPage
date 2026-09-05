@@ -143,7 +143,7 @@ export function TagInput({
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={() => {
-            void commitDraft(draft);
+            commitDraft(draft);
           }}
         />
       </div>

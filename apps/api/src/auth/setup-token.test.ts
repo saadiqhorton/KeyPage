@@ -69,6 +69,22 @@ describe("setup token gate (SAA-174)", () => {
     assert.equal(gate.verify(correctToken), false);
   });
 
+  it("remints when the existing file is not a valid setup token", async () => {
+    const dataDir = await makeTempDir();
+    const filePath = path.join(dataDir, SETUP_TOKEN_FILENAME);
+    await fs.writeFile(filePath, "not-a-valid-token\n", { mode: 0o600 });
+
+    const gate = await openSetupGate({
+      dataDir,
+      vaultInitialized: false,
+    });
+
+    assert.ok(gate.token);
+    assert.match(gate.token, new RegExp(SETUP_TOKEN_PATTERN));
+    assert.notEqual(gate.token, "not-a-valid-token");
+    assert.equal((await fs.readFile(filePath, "utf8")).trim(), gate.token);
+  });
+
   it("vaultInitialized: true deletes a pre-existing token file and yields token: null", async () => {
     const dataDir = await makeTempDir();
     const filePath = path.join(dataDir, SETUP_TOKEN_FILENAME);

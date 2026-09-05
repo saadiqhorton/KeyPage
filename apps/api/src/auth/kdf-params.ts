@@ -32,100 +32,89 @@ function decodeBase64Length(value: string): number | null {
   }
 }
 
+function rejectKdf(field: string, message: string, headline = "Invalid KDF parameters"): never {
+  throw new HttpInvalidRequest(headline, [{ field, message }]);
+}
+
 function validateSaltB64(saltB64: string, field: string): void {
   const length = decodeBase64Length(saltB64);
   if (length !== KDF_SALT_BYTES) {
-    throw new HttpInvalidRequest(`Invalid ${field}: salt must decode to 16 bytes`, [
-      { field, message: "salt must decode to exactly 16 bytes" },
-    ]);
+    rejectKdf(field, "salt must decode to exactly 16 bytes", `Invalid ${field}: salt must decode to 16 bytes`);
   }
+}
+
+function requireInRange(
+  value: number,
+  min: number,
+  max: number,
+  field: string,
+): void {
+  if (value < min || value > max) {
+    rejectKdf(field, `must be between ${min} and ${max}`);
+  }
+}
+
+function validateArgon2idParams(kdf: KdfParams, fieldPrefix: string): void {
+  const bounds = KDF_BOUNDS.argon2id;
+
+  if (kdf.memoryKiB === undefined) {
+    rejectKdf(`${fieldPrefix}.memoryKiB`, "required for argon2id");
+  }
+  if (kdf.parallelism === undefined) {
+    rejectKdf(`${fieldPrefix}.parallelism`, "required for argon2id");
+  }
+
+  requireInRange(
+    kdf.memoryKiB,
+    bounds.memoryKiB.min,
+    bounds.memoryKiB.max,
+    `${fieldPrefix}.memoryKiB`,
+  );
+  requireInRange(
+    kdf.iterations,
+    bounds.iterations.min,
+    bounds.iterations.max,
+    `${fieldPrefix}.iterations`,
+  );
+  requireInRange(
+    kdf.parallelism,
+    bounds.parallelism.min,
+    bounds.parallelism.max,
+    `${fieldPrefix}.parallelism`,
+  );
+}
+
+function validatePbkdf2Params(kdf: KdfParams, fieldPrefix: string): void {
+  const bounds = KDF_BOUNDS["pbkdf2-sha256"];
+
+  if (kdf.memoryKiB !== undefined) {
+    rejectKdf(`${fieldPrefix}.memoryKiB`, "must be absent for pbkdf2-sha256");
+  }
+  if (kdf.parallelism !== undefined) {
+    rejectKdf(`${fieldPrefix}.parallelism`, "must be absent for pbkdf2-sha256");
+  }
+  requireInRange(
+    kdf.iterations,
+    bounds.iterations.min,
+    bounds.iterations.max,
+    `${fieldPrefix}.iterations`,
+  );
 }
 
 export function validateKdfParams(kdf: KdfParams, fieldPrefix = "kdf"): void {
   validateSaltB64(kdf.saltB64, `${fieldPrefix}.saltB64`);
 
   if (kdf.algorithm === "argon2id") {
-    const bounds = KDF_BOUNDS.argon2id;
-
-    if (kdf.memoryKiB === undefined) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        { field: `${fieldPrefix}.memoryKiB`, message: "required for argon2id" },
-      ]);
-    }
-    if (kdf.parallelism === undefined) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        { field: `${fieldPrefix}.parallelism`, message: "required for argon2id" },
-      ]);
-    }
-    if (
-      kdf.memoryKiB < bounds.memoryKiB.min ||
-      kdf.memoryKiB > bounds.memoryKiB.max
-    ) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        {
-          field: `${fieldPrefix}.memoryKiB`,
-          message: `must be between ${bounds.memoryKiB.min} and ${bounds.memoryKiB.max}`,
-        },
-      ]);
-    }
-    if (
-      kdf.iterations < bounds.iterations.min ||
-      kdf.iterations > bounds.iterations.max
-    ) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        {
-          field: `${fieldPrefix}.iterations`,
-          message: `must be between ${bounds.iterations.min} and ${bounds.iterations.max}`,
-        },
-      ]);
-    }
-    if (
-      kdf.parallelism < bounds.parallelism.min ||
-      kdf.parallelism > bounds.parallelism.max
-    ) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        {
-          field: `${fieldPrefix}.parallelism`,
-          message: `must be between ${bounds.parallelism.min} and ${bounds.parallelism.max}`,
-        },
-      ]);
-    }
+    validateArgon2idParams(kdf, fieldPrefix);
     return;
   }
 
   if (kdf.algorithm === "pbkdf2-sha256") {
-    const bounds = KDF_BOUNDS["pbkdf2-sha256"];
-
-    if (kdf.memoryKiB !== undefined) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        { field: `${fieldPrefix}.memoryKiB`, message: "must be absent for pbkdf2-sha256" },
-      ]);
-    }
-    if (kdf.parallelism !== undefined) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        {
-          field: `${fieldPrefix}.parallelism`,
-          message: "must be absent for pbkdf2-sha256",
-        },
-      ]);
-    }
-    if (
-      kdf.iterations < bounds.iterations.min ||
-      kdf.iterations > bounds.iterations.max
-    ) {
-      throw new HttpInvalidRequest("Invalid KDF parameters", [
-        {
-          field: `${fieldPrefix}.iterations`,
-          message: `must be between ${bounds.iterations.min} and ${bounds.iterations.max}`,
-        },
-      ]);
-    }
+    validatePbkdf2Params(kdf, fieldPrefix);
     return;
   }
 
-  throw new HttpInvalidRequest("Invalid KDF parameters", [
-    { field: `${fieldPrefix}.algorithm`, message: "unsupported algorithm" },
-  ]);
+  rejectKdf(`${fieldPrefix}.algorithm`, "unsupported algorithm");
 }
 
 export function validateRecoveryEnvelopes(

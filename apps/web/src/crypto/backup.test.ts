@@ -303,6 +303,43 @@ describe("backup crypto", () => {
       BackupFormatError,
     );
   });
+
+  it("rejects backup entries with invalid field shapes", () => {
+    const cases: Array<{ entry: unknown; message: string }> = [
+      { entry: "not-an-object", message: "Entry 0 is invalid" },
+      {
+        entry: sampleEntry({ customServiceName: 1 as unknown as string }),
+        message: "Entry 0 has an invalid customServiceName",
+      },
+      {
+        entry: sampleEntry({ description: 1 as unknown as string }),
+        message: "Entry 0 has an invalid description",
+      },
+      {
+        entry: sampleEntry({ keyValue: "" }),
+        message: "Entry 0 has an invalid keyValue",
+      },
+      {
+        entry: sampleEntry({ lastUsedAt: 1 as unknown as string }),
+        message: "Entry 0 has an invalid lastUsedAt",
+      },
+    ];
+    for (const { entry, message } of cases) {
+      assert.throws(
+        () =>
+          validateBackupPayload({
+            ...samplePayload(),
+            entries: [entry],
+            entryCount: 1,
+          }),
+        (error: unknown) => {
+          assert.ok(error instanceof BackupFormatError);
+          assert.equal(error.message, message);
+          return true;
+        },
+      );
+    }
+  });
 });
 
 describe("pickKdfParams", () => {

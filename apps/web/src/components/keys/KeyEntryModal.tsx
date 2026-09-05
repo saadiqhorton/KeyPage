@@ -176,6 +176,71 @@ function resetKeyValueState(
   setDecryptWarning(false);
 }
 
+function optionalMetadata(fields: KeyEntryWriteFields) {
+  return {
+    ...(fields.customServiceName !== null
+      ? { customServiceName: fields.customServiceName }
+      : {}),
+    ...(fields.description !== null ? { description: fields.description } : {}),
+  };
+}
+
+function buildCreateValues(
+  fields: KeyEntryWriteFields,
+  keyValue: string,
+): NewKeyEntryInput {
+  return {
+    label: fields.label,
+    serviceId: fields.serviceId,
+    tags: fields.tags,
+    keyValue: keyValue.trim(),
+    ...optionalMetadata(fields),
+  };
+}
+
+function applyEditKeyValue(
+  values: EditKeyEntryInput,
+  prefillState: PrefillState,
+  trimmedKeyValue: string,
+  originalKeyValue: string,
+): void {
+  if (prefillState === "ready") {
+    if (trimmedKeyValue !== originalKeyValue) {
+      values.keyValue = trimmedKeyValue;
+    }
+    return;
+  }
+  if (trimmedKeyValue.length > 0) {
+    values.keyValue = trimmedKeyValue;
+  }
+}
+
+function buildEditValues(
+  fields: KeyEntryWriteFields,
+  prefillState: PrefillState,
+  keyValue: string,
+  originalKeyValue: string,
+): EditKeyEntryInput {
+  const values: EditKeyEntryInput = {
+    label: fields.label,
+    serviceId: fields.serviceId,
+    tags: fields.tags,
+    ...optionalMetadata(fields),
+  };
+  applyEditKeyValue(values, prefillState, keyValue.trim(), originalKeyValue);
+  return values;
+}
+
+function submitErrorMessage(err: unknown, mode: "create" | "edit"): string {
+  if (err instanceof ApiError) {
+    return err.message;
+  }
+  if (mode === "create") {
+    return "Failed to create key entry.";
+  }
+  return "Failed to update key entry.";
+}
+
 export function KeyEntryModal(props: KeyEntryModalProps) {
   const { open, mode, onClose } = props;
   const entry = mode === "edit" ? props.entry : null;
@@ -318,53 +383,20 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
 
     try {
       if (mode === "create") {
-        const values: NewKeyEntryInput = {
-          label: fields.label,
-          serviceId: fields.serviceId,
-          tags: fields.tags,
-          keyValue: keyValue.trim(),
-          ...(fields.customServiceName !== null
-            ? { customServiceName: fields.customServiceName }
-            : {}),
-          ...(fields.description !== null
-            ? { description: fields.description }
-            : {}),
-        };
-
-        await props.onSubmit(values);
+        await props.onSubmit(buildCreateValues(fields, keyValue));
       } else {
-        const values: EditKeyEntryInput = {
-          label: fields.label,
-          serviceId: fields.serviceId,
-          tags: fields.tags,
-          ...(fields.customServiceName !== null
-            ? { customServiceName: fields.customServiceName }
-            : {}),
-          ...(fields.description !== null
-            ? { description: fields.description }
-            : {}),
-        };
-
-        const trimmedKeyValue = keyValue.trim();
-        if (prefillState === "ready") {
-          if (trimmedKeyValue !== originalKeyValueRef.current) {
-            values.keyValue = trimmedKeyValue;
-          }
-        } else if (trimmedKeyValue.length > 0) {
-          values.keyValue = trimmedKeyValue;
-        }
-
-        await props.onSubmit(values);
+        await props.onSubmit(
+          buildEditValues(
+            fields,
+            prefillState,
+            keyValue,
+            originalKeyValueRef.current,
+          ),
+        );
       }
       onClose();
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : mode === "create"
-            ? "Failed to create key entry."
-            : "Failed to update key entry.";
-      setSubmitError(message);
+      setSubmitError(submitErrorMessage(err, mode));
     } finally {
       setSubmitting(false);
     }
