@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { type SubmitEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { AuthShell } from "@/components/AuthShell";
@@ -44,7 +44,7 @@ export function SetupScreen() {
     return null;
   }
 
-  async function handlePasswordSubmit(event: FormEvent) {
+  async function handlePasswordSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSetupTokenError(null);

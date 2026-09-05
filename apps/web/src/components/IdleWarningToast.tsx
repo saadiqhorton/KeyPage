@@ -14,7 +14,7 @@ export function IdleWarningToast({
   visible,
   secondsRemaining,
   onStayUnlocked,
-}: IdleWarningToastProps) {
+}: Readonly<IdleWarningToastProps>) {
   const { rendered, closing } = useExitTransition(visible ? true : null, TOAST_OUT_MS);
 
   if (rendered === null) {

@@ -27,7 +27,7 @@ type KebabMenuProps = {
 const triggerClass =
   "pressable rounded-sm p-1.5 text-muted hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/70 disabled:cursor-not-allowed disabled:opacity-50";
 
-function DotsIcon({ className }: { className?: string }) {
+function DotsIcon({ className }: Readonly<{ className?: string }>) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -78,7 +78,7 @@ function computeMenuPosition(
   return { top, left };
 }
 
-export function KebabMenu({ label, items, className }: KebabMenuProps) {
+export function KebabMenu({ label, items, className }: Readonly<KebabMenuProps>) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -175,8 +175,8 @@ export function KebabMenu({ label, items, className }: KebabMenuProps) {
 
     if (enabledIndices.length === 0) return;
 
-    const activeIndex = itemRefs.current.findIndex(
-      (el) => el === document.activeElement,
+    const activeIndex = itemRefs.current.indexOf(
+      document.activeElement as HTMLButtonElement | null,
     );
 
     if (event.key === "Escape") {
@@ -220,7 +220,7 @@ export function KebabMenu({ label, items, className }: KebabMenuProps) {
 
     if (event.key === "End") {
       event.preventDefault();
-      itemRefs.current[enabledIndices[enabledIndices.length - 1]]?.focus();
+      itemRefs.current[enabledIndices.at(-1)]?.focus();
     }
   }
 

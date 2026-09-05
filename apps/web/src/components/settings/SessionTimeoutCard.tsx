@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { type SubmitEvent, useEffect, useState } from "react";
 
 import {
   type IdleTimeoutSource,
@@ -32,7 +32,7 @@ export function SessionTimeoutCard({
   onSessionIdleMinutesChange,
   onSave,
   onClearSuccess,
-}: SessionTimeoutCardProps) {
+}: Readonly<SessionTimeoutCardProps>) {
   const {
     loading,
     sessionIdleMinutes,
@@ -52,7 +52,7 @@ export function SessionTimeoutCard({
     return () => window.clearTimeout(timer);
   }, [success, onClearSuccess]);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (readOnly || sessionIdleMinutes === null) return;
 

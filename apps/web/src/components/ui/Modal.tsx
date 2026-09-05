@@ -74,7 +74,7 @@ export function Modal({
   const restoreFocus = useCallback(() => {
     const previous = previousFocusRef.current;
     previousFocusRef.current = null;
-    if (!previous || !previous.isConnected) return;
+    if (!previous?.isConnected) return;
     previous.focus({ preventScroll: true });
   }, []);
 
@@ -172,13 +172,12 @@ export function Modal({
     if (!panel) return;
 
     const focusable = getFocusableElements(panel);
-    if (focusable.length === 0) {
+    const first = focusable.at(0);
+    const last = focusable.at(-1);
+    if (!first || !last) {
       event.preventDefault();
       return;
     }
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
     const active = document.activeElement as HTMLElement | null;
 
     if (event.shiftKey) {

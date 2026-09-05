@@ -16,7 +16,7 @@ const toneClasses: Record<CalloutTone, string> = {
   danger: "border-danger/40 bg-danger/10 text-text",
 };
 
-export function Callout({ tone = "info", children, className }: CalloutProps) {
+export function Callout({ tone = "info", children, className }: Readonly<CalloutProps>) {
   return (
     <div
       className={cn(

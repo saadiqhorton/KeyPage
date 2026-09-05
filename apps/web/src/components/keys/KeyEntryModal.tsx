@@ -1,4 +1,3 @@
-import type { KeyEntry } from "@keypage/shared";
 import {
   KEY_ENTRY_CUSTOM_SERVICE_NAME_MAX,
   KEY_ENTRY_DESCRIPTION_MAX,
@@ -6,11 +5,12 @@ import {
   KEY_ENTRY_TAG_MAX,
   KEY_ENTRY_TAGS_MAX,
   collectKeyEntryFieldIssues,
+  type KeyEntry,
   type KeyEntryFieldIssue,
   type KeyEntryWriteFields,
   normalizeKeyEntryWriteFields,
 } from "@keypage/shared";
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { type SubmitEvent, useEffect, useId, useRef, useState } from "react";
 
 import { ServicePicker } from "@/components/keys/ServicePicker";
 import { Button } from "@/components/ui/Button";
@@ -101,17 +101,32 @@ function mapSharedFieldErrors(issues: KeyEntryFieldIssue[]): FieldErrors {
   return errors;
 }
 
+type ValidateFormInput = {
+  mode: "create" | "edit";
+  prefillState: PrefillState;
+  label: string;
+  serviceId: string;
+  customServiceName: string;
+  description: string;
+  tags: string[];
+  tagDraft: string;
+  keyValue: string;
+};
+
 function validateForm(
-  mode: "create" | "edit",
-  prefillState: PrefillState,
-  label: string,
-  serviceId: string,
-  customServiceName: string,
-  description: string,
-  tags: string[],
-  tagDraft: string,
-  keyValue: string,
+  input: ValidateFormInput,
 ): { errors: FieldErrors; fields: KeyEntryWriteFields | null } {
+  const {
+    mode,
+    prefillState,
+    label,
+    serviceId,
+    customServiceName,
+    description,
+    tags,
+    tagDraft,
+    keyValue,
+  } = input;
   const errors: FieldErrors = {};
 
   const draftIssue = tagDraftError(tagDraft);
@@ -231,6 +246,22 @@ function buildEditValues(
   return values;
 }
 
+function keyValueHintFor(
+  isCreate: boolean,
+  prefillState: PrefillState,
+): string | undefined {
+  if (isCreate) {
+    return undefined;
+  }
+  if (prefillState === "failed") {
+    return "Leave blank to keep the current API key.";
+  }
+  if (prefillState === "loading") {
+    return "Decrypting API key…";
+  }
+  return undefined;
+}
+
 function submitErrorMessage(err: unknown, mode: "create" | "edit"): string {
   if (err instanceof ApiError) {
     return err.message;
@@ -241,7 +272,7 @@ function submitErrorMessage(err: unknown, mode: "create" | "edit"): string {
   return "Failed to update key entry.";
 }
 
-export function KeyEntryModal(props: KeyEntryModalProps) {
+export function KeyEntryModal(props: Readonly<KeyEntryModalProps>) {
   const { open, mode, onClose } = props;
   const entry = mode === "edit" ? props.entry : null;
   const formId = useId();
@@ -357,11 +388,11 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     onClose();
   }
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError(null);
 
-    const { errors, fields } = validateForm(
+    const { errors, fields } = validateForm({
       mode,
       prefillState,
       label,
@@ -371,7 +402,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
       tags,
       tagDraft,
       keyValue,
-    );
+    });
 
     if (Object.keys(errors).length > 0 || fields === null) {
       setFieldErrors(errors);
@@ -410,13 +441,7 @@ export function KeyEntryModal(props: KeyEntryModalProps) {
     : "Update the details below. The API key value is shown for editing and re-encrypted in the browser before it leaves this device.";
   const keyValueDisabled =
     submitting || (!isCreate && prefillState === "loading");
-  const keyValueHint = isCreate
-    ? undefined
-    : prefillState === "failed"
-      ? "Leave blank to keep the current API key."
-      : prefillState === "loading"
-        ? "Decrypting API key…"
-        : undefined;
+  const keyValueHint = keyValueHintFor(isCreate, prefillState);
 
   return (
     <Modal

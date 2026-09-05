@@ -13,7 +13,7 @@ export function TagFilterChips({
   counts,
   selected,
   onToggle,
-}: TagFilterChipsProps) {
+}: Readonly<TagFilterChipsProps>) {
   if (facets.length === 0) {
     return null;
   }

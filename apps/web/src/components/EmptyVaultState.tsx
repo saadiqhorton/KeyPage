@@ -27,7 +27,7 @@ type EmptyVaultStateProps = {
   busy?: boolean;
 };
 
-export function EmptyVaultState({ onAddKey, busy = false }: EmptyVaultStateProps) {
+export function EmptyVaultState({ onAddKey, busy = false }: Readonly<EmptyVaultStateProps>) {
   return (
     <section className="entrance-stagger flex flex-1 flex-col items-center justify-center gap-7 py-20 text-center">
       <div className="bezel-shell">

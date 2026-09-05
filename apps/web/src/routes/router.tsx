@@ -50,10 +50,10 @@ function LoadingGate() {
 function Guarded({
   guard,
   children,
-}: {
+}: Readonly<{
   guard: RouteGuard;
   children: React.ReactNode;
-}) {
+}>) {
   const { state, wizard } = useVault();
   const decision = resolveGuard(guard, state.phase, wizard);
 

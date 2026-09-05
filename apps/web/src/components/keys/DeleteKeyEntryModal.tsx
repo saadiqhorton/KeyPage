@@ -14,7 +14,7 @@ type Props = {
   onClose(): void;
 };
 
-export function DeleteKeyEntryModal({ entry, onConfirm, onClose }: Props) {
+export function DeleteKeyEntryModal({ entry, onConfirm, onClose }: Readonly<Props>) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const snapshotRef = useRef<KeyEntry | null>(null);

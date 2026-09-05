@@ -12,7 +12,7 @@ type ViewToggleProps = {
   onChange(next: KeyEntryView): void;
 };
 
-export function ViewToggle({ value, onChange }: ViewToggleProps) {
+export function ViewToggle({ value, onChange }: Readonly<ViewToggleProps>) {
   return (
     <fieldset className="m-0 inline-flex min-w-0 [min-inline-size:0] rounded-sm border border-hairline bg-obsidian/55 p-0.5">
       <legend className="sr-only float-none p-0 [display:inherit]">Key Entry view</legend>

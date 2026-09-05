@@ -27,7 +27,7 @@ function monogram(displayName: string): string {
   return (words[0]?.[0] ?? "?").toUpperCase();
 }
 
-export function ServiceIcon({ serviceId, size = "md", className }: ServiceIconProps) {
+export function ServiceIcon({ serviceId, size = "md", className }: Readonly<ServiceIconProps>) {
   const entry = getService(serviceId);
   const glyph = monogram(entry.displayName);
 

@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { type SubmitEvent, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
@@ -15,6 +15,29 @@ type RecoveryCodesCardProps = {
   onRegenerate(password: string): Promise<void>;
 };
 
+function remainingCodesSummary(
+  remaining: number | null,
+  loadingRemaining: boolean,
+) {
+  if (loadingRemaining) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted">
+        <Spinner size="sm" />
+        <span>Loading…</span>
+      </div>
+    );
+  }
+  if (remaining === null) {
+    return null;
+  }
+  return (
+    <p className="text-sm text-text">
+      <span className="font-medium">{remaining}</span>{" "}
+      {remaining === 1 ? "code" : "codes"} remaining
+    </p>
+  );
+}
+
 export function RecoveryCodesCard({
   remaining,
   loadingRemaining,
@@ -22,11 +45,11 @@ export function RecoveryCodesCard({
   error,
   progress,
   onRegenerate,
-}: RecoveryCodesCardProps) {
+}: Readonly<RecoveryCodesCardProps>) {
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
 
@@ -48,17 +71,7 @@ export function RecoveryCodesCard({
       title="Recovery codes"
       description="One-time codes for account recovery if you forget your Master Password."
     >
-      {loadingRemaining ? (
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Spinner size="sm" />
-          <span>Loading…</span>
-        </div>
-      ) : remaining !== null ? (
-        <p className="text-sm text-text">
-          <span className="font-medium">{remaining}</span>{" "}
-          {remaining === 1 ? "code" : "codes"} remaining
-        </p>
-      ) : null}
+      {remainingCodesSummary(remaining, loadingRemaining)}
 
       <Callout tone="warning">
         Regenerating recovery codes replaces all existing codes immediately.

@@ -6,7 +6,7 @@ export function useWarnBeforeUnload(active: boolean): void {
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
-      event.returnValue = "";
+      Reflect.set(event, "returnValue", "");
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);

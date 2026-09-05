@@ -279,7 +279,7 @@ function assertBackupEntryNormalized(
 
   try {
     normalizeLabel(label);
-    normalizeDescription(description === null ? undefined : description);
+    normalizeDescription(description ?? undefined);
     normalizeTags(tags);
     const resolved = resolveServiceForImport(serviceId, customServiceName);
     validateService(resolved.serviceId, resolved.customServiceName);

@@ -36,7 +36,7 @@ export function TagInput({
   hint,
   error,
   disabled = false,
-}: TagInputProps) {
+}: Readonly<TagInputProps>) {
   const fieldId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const errorId = error ? `${fieldId}-error` : undefined;

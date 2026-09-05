@@ -6,7 +6,17 @@ type StepIndicatorProps = {
   className?: string;
 };
 
-export function StepIndicator({ steps, currentStep, className }: StepIndicatorProps) {
+function stepTextClass(isCurrent: boolean, isComplete: boolean): string {
+  if (isCurrent) {
+    return "text-text";
+  }
+  if (isComplete) {
+    return "text-muted";
+  }
+  return "text-muted/60";
+}
+
+export function StepIndicator({ steps, currentStep, className }: Readonly<StepIndicatorProps>) {
   return (
     <nav aria-label="Progress" className={cn("mb-6", className)}>
       <ol className="flex flex-col gap-2">
@@ -20,7 +30,7 @@ export function StepIndicator({ steps, currentStep, className }: StepIndicatorPr
               key={label}
               className={cn(
                 "flex items-center gap-3 text-xs",
-                isCurrent ? "text-text" : isComplete ? "text-muted" : "text-muted/60",
+                stepTextClass(isCurrent, isComplete),
               )}
               aria-current={isCurrent ? "step" : undefined}
             >

@@ -24,7 +24,7 @@ export function ServicePicker({
   onCustomNameChange,
   error,
   disabled = false,
-}: ServicePickerProps) {
+}: Readonly<ServicePickerProps>) {
   const groupId = useId();
   const labelId = `${groupId}-label`;
   const errorId = error ? `${groupId}-error` : undefined;
@@ -44,7 +44,7 @@ export function ServicePicker({
     if (disabled) return;
 
     const currentIndex = SERVICE_CATALOG.findIndex((entry) => entry.id === value);
-    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const safeIndex = Math.max(currentIndex, 0);
 
     switch (event.key) {
       case "ArrowRight":

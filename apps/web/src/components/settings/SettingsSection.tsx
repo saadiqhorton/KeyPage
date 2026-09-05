@@ -10,7 +10,7 @@ export function SettingsSection({
   title,
   description,
   children,
-}: SettingsSectionProps) {
+}: Readonly<SettingsSectionProps>) {
   return (
     <section className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">

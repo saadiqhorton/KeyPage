@@ -57,7 +57,7 @@ type VaultProviderProps = {
   children: ReactNode;
 };
 
-export function VaultProvider({ children }: VaultProviderProps) {
+export function VaultProvider({ children }: Readonly<VaultProviderProps>) {
   const [state, setState] = useState<VaultState>({ phase: "loading" });
   const [wizard, setWizard] = useState<WizardState>({ kind: "none" });
   const [issuingRecoveryCodes, setIssuingRecoveryCodes] = useState(false);

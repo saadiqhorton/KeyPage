@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { type SubmitEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AuthShell } from "@/components/AuthShell";
@@ -52,7 +52,7 @@ type RecoverCodeStepProps = {
   lockoutActive: boolean;
   recoveryLockout: LockoutState | null;
   onLockoutExpired(): void;
-  onSubmit(event: FormEvent): void;
+  onSubmit(event: SubmitEvent<HTMLFormElement>): void;
   onBack(): void;
 };
 
@@ -67,7 +67,7 @@ function RecoverCodeStep({
   onLockoutExpired,
   onSubmit,
   onBack,
-}: RecoverCodeStepProps) {
+}: Readonly<RecoverCodeStepProps>) {
   return (
     <AuthShell
       chip="ACCOUNT RECOVERY"
@@ -142,7 +142,7 @@ type RecoverPasswordStepProps = {
   workingLabel: string;
   onPasswordChange(value: string): void;
   onConfirmChange(value: string): void;
-  onSubmit(event: FormEvent): void;
+  onSubmit(event: SubmitEvent<HTMLFormElement>): void;
   onCancel(): void;
 };
 
@@ -156,7 +156,7 @@ function RecoverPasswordStep({
   onConfirmChange,
   onSubmit,
   onCancel,
-}: RecoverPasswordStepProps) {
+}: Readonly<RecoverPasswordStepProps>) {
   const confirmMismatch = Boolean(confirm) && password !== confirm;
 
   return (
@@ -235,7 +235,7 @@ export function RecoverScreen() {
     void actions.refreshStatus();
   }, [actions]);
 
-  async function handleCodeSubmit(event: FormEvent) {
+  async function handleCodeSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
@@ -252,7 +252,7 @@ export function RecoverScreen() {
     }
   }
 
-  async function handlePasswordSubmit(event: FormEvent) {
+  async function handlePasswordSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 

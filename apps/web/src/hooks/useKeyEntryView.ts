@@ -20,10 +20,10 @@ export function useKeyEntryView(): {
   view: KeyEntryView;
   setView(next: KeyEntryView): void;
 } {
-  const [view, setViewState] = useState<KeyEntryView>(readStoredView);
+  const [view, setView] = useState<KeyEntryView>(readStoredView);
 
-  const setView = useCallback((next: KeyEntryView) => {
-    setViewState(next);
+  const persistView = useCallback((next: KeyEntryView) => {
+    setView(next);
     try {
       localStorage.setItem(KEY_ENTRY_VIEW_STORAGE_KEY, next);
     } catch {
@@ -31,5 +31,5 @@ export function useKeyEntryView(): {
     }
   }, []);
 
-  return { view, setView };
+  return { view, setView: persistView };
 }

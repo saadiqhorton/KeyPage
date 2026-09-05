@@ -15,7 +15,7 @@ type Check = {
 function getChecks(password: string): Check[] {
   const hasLower = /[a-z]/.test(password);
   const hasUpper = /[A-Z]/.test(password);
-  const hasDigit = /[0-9]/.test(password);
+  const hasDigit = /\d/.test(password);
   const hasSymbol = /[^a-zA-Z0-9]/.test(password);
   const classCount = [hasLower, hasUpper, hasDigit, hasSymbol].filter(Boolean).length;
 
@@ -31,7 +31,7 @@ function getChecks(password: string): Check[] {
   ];
 }
 
-export function PasswordStrengthHint({ password, className }: PasswordStrengthHintProps) {
+export function PasswordStrengthHint({ password, className }: Readonly<PasswordStrengthHintProps>) {
   if (!password) return null;
 
   const checks = getChecks(password);

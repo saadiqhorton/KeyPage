@@ -11,7 +11,7 @@ const sizeClasses = {
   md: "size-5 border-2",
 };
 
-export function Spinner({ size = "md", className, label = "Loading" }: SpinnerProps) {
+export function Spinner({ size = "md", className, label = "Loading" }: Readonly<SpinnerProps>) {
   return (
     <output
       aria-label={label}

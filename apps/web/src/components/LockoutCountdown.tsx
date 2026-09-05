@@ -13,7 +13,7 @@ export function LockoutCountdown({
   retryAfterSeconds,
   onExpired,
   label = "Too many attempts. Try again in",
-}: LockoutCountdownProps) {
+}: Readonly<LockoutCountdownProps>) {
   const [remaining, setRemaining] = useState(() =>
     Math.max(0, Math.ceil(retryAfterSeconds)),
   );

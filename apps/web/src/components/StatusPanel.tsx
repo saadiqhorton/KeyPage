@@ -15,20 +15,29 @@ function formatFirstBoot(isoDate: string): string {
   }).format(new Date(isoDate));
 }
 
-export function StatusPanel({ health, entryCount = null }: Readonly<StatusPanelProps>) {
-  const statusLabel =
-    health.status === "loading"
-      ? "Checking API"
-      : health.status === "ok"
-        ? "API online"
-        : "API unreachable";
+function statusLabelFor(status: HealthState["status"]): string {
+  if (status === "loading") {
+    return "Checking API";
+  }
+  if (status === "ok") {
+    return "API online";
+  }
+  return "API unreachable";
+}
 
-  const statusTone =
-    health.status === "loading"
-      ? "bg-muted"
-      : health.status === "ok"
-        ? "bg-brass"
-        : "bg-danger";
+function statusToneFor(status: HealthState["status"]): string {
+  if (status === "loading") {
+    return "bg-muted";
+  }
+  if (status === "ok") {
+    return "bg-brass";
+  }
+  return "bg-danger";
+}
+
+export function StatusPanel({ health, entryCount = null }: Readonly<StatusPanelProps>) {
+  const statusLabel = statusLabelFor(health.status);
+  const statusTone = statusToneFor(health.status);
 
   return (
     <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-hairline pt-4 font-mono text-[11px] text-muted">

@@ -9,7 +9,7 @@ type AuthShellProps = {
   className?: string;
 };
 
-export function AuthShell({ chip, title, children, className }: AuthShellProps) {
+export function AuthShell({ chip, title, children, className }: Readonly<AuthShellProps>) {
   return (
     <main
       className={cn(

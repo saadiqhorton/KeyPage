@@ -4,7 +4,7 @@ type NoFilterMatchesStateProps = {
   onClearFilters(): void;
 };
 
-export function NoFilterMatchesState({ onClearFilters }: NoFilterMatchesStateProps) {
+export function NoFilterMatchesState({ onClearFilters }: Readonly<NoFilterMatchesStateProps>) {
   return (
     <section className="entrance-stagger flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
       <div className="flex max-w-md flex-col items-center gap-3">

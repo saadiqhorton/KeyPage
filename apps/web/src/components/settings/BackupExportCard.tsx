@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { type SubmitEvent, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
@@ -16,13 +16,13 @@ export function BackupExportCard({
   entryCount,
   busy,
   onExport,
-}: BackupExportCardProps) {
+}: Readonly<BackupExportCardProps>) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<ExportOutcome | null>(null);
   const disabled = entryCount === 0;
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSuccess(null);

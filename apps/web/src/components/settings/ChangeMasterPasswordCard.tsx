@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { type SubmitEvent, useState } from "react";
 
 import { MASTER_PASSWORD_MIN_LENGTH } from "@keypage/shared";
 
@@ -21,13 +21,13 @@ export function ChangeMasterPasswordCard({
   error,
   progress,
   onChangePassword,
-}: ChangeMasterPasswordCardProps) {
+}: Readonly<ChangeMasterPasswordCardProps>) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
 

@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useState } from "react";
+import { type SubmitEvent, useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AuthShell } from "@/components/AuthShell";
@@ -64,7 +64,7 @@ export function UnlockScreen() {
     void actions.refreshStatus();
   }, [actions]);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 

@@ -7,7 +7,7 @@ type RecoveryCodeGridProps = {
   className?: string;
 };
 
-export function RecoveryCodeGrid({ codes, className }: RecoveryCodeGridProps) {
+export function RecoveryCodeGrid({ codes, className }: Readonly<RecoveryCodeGridProps>) {
   return (
     <ol
       className={cn(
