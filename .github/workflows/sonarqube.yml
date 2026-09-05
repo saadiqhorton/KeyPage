@@ -19,19 +19,7 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - name: Run tests with native Node coverage
-        continue-on-error: true
-        run: |
-          mkdir -p coverage
-          (cd apps/api && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/api.lcov || true)
-          (cd apps/web && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.{ts,tsx}" > ../../coverage/web.lcov || true)
-          (cd packages/shared && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/shared.lcov || true)
-          node scripts/merge-sonar-lcov.mjs --out coverage/lcov.info \
-            apps/api:coverage/api.lcov \
-            apps/web:coverage/web.lcov \
-            packages/shared:coverage/shared.lcov
-          echo "SF paths in merged lcov:"
-          grep -c '^SF:' coverage/lcov.info || true
-          grep '^SF:' coverage/lcov.info | head -20 || true
+        run: bash scripts/run-sonar-coverage.sh
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7
         env:
