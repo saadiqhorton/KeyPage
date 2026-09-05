@@ -161,6 +161,13 @@ describe("useKeyEntryView", () => {
       getItem() {
         throw new Error("blocked");
       },
+      setItem() {},
+      removeItem() {},
+      clear() {},
+      key() {
+        return null;
+      },
+      length: 0,
     } as Storage;
     try {
       function Probe() {
