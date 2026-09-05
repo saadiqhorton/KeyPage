@@ -7,6 +7,11 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 mkdir -p coverage
 
+# API/web tests import @keypage/shared from dist. Turbo's `pnpm test` builds
+# that first; this script must too or CI records only the tests that don't
+# touch the workspace package (the 35-file Sonar lcov).
+pnpm --filter @keypage/shared build
+
 run_pkg() {
   local pkg="$1"
   local dest="$2"
