@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, posix } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const TEST_FILE = /\.test\.(?:[cm]?js|[cm]?ts|jsx|tsx)$/;
@@ -26,7 +26,14 @@ export function rewriteSfPath(sf, packageRoot) {
 }
 
 export function isCoverageSource(path) {
-  return !TEST_FILE.test(path);
+  const normalized = posix.normalize(path.replaceAll("\\", "/"));
+  if (normalized.split("/").includes("..")) {
+    return false;
+  }
+  if (normalized.includes("/dist/") || normalized.startsWith("dist/") || normalized === "dist") {
+    return false;
+  }
+  return !TEST_FILE.test(normalized);
 }
 
 export function mergeLcovReports(reports) {

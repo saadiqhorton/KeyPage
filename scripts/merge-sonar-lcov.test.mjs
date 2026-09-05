@@ -33,6 +33,11 @@ describe("isCoverageSource", () => {
   it("keeps production sources", () => {
     assert.equal(isCoverageSource("apps/api/src/auth/vault-repo.ts"), true);
   });
+
+  it("drops compiled workspace dist and parent-traversal coverage paths", () => {
+    assert.equal(isCoverageSource("apps/api/../../packages/shared/dist/app.js"), false);
+    assert.equal(isCoverageSource("packages/shared/dist/index.js"), false);
+  });
 });
 
 describe("mergeLcovReports", () => {
