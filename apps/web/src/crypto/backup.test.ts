@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   BACKUP_FORMAT_VERSION,
+  PBKDF2_FALLBACK_ITERATIONS,
   type BackupEntry,
   type BackupPayload,
   type KdfParams,
@@ -25,6 +26,20 @@ const FAST_KDF: KdfParams = {
   algorithm: "pbkdf2-sha256",
   saltB64: base64Encode(new Uint8Array(16).fill(7)),
   iterations: 1000,
+};
+
+const PRESET_KDF: KdfParams = {
+  algorithm: "pbkdf2-sha256",
+  saltB64: base64Encode(new Uint8Array(16).fill(7)),
+  iterations: PBKDF2_FALLBACK_ITERATIONS,
+};
+
+const ARGON2ID_PRESET_KDF: KdfParams = {
+  algorithm: "argon2id",
+  saltB64: base64Encode(new Uint8Array(16).fill(7)),
+  iterations: 3,
+  memoryKiB: 65536,
+  parallelism: 1,
 };
 
 function sampleEntry(overrides: Partial<BackupEntry> = {}): BackupEntry {
@@ -54,12 +69,26 @@ function samplePayload(
   };
 }
 
+function headerBase(kdf: KdfParams) {
+  return {
+    magic: "keypage-backup",
+    formatVersion: BACKUP_FORMAT_VERSION,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    kdf,
+    cipher: {
+      algorithm: "aes-256-gcm",
+      ivB64: base64Encode(new Uint8Array(12).fill(1)),
+      ciphertextB64: base64Encode(new Uint8Array(32).fill(2)),
+    },
+  };
+}
+
 describe("backup crypto", () => {
-  it("round-trips with FAST_KDF", async () => {
+  it("encrypts with FAST_KDF", async () => {
     const payload = samplePayload();
     const file = await encryptBackup("backup-password", payload, FAST_KDF);
-    const decrypted = await decryptBackup(file, "backup-password");
-    assert.deepEqual(decrypted, payload);
+    assert.equal(file.kdf.algorithm, "pbkdf2-sha256");
+    assert.equal(file.kdf.iterations, 1000);
   });
 
   it("round-trips with default pickKdfParams()", async () => {
@@ -73,7 +102,7 @@ describe("backup crypto", () => {
     const file = await encryptBackup(
       "correct-password",
       samplePayload(),
-      FAST_KDF,
+      PRESET_KDF,
     );
     await assert.rejects(
       () => decryptBackup(file, "wrong-password"),
@@ -92,7 +121,7 @@ describe("backup crypto", () => {
     const file = await encryptBackup(
       "backup-password",
       samplePayload(),
-      FAST_KDF,
+      PRESET_KDF,
     );
     const ciphertext = Buffer.from(file.cipher.ciphertextB64, "base64");
     ciphertext[0] ^= 0xff;
@@ -108,7 +137,7 @@ describe("backup crypto", () => {
     const file = await encryptBackup(
       "backup-password",
       samplePayload(),
-      FAST_KDF,
+      PRESET_KDF,
     );
     file.formatVersion = BACKUP_FORMAT_VERSION + 1;
 
@@ -123,24 +152,14 @@ describe("backup crypto", () => {
     const file = await encryptBackup(
       "backup-password",
       samplePayload([sampleEntry({ keyValue: secret })]),
-      FAST_KDF,
+      PRESET_KDF,
     );
     const text = serializeBackupFile(file);
     assert.equal(text.includes(secret), false);
   });
 
   it("rejects invalid backup file headers", () => {
-    const base = {
-      magic: "keypage-backup",
-      formatVersion: BACKUP_FORMAT_VERSION,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      kdf: FAST_KDF,
-      cipher: {
-        algorithm: "aes-256-gcm",
-        ivB64: base64Encode(new Uint8Array(12).fill(1)),
-        ciphertextB64: base64Encode(new Uint8Array(32).fill(2)),
-      },
-    };
+    const base = headerBase(PRESET_KDF);
 
     assert.throws(() => parseBackupFile("not json"), BackupFormatError);
     assert.throws(
@@ -164,14 +183,76 @@ describe("backup crypto", () => {
     );
   });
 
+  it("accepts both real export KDF presets", () => {
+    const base = headerBase(PRESET_KDF);
+    assert.doesNotThrow(() =>
+      parseBackupFile(JSON.stringify({ ...base, kdf: PRESET_KDF })),
+    );
+    assert.doesNotThrow(() =>
+      parseBackupFile(JSON.stringify({ ...base, kdf: ARGON2ID_PRESET_KDF })),
+    );
+  });
+
+  it("rejects attacker KDF headers that are not export presets", () => {
+    const base = headerBase(PRESET_KDF);
+    const attackerKdfs: KdfParams[] = [
+      { ...ARGON2ID_PRESET_KDF, memoryKiB: 262_144 },
+      { ...ARGON2ID_PRESET_KDF, memoryKiB: 131_072 },
+      { ...ARGON2ID_PRESET_KDF, iterations: 10 },
+      { ...ARGON2ID_PRESET_KDF, parallelism: 2 },
+      { ...PRESET_KDF, iterations: 2_000_000 },
+      { ...PRESET_KDF, iterations: 1_000 },
+    ];
+    for (const kdf of attackerKdfs) {
+      assert.throws(
+        () => parseBackupFile(JSON.stringify({ ...base, kdf })),
+        BackupFormatError,
+      );
+    }
+  });
+
+  it("rejects a mutated header before any derivation", async () => {
+    const file = await encryptBackup(
+      "backup-password",
+      samplePayload(),
+      PRESET_KDF,
+    );
+    file.kdf = {
+      ...ARGON2ID_PRESET_KDF,
+      memoryKiB: 262_144,
+      iterations: 10,
+    };
+
+    await assert.rejects(
+      () => decryptBackup(file, "backup-password"),
+      (error: unknown) => {
+        assert.ok(error instanceof BackupFormatError);
+        assert.ok(!(error instanceof BackupPasswordError));
+        return true;
+      },
+    );
+  });
+
+  it("rejects the wrong password on a real-preset file", async () => {
+    const file = await encryptBackup(
+      "correct-password",
+      samplePayload(),
+      PRESET_KDF,
+    );
+    await assert.rejects(
+      () => decryptBackup(file, "wrong-password"),
+      BackupPasswordError,
+    );
+  });
+
   it("rejects out-of-clamp KDF parameters", async () => {
     const file = await encryptBackup(
       "backup-password",
       samplePayload(),
-      FAST_KDF,
+      PRESET_KDF,
     );
     file.kdf = {
-      ...FAST_KDF,
+      ...PRESET_KDF,
       algorithm: "argon2id",
       memoryKiB: 4_194_304,
       parallelism: 1,

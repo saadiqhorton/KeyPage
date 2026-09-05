@@ -9,6 +9,7 @@ import {
   BACKUP_MAX_ENTRIES,
   DERIVED_KEY_BYTES,
   HKDF_INFO_BACKUP_KEY,
+  isExportedBackupKdf,
   KDF_SALT_BYTES,
   KeyEntryFieldError,
   normalizeDescription,
@@ -97,6 +98,20 @@ function validateKdfParams(kdf: KdfParams): void {
   }
 
   throw new BackupFormatError("Unsupported KDF algorithm");
+}
+
+/**
+ * Gate for the UNTRUSTED import path: same shape/sanity checks as
+ * `validateKdfParams`, then pins the header KDF to the exact presets KeyPage
+ * export has ever emitted so a hostile file cannot force heavy derivation.
+ */
+function validateImportedKdfParams(kdf: KdfParams): void {
+  validateKdfParams(kdf);
+  if (!isExportedBackupKdf(kdf)) {
+    throw new BackupFormatError(
+      "Backup KDF settings don't match a KeyPage export. Re-export the backup from KeyPage and try again.",
+    );
+  }
 }
 
 function parseKdfParams(value: unknown): KdfParams {
@@ -194,6 +209,7 @@ export function parseBackupFile(text: string): BackupFile {
   }
 
   const kdf = parseKdfParams(parsed.kdf);
+  validateImportedKdfParams(kdf);
   const cipher = parseCipherInput(parsed.cipher);
 
   return {
@@ -403,7 +419,7 @@ export async function decryptBackup(
   file: BackupFile,
   password: string,
 ): Promise<BackupPayload> {
-  validateKdfParams(file.kdf);
+  validateImportedKdfParams(file.kdf);
 
   const key = await deriveBackupKey(password, file.kdf);
   const iv = base64Decode(file.cipher.ivB64);

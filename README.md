@@ -107,7 +107,7 @@ sudo chown -R 1000:1000 ./data
 ### Backups
 
 - **Volume copy** — Stop the container (or copy while running at your own risk) and back up the entire `./data` directory. Restoring is the reverse: place files back and start the container.
-- **Encrypted export** — In Settings, export a `keypage-backup` JSON file encrypted with your Master Password. Safer for off-box storage; use Import on another instance or after a fresh install to merge entries.
+- **Encrypted export** — In Settings, export a `keypage-backup` JSON file encrypted with your Master Password. Safer for off-box storage; use Import on another instance or after a fresh install to merge entries. Import only accepts files exported by KeyPage with unmodified KDF settings.
 
 ### Updates
 
