@@ -25,8 +25,13 @@ jobs:
           (cd apps/api && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/api.lcov || true)
           (cd apps/web && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.{ts,tsx}" > ../../coverage/web.lcov || true)
           (cd packages/shared && node --import tsx --test --experimental-test-coverage --test-reporter=lcov "src/**/*.test.ts" > ../../coverage/shared.lcov || true)
-          cat coverage/api.lcov coverage/web.lcov coverage/shared.lcov > coverage/lcov.info || true
-          ls -la coverage
+          node scripts/merge-sonar-lcov.mjs --out coverage/lcov.info \
+            apps/api:coverage/api.lcov \
+            apps/web:coverage/web.lcov \
+            packages/shared:coverage/shared.lcov
+          echo "SF paths in merged lcov:"
+          grep -c '^SF:' coverage/lcov.info || true
+          grep '^SF:' coverage/lcov.info | head -20 || true
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7
         env:
@@ -37,4 +42,7 @@ jobs:
             -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.sources=apps,packages
-            -Dsonar.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js,**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
+            -Dsonar.tests=apps,packages
+            -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
+            -Dsonar.coverage.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
