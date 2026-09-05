@@ -11,8 +11,10 @@ const valid32 = Buffer.alloc(32, 9).toString("base64");
 
 describe("validateAuthKeyB64 / validateClientProofB64", () => {
   it("accepts standard base64 that decodes to 32 bytes", () => {
-    validateAuthKeyB64(valid32);
-    validateClientProofB64(valid32, "clientProofB64");
+    assert.doesNotThrow(() => validateAuthKeyB64(valid32));
+    assert.doesNotThrow(() =>
+      validateClientProofB64(valid32, "clientProofB64"),
+    );
   });
 
   it("rejects non-base64 and URL-safe base64", () => {

@@ -86,11 +86,13 @@ describe("key entry validate", () => {
   });
 
   it("accepts a well-formed client cipher", () => {
-    validateCipherInput({ ...validPayload(), keyVersion: 3 });
+    assert.doesNotThrow(() =>
+      validateCipherInput({ ...validPayload(), keyVersion: 3 }),
+    );
   });
 
   it("accepts a rotation payload that carries no key version", () => {
-    validateCipherPayload(validPayload());
+    assert.doesNotThrow(() => validateCipherPayload(validPayload()));
   });
 
   it("rejects unknown serviceId", () => {
