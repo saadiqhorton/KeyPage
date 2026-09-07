@@ -38,6 +38,14 @@ Settings — Master Password, recovery codes, session timeout, and encrypted bac
 
 ![Settings](docs/images/settings.png)
 
+## Requirements
+
+The one-shot / Docker path needs **Git** and **Docker** (Compose v2) on the host — see [Quick start](#quick-start-docker).
+
+Practical floor (not a hard guarantee): about **1 vCPU** and **~1 GB RAM** free for a comfortable VM (512 MB–1 GB for the container; 256 MB is too tight), plus a few hundred MB of disk for the image and `./data`.
+
+Do **not** publish port `:9090` to the open internet. KeyPage does not terminate TLS. For remote access use a Tunnel or reverse proxy (HTTPS).
+
 ## Quick start (Docker)
 
 One-shot install (clones into `~/keypage`, builds, and starts):
