@@ -76,6 +76,16 @@ describe("Docker slim runtime packaging", () => {
       /pnpm deploy --filter=@keypage\/api --prod \S+/,
       "runtime deps must come from pnpm deploy --prod",
     );
+    assert.match(
+      dockerfile,
+      /COPY --from=deploy \/out\/api \/app/,
+      "runtime must copy only the deploy directory, not the build workspace",
+    );
+    assert.doesNotMatch(
+      dockerfile,
+      /COPY --from=build \/app\/? \/app/,
+      "copying /app from build reintroduces the fat workspace",
+    );
   });
 
   it("copies the built web UI to the KEYPAGE_WEB_DIR contract path", () => {
@@ -84,7 +94,7 @@ describe("Docker slim runtime packaging", () => {
     assert.match(
       dockerfile,
       new RegExp(
-        `COPY --from=\\S+ ${DOCKER_WEB_DIR.replace(/\//g, "\\/")} ${DOCKER_WEB_DIR.replace(/\//g, "\\/")}`,
+        `COPY --from=build ${DOCKER_WEB_DIR.replace(/\//g, "\\/")} ${DOCKER_WEB_DIR.replace(/\//g, "\\/")}`,
       ),
     );
   });
