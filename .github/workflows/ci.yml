@@ -1,0 +1,60 @@
+# KeyPage CI (SAA-213)
+# Runs alongside .github/workflows/sonarqube.yml — do not replace that scan.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: typecheck
+        run: pnpm typecheck
+      - name: test
+        run: pnpm test
+      - name: build
+        run: pnpm build
+
+  docker-smoke:
+    name: docker compose smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prepare .env from example
+        run: cp .env.example .env
+      - name: Build and start stack
+        env:
+          DOCKER_BUILDKIT: "0"
+          COMPOSE_DOCKER_CLI_BUILD: "0"
+          COMPOSE_BAKE: "false"
+        run: docker compose up -d --build
+      - name: Assert health and setup UI
+        run: bash scripts/ci-docker-smoke.sh
+      - name: Compose status on failure
+        if: failure()
+        run: |
+          # Do not dump `docker compose logs`: first-boot prints the setup token to stdout.
+          docker compose ps
+      - name: Tear down
+        if: always()
+        run: docker compose down
