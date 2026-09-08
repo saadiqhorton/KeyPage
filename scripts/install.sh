@@ -203,10 +203,10 @@ else
 fi
 
 if [[ -r data/setup-token ]]; then
-  say "Setup token: $(cat data/setup-token)"
-  note "Paste it on the setup screen. Also at ${KEYPAGE_DIR}/data/setup-token"
+  say "Setup token file: ${KEYPAGE_DIR}/data/setup-token (mode 0600)"
+  note "Paste that file's contents on the setup screen. It is not printed to container logs."
 else
-  note "Setup token is in the container log: cd ${KEYPAGE_DIR} && docker compose logs keypage"
+  note "Setup token will be at ${KEYPAGE_DIR}/data/setup-token after first boot (mode 0600)."
 fi
 
 # ── 5. Open app ───────────────────────────────────────────────────────────

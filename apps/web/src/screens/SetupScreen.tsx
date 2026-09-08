@@ -85,7 +85,7 @@ export function SetupScreen() {
             value={setupToken}
             onChange={(e) => setSetupToken(e.target.value)}
             disabled={working}
-            hint="Printed in the server log the first time KeyPage starts. Docker: `docker compose logs keypage | grep -A4 'setup token'`, or `cat ./data/setup-token`."
+            hint="Written to ./data/setup-token (mode 0600) on first boot. Docker: `cat ./data/setup-token` or `docker compose exec keypage cat /app/data/setup-token`."
             error={setupTokenError ?? undefined}
           />
           <PasswordField

@@ -17,6 +17,45 @@ const ENV_KEYS = [
   "KEYPAGE_SESSION_IDLE_MINUTES",
 ] as const;
 
+async function captureStdio<T>(fn: () => Promise<T>): Promise<{ result: T; output: string }> {
+  const chunks: string[] = [];
+  const origLog = console.log;
+  const origWarn = console.warn;
+  const origError = console.error;
+  const origInfo = console.info;
+  const origStdout = process.stdout.write.bind(process.stdout);
+  const origStderr = process.stderr.write.bind(process.stderr);
+
+  const collectArgs = (...args: unknown[]) => {
+    chunks.push(args.map(String).join(" "));
+  };
+  const wrapWrite =
+    (orig: typeof process.stdout.write): typeof process.stdout.write =>
+    ((chunk: unknown, ...rest: unknown[]) => {
+      chunks.push(typeof chunk === "string" ? chunk : String(chunk));
+      return orig(chunk as never, ...(rest as never[]));
+    }) as typeof process.stdout.write;
+
+  console.log = collectArgs;
+  console.warn = collectArgs;
+  console.error = collectArgs;
+  console.info = collectArgs;
+  process.stdout.write = wrapWrite(origStdout);
+  process.stderr.write = wrapWrite(origStderr);
+
+  try {
+    const result = await fn();
+    return { result, output: chunks.join("\n") };
+  } finally {
+    console.log = origLog;
+    console.warn = origWarn;
+    console.error = origError;
+    console.info = origInfo;
+    process.stdout.write = origStdout;
+    process.stderr.write = origStderr;
+  }
+}
+
 describe("bootstrapApp", () => {
   const tempDirs: string[] = [];
   const original: Record<string, string | undefined> = {};
@@ -72,6 +111,29 @@ describe("bootstrapApp", () => {
         await fs.readFile(path.join(dataDir, "instance.json"), "utf8"),
       ) as { schemaVersion: number };
       assert.equal(instance.schemaVersion, 1);
+    } finally {
+      await app.close();
+      closeDatabase(db);
+    }
+  });
+
+  it("does not write the setup token to console or stdio (SAA-217)", async () => {
+    snapshotEnv();
+    const dataDir = await makeTempDir();
+    process.env.KEYPAGE_DATA_DIR = dataDir;
+    process.env.KEYPAGE_WEB_DIR = path.join(dataDir, "no-web");
+    process.env.LOG_LEVEL = "silent";
+    delete process.env.KEYPAGE_SESSION_IDLE_MINUTES;
+
+    const { result, output } = await captureStdio(() => bootstrapApp(loadConfig()));
+    const { app, db } = result;
+    try {
+      const tokenFile = path.join(dataDir, "setup-token");
+      const token = (await fs.readFile(tokenFile, "utf8")).trim();
+      assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(output.includes(token), false, "plaintext setup token must not appear in logs");
+      assert.match(output, /setup-token/);
+      assert.match(output, new RegExp(tokenFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     } finally {
       await app.close();
       closeDatabase(db);

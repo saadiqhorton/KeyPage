@@ -53,7 +53,7 @@ jobs:
       - name: Compose status on failure
         if: failure()
         run: |
-          # Do not dump `docker compose logs`: first-boot prints the setup token to stdout.
+          # Do not dump `docker compose logs` on failure (avoid shipping runtime secrets).
           docker compose ps
       - name: Tear down
         if: always()

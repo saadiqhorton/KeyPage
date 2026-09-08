@@ -45,13 +45,12 @@ export async function bootstrapApp(
 
   if (setupGate.token) {
     console.log(`────────────────────────────────────────────────────────────────
-  KeyPage first-boot setup token
+  KeyPage first-boot setup token is ready.
 
-    ${setupGate.token}
-
+  Read it from: ${setupGate.filePath}
+  (mode 0600; host path is <KEYPAGE_DATA_DIR>/setup-token)
   Paste it on the setup screen to claim this vault.
-  Also readable at: ${setupGate.filePath}
-  Anyone who can reach this server but cannot read this token
+  Anyone who can reach this server but cannot read this file
   cannot claim the vault.
 ────────────────────────────────────────────────────────────────`);
   }
