@@ -50,9 +50,11 @@ jobs:
         run: docker compose up -d --build
       - name: Assert health and setup UI
         run: bash scripts/ci-docker-smoke.sh
-      - name: Compose logs
+      - name: Compose status on failure
         if: failure()
-        run: docker compose logs
+        run: |
+          # Do not dump `docker compose logs`: first-boot prints the setup token to stdout.
+          docker compose ps
       - name: Tear down
         if: always()
         run: docker compose down
