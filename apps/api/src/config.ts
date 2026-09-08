@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  DEFAULT_LISTEN_PORT,
   DEFAULT_SESSION_IDLE_MINUTES,
   LOGIN_LOCKOUT_SECONDS,
   LOGIN_MAX_ATTEMPTS,
@@ -38,7 +39,7 @@ function readPositiveIntEnv(name: string, fallback: number): number {
 
 export function loadConfig() {
   return {
-    port: Number(process.env.PORT ?? 9090),
+    port: Number(process.env.PORT ?? DEFAULT_LISTEN_PORT),
     host: process.env.HOST ?? "0.0.0.0",
     dataDir: path.resolve(process.env.KEYPAGE_DATA_DIR ?? "./data"),
     webDir: path.resolve(

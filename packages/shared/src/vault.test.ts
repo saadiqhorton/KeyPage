@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   AES_GCM_IV_BYTES,
+  AES_GCM_TAG_BYTES,
   ARGON2ID_RECOVERY_PARAMS,
   ARGON2ID_VAULT_PARAMS,
   AUTH_VERIFIER_PROOF_V1,
@@ -46,6 +47,7 @@ describe("vault constants", () => {
     assert.equal(KDF_SALT_BYTES, 16);
     assert.equal(DERIVED_KEY_BYTES, 32);
     assert.equal(AES_GCM_IV_BYTES, 12);
+    assert.equal(AES_GCM_TAG_BYTES, 16);
   });
 
   it("exports HKDF info strings and AAD prefixes", () => {

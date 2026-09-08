@@ -3,6 +3,9 @@ import type { FastifyRequest } from "fastify";
 
 import {
   base64Decode,
+  KEY_WRITE_CHALLENGE_HEADER,
+  KEY_WRITE_NONCE_HEADER,
+  KEY_WRITE_PROOF_HEADER,
   keyEntryWriteAuthMessage,
   verifyClientProof,
 } from "@keypage/shared";
@@ -11,9 +14,11 @@ import { consumeLoginChallenge } from "../auth/login-challenges.js";
 import { getVaultAuth } from "../auth/vault-repo.js";
 import { HttpUnauthenticated } from "../errors.js";
 
-export const KEY_WRITE_CHALLENGE_HEADER = "x-keypage-write-challenge";
-export const KEY_WRITE_NONCE_HEADER = "x-keypage-write-nonce";
-export const KEY_WRITE_PROOF_HEADER = "x-keypage-write-proof";
+export {
+  KEY_WRITE_CHALLENGE_HEADER,
+  KEY_WRITE_NONCE_HEADER,
+  KEY_WRITE_PROOF_HEADER,
+};
 
 /** Uniform 401 message — do not distinguish missing vs invalid proof components. */
 const PROOF_FAILURE_MESSAGE = "Invalid or expired key possession proof";

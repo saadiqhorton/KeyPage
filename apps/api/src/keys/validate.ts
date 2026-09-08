@@ -1,5 +1,6 @@
 import {
   AES_GCM_IV_BYTES,
+  AES_GCM_TAG_BYTES,
   KEY_ENTRY_CIPHERTEXT_B64_MAX,
   KeyEntryFieldError,
   normalizeDescription as sharedNormalizeDescription,
@@ -18,8 +19,7 @@ import { HttpInvalidRequest } from "../errors.js";
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const GCM_TAG_BYTES = 16;
-const MIN_CIPHERTEXT_BYTES = 1 + GCM_TAG_BYTES;
+const MIN_CIPHERTEXT_BYTES = 1 + AES_GCM_TAG_BYTES;
 
 function withFieldHttpError<T>(fn: () => T): T {
   try {

@@ -11,10 +11,9 @@ import {
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Spinner } from "@/components/ui/Spinner";
 import { TextField } from "@/components/ui/TextField";
+import { MASTER_PASSWORD_MIN_LENGTH } from "@keypage/shared";
 import { ApiError } from "@/lib/api.js";
 import { useVault } from "@/vault/useVault";
-
-const MIN_PASSWORD_LENGTH = 12;
 
 const SETUP_STEPS = [
   "Create Master Password",
@@ -49,8 +48,8 @@ export function SetupScreen() {
     setError(null);
     setSetupTokenError(null);
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Master Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    if (password.length < MASTER_PASSWORD_MIN_LENGTH) {
+      setError(`Master Password must be at least ${MASTER_PASSWORD_MIN_LENGTH} characters.`);
       return;
     }
     if (password !== confirm) {

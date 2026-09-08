@@ -1,5 +1,6 @@
 import {
   AES_GCM_IV_BYTES,
+  AES_GCM_TAG_BYTES,
   DERIVED_KEY_BYTES,
   KDF_SALT_BYTES,
   RECOVERY_CODE_COUNT,
@@ -11,7 +12,7 @@ import { HttpInvalidRequest } from "../errors.js";
 
 const LOOKUP_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const WRAPPED_MASTER_KEY_BYTES =
-  AES_GCM_IV_BYTES + DERIVED_KEY_BYTES + 16;
+  AES_GCM_IV_BYTES + DERIVED_KEY_BYTES + AES_GCM_TAG_BYTES;
 
 const KDF_BOUNDS = {
   argon2id: {

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
+import { API_BASE } from "@keypage/shared";
 import Fastify, { type FastifyError } from "fastify";
 import type Database from "better-sqlite3";
 
@@ -78,18 +79,18 @@ export async function buildServer(options: BuildServerOptions) {
   });
 
   await app.register(vaultRoutes, {
-    prefix: "/api/vault",
+    prefix: `${API_BASE}/vault`,
     db: options.db,
     setupGate: options.setupGate,
   });
 
   await app.register(keyEntryRoutes, {
-    prefix: "/api/keys",
+    prefix: `${API_BASE}/keys`,
     db: options.db,
   });
 
   await app.register(settingsRoutes, {
-    prefix: "/api/settings",
+    prefix: `${API_BASE}/settings`,
     db: options.db,
   });
 
@@ -103,7 +104,7 @@ export async function buildServer(options: BuildServerOptions) {
   }
 
   app.setNotFoundHandler(async (request, reply) => {
-    if (request.url.startsWith("/api/")) {
+    if (request.url.startsWith(`${API_BASE}/`)) {
       return reply.status(404).send({ error: "Not Found" });
     }
 

@@ -14,13 +14,12 @@ import { TextField } from "@/components/ui/TextField";
 import { ApiError } from "@/lib/api.js";
 import { formatRecoveryCodeInput } from "@/lib/format.js";
 import {
+  MASTER_PASSWORD_MIN_LENGTH,
   normalizeRecoveryCode,
   RECOVERY_CODE_COUNT,
   type LockoutState,
 } from "@keypage/shared";
 import { useVault, type VaultState } from "@/vault/useVault";
-
-const MIN_PASSWORD_LENGTH = 12;
 
 export function formatRecoveryError(error: ApiError): string {
   if (
@@ -256,8 +255,8 @@ export function RecoverScreen() {
     event.preventDefault();
     setError(null);
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Master Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    if (password.length < MASTER_PASSWORD_MIN_LENGTH) {
+      setError(`Master Password must be at least ${MASTER_PASSWORD_MIN_LENGTH} characters.`);
       return;
     }
     if (password !== confirm) {

@@ -1,5 +1,6 @@
 import {
   AES_GCM_IV_BYTES,
+  AES_GCM_TAG_BYTES,
   ARGON2ID_RECOVERY_PARAMS,
   DERIVED_KEY_BYTES,
   KDF_SALT_BYTES,
@@ -24,7 +25,8 @@ import {
 } from "./provider.js";
 
 const RECOVERY_CODE_BYTES = 20;
-const WRAPPED_MASTER_KEY_BYTES = AES_GCM_IV_BYTES + DERIVED_KEY_BYTES + 16;
+const WRAPPED_MASTER_KEY_BYTES =
+  AES_GCM_IV_BYTES + DERIVED_KEY_BYTES + AES_GCM_TAG_BYTES;
 
 export function generateRecoveryCode(): string {
   const bytes = randomBytes(RECOVERY_CODE_BYTES);
