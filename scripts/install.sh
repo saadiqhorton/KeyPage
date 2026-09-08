@@ -168,6 +168,15 @@ else
   ok ".env already present"
 fi
 
+# Simplified image layout no longer copies the UI to /app/web.
+# Rewrite only that dead sentinel so a re-run heals an existing .env.
+if grep -qx 'KEYPAGE_WEB_DIR=/app/web' .env; then
+  tmp="$(mktemp)"
+  sed 's|^KEYPAGE_WEB_DIR=/app/web$|KEYPAGE_WEB_DIR=/app/apps/web/dist|' .env > "${tmp}"
+  mv "${tmp}" .env
+  ok "updated stale KEYPAGE_WEB_DIR=/app/web → /app/apps/web/dist"
+fi
+
 mkdir -p data
 ok "./data ready (SQLite bind mount)"
 

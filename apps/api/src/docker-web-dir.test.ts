@@ -31,4 +31,19 @@ describe("Docker KEYPAGE_WEB_DIR packaging", () => {
       "install.sh copies .env.example to .env; compose env_file overrides image ENV",
     );
   });
+
+  it("rewrites a leftover KEYPAGE_WEB_DIR=/app/web sentinel in existing .env", () => {
+    const install = fs.readFileSync(path.join(repoRoot, "scripts/install.sh"), "utf8");
+
+    assert.match(
+      install,
+      /KEYPAGE_WEB_DIR=\/app\/web/,
+      "installer must detect the pre-simplify path that no longer exists in the image",
+    );
+    assert.match(
+      install,
+      /s\|\\?\^?KEYPAGE_WEB_DIR=\/app\/web\$?\|KEYPAGE_WEB_DIR=\/app\/apps\/web\/dist\|/,
+      "installer must rewrite only that sentinel to the image layout",
+    );
+  });
 });
