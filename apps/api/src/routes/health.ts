@@ -1,7 +1,7 @@
 import { APP_NAME, type HealthResponse } from "@keypage/shared";
 import type { FastifyPluginAsync } from "fastify";
 
-import { readAppVersion } from "../app-version.js";
+import { APP_PACKAGE_VERSION } from "../app-version.js";
 import type { InstanceRecord } from "../data-dir.js";
 
 export type HealthRouteOptions = {
@@ -16,7 +16,7 @@ export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (
   app.get("/api/health", async (): Promise<HealthResponse> => ({
     status: "ok",
     app: APP_NAME,
-    version: readAppVersion(),
+    version: APP_PACKAGE_VERSION,
     dataDir: options.dataDir,
     firstBootAt: options.instance.firstBootAt,
   }));

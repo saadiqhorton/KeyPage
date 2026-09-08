@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
-import { readAppVersion } from "./app-version.js";
+import { APP_PACKAGE_VERSION, readAppVersion } from "./app-version.js";
 
 const apiPackageJsonPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -23,6 +23,7 @@ function versionFromApiPackageJson(): string {
 describe("readAppVersion", () => {
   it("returns the version field from @keypage/api package.json", () => {
     const fromPackage = versionFromApiPackageJson();
-    assert.equal(readAppVersion(), fromPackage);
+    assert.equal(APP_PACKAGE_VERSION, fromPackage);
+    assert.equal(readAppVersion(), APP_PACKAGE_VERSION);
   });
 });

@@ -7,7 +7,7 @@ const packageRoot = path.resolve(
   "..",
 );
 
-export function readAppVersion(): string {
+function loadAppVersion(): string {
   const pkgPath = path.join(packageRoot, "package.json");
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as {
     version?: unknown;
@@ -16,4 +16,11 @@ export function readAppVersion(): string {
     throw new Error(`Missing version in ${pkgPath}`);
   }
   return pkg.version;
+}
+
+/** Release version from @keypage/api package.json, loaded once at process start. */
+export const APP_PACKAGE_VERSION = loadAppVersion();
+
+export function readAppVersion(): string {
+  return APP_PACKAGE_VERSION;
 }
