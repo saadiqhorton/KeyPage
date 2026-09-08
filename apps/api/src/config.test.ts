@@ -64,7 +64,7 @@ describe("loadConfig", () => {
 
   it("reads positive ints, bools, and paths from env", () => {
     snapshotEnv();
-    process.env.PORT = String(DEFAULT_LISTEN_PORT);
+    process.env.PORT = "8088";
     process.env.HOST = "127.0.0.1";
     process.env.KEYPAGE_DATA_DIR = "/tmp/keypage-config-data";
     process.env.KEYPAGE_WEB_DIR = "/tmp/keypage-config-web";
@@ -77,7 +77,7 @@ describe("loadConfig", () => {
 
     const cfg = loadConfig();
 
-    assert.equal(cfg.port, DEFAULT_LISTEN_PORT);
+    assert.equal(cfg.port, 8088);
     assert.equal(cfg.host, "127.0.0.1");
     assert.equal(cfg.dataDir, path.resolve("/tmp/keypage-config-data"));
     assert.equal(cfg.webDir, path.resolve("/tmp/keypage-config-web"));

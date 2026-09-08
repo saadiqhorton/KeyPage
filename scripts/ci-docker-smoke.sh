@@ -12,7 +12,7 @@ set -euo pipefail
 # Keep in sync with DEFAULT_LISTEN_PORT / HEALTH_STATUS_OK in packages/shared
 DEFAULT_LISTEN_PORT=9090
 HEALTH_STATUS_OK=ok
-APP_URL="${APP_URL:-http://127.0.0.1:${PORT:-$DEFAULT_LISTEN_PORT}}"
+APP_URL="${APP_URL:-http://127.0.0.1:${DEFAULT_LISTEN_PORT}}"
 HEALTH_URL="${APP_URL}/api/health"
 MISSING_UI="Web UI is not built yet"
 ATTEMPTS="${SMOKE_ATTEMPTS:-60}"
@@ -32,7 +32,7 @@ for _ in $(seq 1 "${ATTEMPTS}"); do
 done
 
 if [[ "${healthy}" -ne 1 ]]; then
-  echo "FAIL: GET /api/health did not return status ok" >&2
+  echo "FAIL: GET /api/health did not return status ${HEALTH_STATUS_OK}" >&2
   printf '%s\n' "${health_body}" >&2
   exit 1
 fi

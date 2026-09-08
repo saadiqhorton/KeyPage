@@ -70,7 +70,7 @@ Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN
 | Piece | Detail |
 |-------|--------|
 | Image | Builds the `keypage` image from the repo `Dockerfile` (Node 22, API + built web UI) |
-| Port | Maps host `$PORT` → container `$PORT` (default **9090**, same as `DEFAULT_LISTEN_PORT`) |
+| Port | Maps host `9090` → container `9090` (same as `DEFAULT_LISTEN_PORT`) |
 | Data | Bind-mounts `./data` → `/app/data` (SQLite and runtime state) |
 | Restart | `unless-stopped` |
 | Config | Optional `.env` at the repo root (see [Environment variables](#environment-variables)); compose loads it when present |

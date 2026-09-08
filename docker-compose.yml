@@ -6,8 +6,8 @@ services:
     build: .
     container_name: keypage
     ports:
-      # Fallback matches DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
-      - "${PORT:-9090}:${PORT:-9090}"
+      # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
+      - "9090:9090"
     volumes:
       - ./data:/app/data
     restart: unless-stopped

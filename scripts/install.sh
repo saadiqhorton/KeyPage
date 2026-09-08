@@ -182,16 +182,6 @@ fi
 mkdir -p data
 ok "./data ready (SQLite bind mount)"
 
-listen_port="${DEFAULT_LISTEN_PORT}"
-if [[ -f .env ]]; then
-  env_port="$(grep -E '^PORT=' .env | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)"
-  if [[ "${env_port}" =~ ^[0-9]+$ ]]; then
-    listen_port="${env_port}"
-  fi
-fi
-APP_URL="http://127.0.0.1:${listen_port}"
-HEALTH_URL="${APP_URL}/api/health"
-
 # ── 4. Build & start ──────────────────────────────────────────────────────
 stage "Build and start container"
 

@@ -1,6 +1,7 @@
 import { API_BASE, HEALTH_STATUS_OK, type HealthResponse } from "@keypage/shared";
 import { useEffect, useState } from "react";
 
+/** Client fetch machine. `"ok"` matches HEALTH_STATUS_OK; loading/error are UI-only. */
 export type HealthState =
   | { status: "loading" }
   | { status: typeof HEALTH_STATUS_OK; data: HealthResponse }

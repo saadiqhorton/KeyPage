@@ -40,13 +40,16 @@ describe("app constants", () => {
     );
     assert.match(
       compose,
-      new RegExp(
-        `\\$\\{PORT:-${DEFAULT_LISTEN_PORT}\\}:\\$\\{PORT:-${DEFAULT_LISTEN_PORT}\\}`,
-      ),
+      new RegExp(`["']${DEFAULT_LISTEN_PORT}:${DEFAULT_LISTEN_PORT}["']`),
     );
 
     const dockerfile = fs.readFileSync(path.join(repoRoot, "Dockerfile"), "utf8");
     assert.match(dockerfile, new RegExp(`\\bPORT=${DEFAULT_LISTEN_PORT}\\b`));
+    assert.match(
+      dockerfile,
+      new RegExp(`\\bHOST=${DEFAULT_LISTEN_HOST.replaceAll(".", "\\.")}\\b`),
+    );
+    assert.match(dockerfile, /EXPOSE \$\{PORT\}/);
 
     const install = fs.readFileSync(
       path.join(repoRoot, "scripts/install.sh"),

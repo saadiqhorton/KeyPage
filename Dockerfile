@@ -24,12 +24,13 @@ COPY --from=deploy /out/api /app
 COPY --from=build /app/apps/web/dist /app/apps/web/dist
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/data && chown node:node /app/data
-# PORT default matches DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
+# PORT/HOST defaults match DEFAULT_LISTEN_PORT / DEFAULT_LISTEN_HOST
+# in packages/shared/src/app.ts
 ENV KEYPAGE_DATA_DIR=/app/data \
     KEYPAGE_WEB_DIR=/app/apps/web/dist \
     PORT=9090 \
     HOST=0.0.0.0
-EXPOSE 9090
+EXPOSE ${PORT}
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["docker-entrypoint.sh"]
