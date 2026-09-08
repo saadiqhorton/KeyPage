@@ -15,15 +15,15 @@ COPY . .
 RUN pnpm build
 
 FROM build AS deploy
-RUN pnpm deploy --filter=@keypage/api --prod --legacy /out/api
+RUN pnpm deploy --filter=@keypage/api --prod /out/api
 
 FROM node:22-alpine AS runtime
 RUN apk add --no-cache su-exec
 WORKDIR /app
 COPY --from=deploy /out/api /app
 COPY --from=build /app/apps/web/dist /app/web
-COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN mkdir -p /app/data && chown -R node:node /app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/data && chown -R node:node /app
 EXPOSE 9090
 ENV KEYPAGE_DATA_DIR=/app/data \
     KEYPAGE_WEB_DIR=/app/web \
