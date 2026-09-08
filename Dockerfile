@@ -14,22 +14,18 @@ FROM deps AS build
 COPY . .
 RUN pnpm build
 
-FROM build AS deploy
-RUN pnpm deploy --filter=@keypage/api --prod /out/api
-
-FROM node:22-alpine AS runtime
+FROM build AS runtime
 RUN apk add --no-cache su-exec
+
 WORKDIR /app
-COPY --from=deploy /out/api /app
-COPY --from=build /app/apps/web/dist /app/web
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod 755 /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/data && chown -R node:node /app
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/data && chown node:node /app/data
 EXPOSE 9090
 ENV KEYPAGE_DATA_DIR=/app/data \
-    KEYPAGE_WEB_DIR=/app/web \
+    KEYPAGE_WEB_DIR=/app/apps/web/dist \
     PORT=9090 \
     HOST=0.0.0.0
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:9090/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["node", "dist/main.js"]
+CMD ["node", "apps/api/dist/main.js"]
