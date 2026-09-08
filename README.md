@@ -156,7 +156,7 @@ Copy `.env.example` to `.env` and adjust as needed. Compose loads `.env` when pr
 | `PORT` | `9090` | HTTP listen port |
 | `HOST` | `0.0.0.0` | Bind address |
 | `KEYPAGE_DATA_DIR` | `./data` (local); `/app/data` (Docker image) | Persistent data directory (SQLite, etc.) |
-| `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package); `/app/web` (Docker image) | Path to the built web UI served as static files |
+| `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package); `/app/apps/web/dist` (Docker image) | Path to the built web UI served as static files |
 | `LOG_LEVEL` | `info` | Fastify log level |
 | `KEYPAGE_TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy that sets `X-Forwarded-Proto` / `X-Forwarded-Host` |
 | `KEYPAGE_SESSION_IDLE_MINUTES` | *(unset)* | Lock the vault after this many minutes without activity (valid range 15–30; Settings options are 15, 20, 25, 30). When set, pins the timeout: the Settings control becomes read-only and `PATCH /api/settings` is rejected. Leave unset to manage timeout from Settings |
