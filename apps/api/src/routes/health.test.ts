@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import Fastify, { type FastifyInstance } from "fastify";
 
-import { APP_NAME, APP_VERSION } from "@keypage/shared";
+import { APP_NAME } from "@keypage/shared";
 
 import { healthRoutes } from "./health.js";
 
@@ -33,7 +33,7 @@ describe("GET /api/health", () => {
     assert.deepEqual(response.json(), {
       status: "ok",
       app: APP_NAME,
-      version: APP_VERSION,
+      version: "1.0.0",
       dataDir: DATA_DIR,
       firstBootAt: FIRST_BOOT_AT,
     });

@@ -9,7 +9,7 @@ const okHealth = {
   data: {
     status: "ok" as const,
     app: "KeyPage",
-    version: "0.1.0",
+    version: "1.0.0",
     dataDir: "/tmp/keypage",
     firstBootAt: "2026-01-01T00:00:00.000Z",
   },
