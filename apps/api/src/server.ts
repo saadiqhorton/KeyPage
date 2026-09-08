@@ -26,6 +26,16 @@ type BuildServerOptions = {
   setupGate: SetupGate;
 };
 
+/** Pino/Fastify paths that must never appear in request or application logs. */
+export const LOGGER_REDACT_PATHS = [
+  "req.headers.cookie",
+  "res.headers['set-cookie']",
+  "req.headers.authorization",
+  "setupToken",
+  "req.body.setupToken",
+  "body.setupToken",
+] as const;
+
 async function webDirExists(webDir: string): Promise<boolean> {
   try {
     const stat = await fs.stat(webDir);
@@ -39,11 +49,7 @@ export async function buildServer(options: BuildServerOptions) {
   const app = Fastify({
     logger: {
       level: options.logLevel,
-      redact: [
-        "req.headers.cookie",
-        "res.headers['set-cookie']",
-        "req.headers.authorization",
-      ],
+      redact: [...LOGGER_REDACT_PATHS],
     },
     trustProxy: config.trustProxy,
   });
