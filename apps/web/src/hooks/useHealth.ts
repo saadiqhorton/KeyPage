@@ -1,9 +1,9 @@
-import { API_BASE, type HealthResponse } from "@keypage/shared";
+import { API_BASE, HEALTH_STATUS_OK, type HealthResponse } from "@keypage/shared";
 import { useEffect, useState } from "react";
 
 export type HealthState =
   | { status: "loading" }
-  | { status: "ok"; data: HealthResponse }
+  | { status: typeof HEALTH_STATUS_OK; data: HealthResponse }
   | { status: "error" };
 
 export function useHealth(): HealthState {
@@ -20,7 +20,7 @@ export function useHealth(): HealthState {
 
         const data = (await response.json()) as HealthResponse;
         if (!cancelled) {
-          setState({ status: "ok", data });
+          setState({ status: HEALTH_STATUS_OK, data });
         }
       })
       .catch(() => {

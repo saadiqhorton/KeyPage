@@ -1,3 +1,5 @@
+import { HEALTH_STATUS_OK } from "@keypage/shared";
+
 import type { HealthState } from "@/hooks/useHealth";
 import { cn } from "@/lib/cn";
 import { formatKeyCount } from "@/lib/format";
@@ -19,7 +21,7 @@ function statusLabelFor(status: HealthState["status"]): string {
   if (status === "loading") {
     return "Checking API";
   }
-  if (status === "ok") {
+  if (status === HEALTH_STATUS_OK) {
     return "API online";
   }
   return "API unreachable";
@@ -29,7 +31,7 @@ function statusToneFor(status: HealthState["status"]): string {
   if (status === "loading") {
     return "bg-muted";
   }
-  if (status === "ok") {
+  if (status === HEALTH_STATUS_OK) {
     return "bg-brass";
   }
   return "bg-danger";
@@ -53,10 +55,10 @@ export function StatusPanel({ health, entryCount = null }: Readonly<StatusPanelP
         {statusLabel}
       </span>
       {entryCount != null ? <span>{formatKeyCount(entryCount)}</span> : null}
-      {health.status === "ok" ? (
+      {health.status === HEALTH_STATUS_OK ? (
         <span>since {formatFirstBoot(health.data.firstBootAt)}</span>
       ) : null}
-      {health.status === "ok" && health.data.version ? (
+      {health.status === HEALTH_STATUS_OK && health.data.version ? (
         <span>v{health.data.version}</span>
       ) : null}
     </footer>

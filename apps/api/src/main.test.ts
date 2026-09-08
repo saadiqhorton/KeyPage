@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
-import { APP_NAME } from "@keypage/shared";
+import { APP_NAME, HEALTH_STATUS_OK } from "@keypage/shared";
 
 import { loadConfig } from "./config.js";
 import { closeDatabase } from "./db/index.js";
@@ -58,7 +58,7 @@ describe("bootstrapApp", () => {
     try {
       const health = await app.inject({ method: "GET", url: "/api/health" });
       assert.equal(health.statusCode, 200);
-      assert.equal(health.json().status, "ok");
+      assert.equal(health.json().status, HEALTH_STATUS_OK);
       assert.equal(health.json().app, APP_NAME);
       assert.equal(health.json().dataDir, path.resolve(dataDir));
 

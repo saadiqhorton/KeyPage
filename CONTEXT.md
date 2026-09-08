@@ -130,7 +130,7 @@ Implemented on the Settings page:
 
 ## Deployment & Access
 - Docker single container; bind-mount `./data` for SQLite and persistent state
-- Listens on port **9090** (`PORT` env var)
+- Listens on port **9090** (`PORT` env var; TypeScript default is `DEFAULT_LISTEN_PORT`)
 - Local LAN: plain HTTP to `http://localhost:9090` or `http://<LAN-IP>:9090`
 - Remote access: Cloudflare Tunnel (user's existing pattern) — Tunnel terminates HTTPS at Cloudflare's edge
 - **KeyPage does not terminate TLS** — no in-app certificate management

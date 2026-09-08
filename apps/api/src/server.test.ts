@@ -6,7 +6,7 @@ import { afterEach, describe, it } from "node:test";
 
 import Database from "better-sqlite3";
 
-import { APP_NAME } from "@keypage/shared";
+import { API_NOT_FOUND_ERROR, APP_NAME, HEALTH_STATUS_OK } from "@keypage/shared";
 
 import type { SetupGate } from "./auth/setup-token.js";
 import { HttpRateLimited } from "./errors.js";
@@ -67,13 +67,13 @@ describe("buildServer", () => {
 
     const health = await app.inject({ method: "GET", url: "/api/health" });
     assert.equal(health.statusCode, 200);
-    assert.equal(health.json().status, "ok");
+    assert.equal(health.json().status, HEALTH_STATUS_OK);
     assert.equal(health.json().app, APP_NAME);
     assert.equal(health.json().dataDir, dataDir);
 
     const missingApi = await app.inject({ method: "GET", url: "/api/nope" });
     assert.equal(missingApi.statusCode, 404);
-    assert.deepEqual(missingApi.json(), { error: "Not Found" });
+    assert.deepEqual(missingApi.json(), { error: API_NOT_FOUND_ERROR });
 
     const spa = await app.inject({ method: "GET", url: "/dashboard" });
     assert.equal(spa.statusCode, 200);

@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Do not change ports
 
-KeyPage listens on **9090** (`PORT` in `.env.example`, `docker-compose.yml`, `CONTEXT.md`, README).
+KeyPage listens on **9090** (`DEFAULT_LISTEN_PORT` in `packages/shared`; `PORT` in `.env.example`, Docker, compose, README).
 
 ## Rules
 
