@@ -1,3 +1,5 @@
+import { CLIENT_PROOF_BYTES, DERIVED_KEY_BYTES } from "@keypage/shared";
+
 import { HttpInvalidRequest } from "../errors.js";
 
 export const kdfSchema = {
@@ -66,9 +68,9 @@ export function validateAuthKeyB64(
   field = "authKeyB64",
 ): void {
   const decoded = decodeExactBase64(authKeyB64, field);
-  if (decoded.length !== 32) {
+  if (decoded.length !== DERIVED_KEY_BYTES) {
     throw new HttpInvalidRequest(`Invalid ${field}`, [
-      { field, message: "must decode to exactly 32 bytes" },
+      { field, message: `must decode to exactly ${DERIVED_KEY_BYTES} bytes` },
     ]);
   }
 }
@@ -92,9 +94,9 @@ export function validateClientProofB64(
   field: string,
 ): void {
   const decoded = decodeExactBase64(value, field);
-  if (decoded.length !== 32) {
+  if (decoded.length !== CLIENT_PROOF_BYTES) {
     throw new HttpInvalidRequest(`Invalid ${field}`, [
-      { field, message: "must decode to exactly 32 bytes" },
+      { field, message: `must decode to exactly ${CLIENT_PROOF_BYTES} bytes` },
     ]);
   }
 }

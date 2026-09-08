@@ -34,6 +34,9 @@ import type {
 import {
   base64Encode,
   createLoginClientProof,
+  KEY_WRITE_CHALLENGE_HEADER,
+  KEY_WRITE_NONCE_HEADER,
+  KEY_WRITE_PROOF_HEADER,
   keyEntryWriteAuthMessage,
 } from "@keypage/shared";
 
@@ -217,9 +220,9 @@ async function keyEntryWrite<T>(
     return await apiFetch<T>(path, {
       method,
       headers: {
-        "x-keypage-write-challenge": challenge.challengeId,
-        "x-keypage-write-nonce": challenge.nonceB64,
-        "x-keypage-write-proof": base64Encode(proof),
+        [KEY_WRITE_CHALLENGE_HEADER]: challenge.challengeId,
+        [KEY_WRITE_NONCE_HEADER]: challenge.nonceB64,
+        [KEY_WRITE_PROOF_HEADER]: base64Encode(proof),
       },
       body: bodyJson,
     });

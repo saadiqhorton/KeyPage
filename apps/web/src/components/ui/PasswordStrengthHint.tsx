@@ -1,6 +1,5 @@
+import { MASTER_PASSWORD_MIN_LENGTH } from "@keypage/shared";
 import { cn } from "@/lib/cn";
-
-const MIN_LENGTH = 12;
 
 type PasswordStrengthHintProps = {
   password: string;
@@ -21,8 +20,8 @@ function getChecks(password: string): Check[] {
 
   return [
     {
-      label: `At least ${MIN_LENGTH} characters`,
-      met: password.length >= MIN_LENGTH,
+      label: `At least ${MASTER_PASSWORD_MIN_LENGTH} characters`,
+      met: password.length >= MASTER_PASSWORD_MIN_LENGTH,
     },
     {
       label: "Mix of character types (letters, numbers, symbols)",

@@ -1,3 +1,4 @@
+import { API_BASE, DEFAULT_LISTEN_PORT } from "@keypage/shared";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
@@ -13,8 +14,8 @@ export default defineConfig({
   server: {
     host: true,
     proxy: {
-      "/api": {
-        target: "http://127.0.0.1:9090",
+      [API_BASE]: {
+        target: `http://127.0.0.1:${DEFAULT_LISTEN_PORT}`,
         // Keep the browser Host (:5173) so Origin.host === Host and CSRF passes
         // with trustProxy=false. changeOrigin:true would rewrite Host to :9090.
         changeOrigin: false,

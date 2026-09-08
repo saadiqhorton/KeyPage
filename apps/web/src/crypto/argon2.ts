@@ -1,3 +1,4 @@
+import { DERIVED_KEY_BYTES, KDF_SALT_BYTES } from "@keypage/shared";
 import { argon2id } from "hash-wasm";
 
 let wasmProbeResult: boolean | null = null;
@@ -9,11 +10,11 @@ export async function probeArgon2Wasm(): Promise<boolean> {
   try {
     await argon2id({
       password: "probe",
-      salt: new Uint8Array(16),
+      salt: new Uint8Array(KDF_SALT_BYTES),
       iterations: 1,
       parallelism: 1,
       memorySize: 1024,
-      hashLength: 32,
+      hashLength: DERIVED_KEY_BYTES,
       outputType: "binary",
     });
     wasmProbeResult = true;
@@ -37,7 +38,7 @@ export async function argon2idDerive(options: {
     memorySize: options.memoryKiB,
     iterations: options.iterations,
     parallelism: options.parallelism,
-    hashLength: options.hashLength ?? 32,
+    hashLength: options.hashLength ?? DERIVED_KEY_BYTES,
     outputType: "binary",
   });
 }

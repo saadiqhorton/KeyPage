@@ -16,6 +16,11 @@ export const LOGIN_CHALLENGE_TTL_SECONDS = 60;
 export const LOGIN_CHALLENGE_MAX_OPEN = 20;
 export type ChallengePurpose = "login" | "key-write";
 export const STORED_KEY_HEX_BYTES = 32;
+/** HMAC-SHA256 client proof / authKey length. */
+export const CLIENT_PROOF_BYTES = 32;
+export const KEY_WRITE_CHALLENGE_HEADER = "x-keypage-write-challenge";
+export const KEY_WRITE_NONCE_HEADER = "x-keypage-write-nonce";
+export const KEY_WRITE_PROOF_HEADER = "x-keypage-write-proof";
 
 const textEncoder = new TextEncoder();
 
@@ -157,7 +162,7 @@ export function verifyClientProof(
   authMessage: string,
   clientProof: Uint8Array,
 ): boolean {
-  if (!isStoredKeyHex(storedKeyHex) || clientProof.length !== 32) {
+  if (!isStoredKeyHex(storedKeyHex) || clientProof.length !== CLIENT_PROOF_BYTES) {
     return false;
   }
   const storedKey = hexDecode(storedKeyHex);

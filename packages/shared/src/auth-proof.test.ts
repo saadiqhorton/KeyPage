@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  CLIENT_PROOF_BYTES,
+  KEY_WRITE_CHALLENGE_HEADER,
+  KEY_WRITE_NONCE_HEADER,
+  KEY_WRITE_PROOF_HEADER,
   LOGIN_CLIENT_KEY_LABEL,
   RECOVERY_CLIENT_KEY_LABEL,
   base64Encode,
@@ -17,6 +21,13 @@ import {
 } from "./auth-proof.js";
 
 describe("auth-proof", () => {
+  it("pins key-write proof header names and proof size", () => {
+    assert.equal(KEY_WRITE_CHALLENGE_HEADER, "x-keypage-write-challenge");
+    assert.equal(KEY_WRITE_NONCE_HEADER, "x-keypage-write-nonce");
+    assert.equal(KEY_WRITE_PROOF_HEADER, "x-keypage-write-proof");
+    assert.equal(CLIENT_PROOF_BYTES, 32);
+  });
+
   it("round-trips a login proof", () => {
     const authKey = new Uint8Array(32).fill(7);
     const storedHex = loginStoredKeyHexFromAuthKey(authKey);
