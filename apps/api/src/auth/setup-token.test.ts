@@ -26,10 +26,31 @@ describe("setup token gate (SAA-174)", () => {
 
   it("mints a token that matches SETUP_TOKEN_PATTERN and writes the file with mode 0600", async () => {
     const dataDir = await makeTempDir();
-    const gate = await openSetupGate({
-      dataDir,
-      vaultInitialized: false,
-    });
+    const logs: string[] = [];
+    const origLog = console.log;
+    const origWarn = console.warn;
+    const origError = console.error;
+    console.log = (...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    };
+    console.warn = (...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    };
+    console.error = (...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    };
+
+    let gate;
+    try {
+      gate = await openSetupGate({
+        dataDir,
+        vaultInitialized: false,
+      });
+    } finally {
+      console.log = origLog;
+      console.warn = origWarn;
+      console.error = origError;
+    }
 
     assert.ok(gate.token);
     assert.match(gate.token, new RegExp(SETUP_TOKEN_PATTERN));
@@ -37,6 +58,14 @@ describe("setup token gate (SAA-174)", () => {
     const filePath = path.join(dataDir, SETUP_TOKEN_FILENAME);
     assert.equal((statSync(filePath).mode & 0o777), 0o600);
     assert.equal((await fs.readFile(filePath, "utf8")).trim(), gate.token);
+    assert.equal(
+      logs.join("\n").includes(gate.token),
+      false,
+      "setup-token mint path must not log the plaintext token",
+    );
+    assert.equal(gate.verify(gate.token), true);
+    assert.equal(gate.verify(""), false);
+    assert.equal(gate.verify("not-the-token"), false);
   });
 
   it("reuses the same token when openSetupGate runs again on the same dir", async () => {

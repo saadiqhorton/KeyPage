@@ -60,7 +60,7 @@ Already have the repo checked out?
 
 ```bash
 docker compose up -d --build
-docker compose logs keypage | grep -A4 "setup token"
+cat ./data/setup-token
 ```
 
 Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. Port **9090** is the supported listen port everywhere in this project. Installer default directory: `~/keypage` (override with `KEYPAGE_DIR`).
@@ -89,8 +89,7 @@ The image includes a Docker `HEALTHCHECK` that hits `/api/health` on port 9090 i
 
 ## First run
 
-1. **Get your setup token** — On first boot of an unclaimed vault, KeyPage prints a one-time setup token to the container log and writes it to `./data/setup-token` (mode `0600`). Retrieve it with any of:
-   - `docker compose logs keypage | grep -A4 "setup token"`
+1. **Get your setup token** — On first boot of an unclaimed vault, KeyPage writes a one-time setup token to `./data/setup-token` (mode `0600`). It is not printed to container logs. Retrieve it with:
    - `cat ./data/setup-token` on the host (bind mount)
    - `docker compose exec keypage cat /app/data/setup-token`
    The server binds `0.0.0.0` so anyone on your LAN or holding a Cloudflare Tunnel URL can reach the setup screen; the token is what stops them claiming your vault.
@@ -108,7 +107,7 @@ docker compose down && rm -f data/keypage.db* data/setup-token
 
 For local development without Docker, delete `data/keypage.db`, `data/keypage.db-wal`, `data/keypage.db-shm`, and `data/setup-token` instead.
 
-**Lost the setup token?** Stop the app, delete `data/setup-token`, and start it again — a new token is minted and printed. Only possible with host access, which is the point.
+**Lost the setup token?** Stop the app, delete `data/setup-token`, and start it again — a new token is minted into that file. Only possible with host access, which is the point.
 
 ## Data persistence and the `./data` volume
 
