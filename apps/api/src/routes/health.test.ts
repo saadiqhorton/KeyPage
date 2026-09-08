@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import Fastify, { type FastifyInstance } from "fastify";
 
-import { APP_NAME } from "@keypage/shared";
+import { APP_NAME, HEALTH_STATUS_OK } from "@keypage/shared";
 
 import { healthRoutes } from "./health.js";
 
@@ -47,7 +47,7 @@ describe("GET /api/health", () => {
 
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json(), {
-      status: "ok",
+      status: HEALTH_STATUS_OK,
       app: APP_NAME,
       version,
       dataDir: DATA_DIR,

@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { HEALTH_STATUS_OK } from "@keypage/shared";
+
 import { StatusPanel } from "./StatusPanel.js";
 
 const okHealth = {
-  status: "ok" as const,
+  status: HEALTH_STATUS_OK,
   data: {
-    status: "ok" as const,
+    status: HEALTH_STATUS_OK,
     app: "KeyPage",
     version: "0.0.0-test",
     dataDir: "/tmp/keypage",

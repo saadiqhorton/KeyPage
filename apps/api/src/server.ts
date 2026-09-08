@@ -3,7 +3,7 @@ import path from "node:path";
 
 import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
-import { API_BASE } from "@keypage/shared";
+import { API_BASE, API_NOT_FOUND_ERROR } from "@keypage/shared";
 import Fastify, { type FastifyError } from "fastify";
 import type Database from "better-sqlite3";
 
@@ -105,7 +105,7 @@ export async function buildServer(options: BuildServerOptions) {
 
   app.setNotFoundHandler(async (request, reply) => {
     if (request.url.startsWith(`${API_BASE}/`)) {
-      return reply.status(404).send({ error: "Not Found" });
+      return reply.status(404).send({ error: API_NOT_FOUND_ERROR });
     }
 
     if (hasWebDir) {

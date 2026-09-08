@@ -1,4 +1,9 @@
-import { API_BASE, APP_NAME, type HealthResponse } from "@keypage/shared";
+import {
+  API_BASE,
+  APP_NAME,
+  HEALTH_STATUS_OK,
+  type HealthResponse,
+} from "@keypage/shared";
 import type { FastifyPluginAsync } from "fastify";
 
 import { APP_PACKAGE_VERSION } from "../app-version.js";
@@ -14,7 +19,7 @@ export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (
   options,
 ) => {
   app.get(`${API_BASE}/health`, async (): Promise<HealthResponse> => ({
-    status: "ok",
+    status: HEALTH_STATUS_OK,
     app: APP_NAME,
     version: APP_PACKAGE_VERSION,
     dataDir: options.dataDir,

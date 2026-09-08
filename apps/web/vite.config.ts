@@ -17,7 +17,8 @@ export default defineConfig({
       [API_BASE]: {
         target: `http://127.0.0.1:${DEFAULT_LISTEN_PORT}`,
         // Keep the browser Host (:5173) so Origin.host === Host and CSRF passes
-        // with trustProxy=false. changeOrigin:true would rewrite Host to :9090.
+        // with trustProxy=false. changeOrigin:true would rewrite Host to the
+        // API listen port (DEFAULT_LISTEN_PORT).
         changeOrigin: false,
       },
     },

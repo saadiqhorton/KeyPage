@@ -63,14 +63,14 @@ docker compose up -d --build
 cat ./data/setup-token
 ```
 
-Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. Port **9090** is the supported listen port everywhere in this project. Installer default directory: `~/keypage` (override with `KEYPAGE_DIR`).
+Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. The default listen port is **9090** (`DEFAULT_LISTEN_PORT` in `packages/shared`; override with `PORT`). Installer default directory: `~/keypage` (override with `KEYPAGE_DIR`).
 
 ### What `docker compose` does
 
 | Piece | Detail |
 |-------|--------|
 | Image | Builds the `keypage` image from the repo `Dockerfile` (Node 22, API + built web UI) |
-| Port | Maps host `9090` → container `9090` |
+| Port | Maps host `9090` → container `9090` (same as `DEFAULT_LISTEN_PORT`) |
 | Data | Bind-mounts `./data` → `/app/data` (SQLite and runtime state) |
 | Restart | `unless-stopped` |
 | Config | Optional `.env` at the repo root (see [Environment variables](#environment-variables)); compose loads it when present |
@@ -85,7 +85,7 @@ docker compose ps                 # running state
 curl -sS http://127.0.0.1:9090/api/health   # {"status":"ok",...} when healthy
 ```
 
-The image includes a Docker `HEALTHCHECK` that hits `/api/health` on port 9090 inside the container.
+The image includes a Docker `HEALTHCHECK` that hits `/api/health` on `$PORT` inside the container (default **9090**).
 
 ## First run
 
@@ -152,8 +152,8 @@ Copy `.env.example` to `.env` and adjust as needed. Compose loads `.env` when pr
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `9090` | HTTP listen port |
-| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `9090` (`DEFAULT_LISTEN_PORT`) | HTTP listen port |
+| `HOST` | `0.0.0.0` (`DEFAULT_LISTEN_HOST`) | Bind address |
 | `KEYPAGE_DATA_DIR` | `./data` (local); `/app/data` (Docker image) | Persistent data directory (SQLite, etc.) |
 | `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package); `/app/apps/web/dist` (Docker image) | Path to the built web UI served as static files |
 | `LOG_LEVEL` | `info` | Fastify log level |

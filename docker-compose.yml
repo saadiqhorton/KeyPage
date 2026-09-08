@@ -6,6 +6,7 @@ services:
     build: .
     container_name: keypage
     ports:
+      # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
       - "9090:9090"
     volumes:
       - ./data:/app/data

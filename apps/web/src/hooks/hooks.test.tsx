@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { HEALTH_STATUS_OK } from "@keypage/shared";
+
 import { useToast } from "@/hooks/useToast.js";
 import { useHealth } from "@/hooks/useHealth.js";
 import { useKeyEntryView } from "@/hooks/useKeyEntryView.js";
@@ -111,7 +113,7 @@ describe("useHealth", () => {
       fetchCalls += 1;
       return {
         ok: true,
-        json: async () => ({ status: "ok" }),
+        json: async () => ({ status: HEALTH_STATUS_OK }),
       } as Response;
     }) as typeof fetch;
     try {

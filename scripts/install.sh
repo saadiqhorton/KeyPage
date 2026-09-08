@@ -15,7 +15,9 @@ set -euo pipefail
 KEYPAGE_DIR="${KEYPAGE_DIR:-$HOME/keypage}"
 KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
 KEYPAGE_REF="${KEYPAGE_REF:-main}"
-APP_URL="http://127.0.0.1:9090"
+# Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
+DEFAULT_LISTEN_PORT=9090
+APP_URL="http://127.0.0.1:${DEFAULT_LISTEN_PORT}"
 HEALTH_URL="${APP_URL}/api/health"
 
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
@@ -161,8 +163,8 @@ if [[ ! -f .env ]]; then
     cp .env.example .env
     ok "created .env from .env.example"
   else
-    printf 'PORT=9090\n' > .env
-    ok "created minimal .env (PORT=9090)"
+    printf 'PORT=%s\n' "${DEFAULT_LISTEN_PORT}" > .env
+    ok "created minimal .env (PORT=${DEFAULT_LISTEN_PORT})"
   fi
 else
   ok ".env already present"

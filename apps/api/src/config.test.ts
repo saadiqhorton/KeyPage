@@ -3,6 +3,8 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
 import {
+  DEFAULT_LISTEN_HOST,
+  DEFAULT_LISTEN_PORT,
   DEFAULT_SESSION_IDLE_MINUTES,
   LOGIN_LOCKOUT_SECONDS,
   LOGIN_MAX_ATTEMPTS,
@@ -48,8 +50,8 @@ describe("loadConfig", () => {
     snapshotEnv();
     const cfg = loadConfig();
 
-    assert.equal(cfg.port, 9090);
-    assert.equal(cfg.host, "0.0.0.0");
+    assert.equal(cfg.port, DEFAULT_LISTEN_PORT);
+    assert.equal(cfg.host, DEFAULT_LISTEN_HOST);
     assert.equal(cfg.dataDir, path.resolve("./data"));
     assert.equal(cfg.logLevel, "info");
     assert.equal(cfg.trustProxy, false);
@@ -62,7 +64,7 @@ describe("loadConfig", () => {
 
   it("reads positive ints, bools, and paths from env", () => {
     snapshotEnv();
-    process.env.PORT = "9090";
+    process.env.PORT = "8088";
     process.env.HOST = "127.0.0.1";
     process.env.KEYPAGE_DATA_DIR = "/tmp/keypage-config-data";
     process.env.KEYPAGE_WEB_DIR = "/tmp/keypage-config-web";
@@ -75,7 +77,7 @@ describe("loadConfig", () => {
 
     const cfg = loadConfig();
 
-    assert.equal(cfg.port, 9090);
+    assert.equal(cfg.port, 8088);
     assert.equal(cfg.host, "127.0.0.1");
     assert.equal(cfg.dataDir, path.resolve("/tmp/keypage-config-data"));
     assert.equal(cfg.webDir, path.resolve("/tmp/keypage-config-web"));

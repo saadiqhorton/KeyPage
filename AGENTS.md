@@ -9,7 +9,7 @@ KeyPage is a pnpm + Turbo monorepo (`apps/web`, `apps/api`, `packages/shared`). 
 - **Checks:** `pnpm typecheck`, `pnpm test`, `pnpm build`
 - **Run built app:** `pnpm build` then `KEYPAGE_WEB_DIR=apps/web/dist pnpm start` (or `docker compose up -d --build`)
 
-Listen port is **9090** — do not invent another port for demos or verification.
+Listen port is **9090** (`DEFAULT_LISTEN_PORT`) — do not invent another port for demos or verification.
 
 ## Out of scope for this file
 
