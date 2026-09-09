@@ -10,6 +10,8 @@ const repoRoot = path.resolve(
 );
 
 const DOCKER_WEB_DIR = "/app/apps/web/dist";
+const PINNED_NODE_ALPINE_FROM =
+  /^FROM node:22-alpine@sha256:[a-f0-9]{64} AS (base|runtime)$/;
 
 function readAssignedValue(source: string, name: string): string | undefined {
   const match = source.match(new RegExp(`^\\s*${name}=(\\S+)`, "m"));
@@ -58,13 +60,28 @@ describe("Docker slim runtime packaging", () => {
 
     assert.match(
       dockerfile,
-      /^FROM node:22-alpine AS runtime$/m,
-      "runtime must start from alpine so gcc/pnpm/workspace are not in the pulled image",
+      /^FROM node:22-alpine@sha256:[a-f0-9]{64} AS runtime$/m,
+      "runtime must start from pinned alpine so gcc/pnpm/workspace are not in the pulled image",
     );
     assert.doesNotMatch(
       dockerfile,
       /^FROM build AS runtime$/m,
       "FROM build ships the full workspace (~973 MB)",
+    );
+  });
+
+  it("pins node:22-alpine by digest so rebuilds do not float", () => {
+    const dockerfile = readDockerfile();
+    const pins = [...dockerfile.matchAll(new RegExp(PINNED_NODE_ALPINE_FROM.source, "gm"))];
+    const stages = pins.map((match) => match[1]);
+    const digests = pins.map((match) => match[0].match(/sha256:[a-f0-9]{64}/)?.[0]);
+
+    assert.deepEqual(stages, ["base", "runtime"], "base and runtime must both pin node:22-alpine by digest");
+    assert.equal(new Set(digests).size, 1, "base and runtime must share the same digest");
+    assert.doesNotMatch(
+      dockerfile,
+      /^FROM node:22-alpine(?:\s|$)/m,
+      "unpinned node:22-alpine tags can float overnight",
     );
   });
 

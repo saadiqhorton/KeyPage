@@ -69,7 +69,7 @@ Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN
 
 | Piece | Detail |
 |-------|--------|
-| Image | Builds the `keypage` image from the repo `Dockerfile` (Node 22, API + built web UI) |
+| Image | Builds the `keypage` image from the repo `Dockerfile` (pinned `node:22-alpine` digest, API + built web UI) |
 | Port | Maps host `9090` → container `9090` (same as `DEFAULT_LISTEN_PORT`) |
 | Data | Bind-mounts `./data` → `/app/data` (SQLite and runtime state) |
 | Restart | `unless-stopped` |
@@ -138,6 +138,14 @@ sudo chown -R 1000:1000 ./data
 ### Updates
 
 `docker compose up -d --build` rebuilds the image but keeps the `./data` bind mount. Your vault survives image and container updates as long as you do not delete `./data`.
+
+The `Dockerfile` pins `node:22-alpine` by digest (`node:22-alpine@sha256:…`) so rebuilds stay on the same Node/Alpine. To take a newer official image on purpose:
+
+```bash
+docker buildx imagetools inspect node:22-alpine --format '{{json .Manifest.Digest}}'
+```
+
+Replace both `FROM node:22-alpine@sha256:…` lines (`AS base` and `AS runtime`) with that digest. Keep the slim runtime (`pnpm deploy` + a fresh alpine stage) — do not switch runtime back to `FROM build`.
 
 ## Secure context (Web Crypto vs fallback)
 
