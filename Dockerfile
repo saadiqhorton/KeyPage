@@ -1,4 +1,8 @@
-FROM node:22-alpine AS base
+# Pin node:22-alpine by digest so rebuilds do not silently pick a different Node/Alpine.
+# Refresh when you intend to take a new base:
+#   docker buildx imagetools inspect node:22-alpine --format '{{json .Manifest.Digest}}'
+# then replace both FROM lines below (keep AS base and AS runtime on the same digest).
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS base
 RUN corepack enable && corepack prepare pnpm@10.33.3 --activate
 
 FROM base AS deps
@@ -17,7 +21,7 @@ RUN pnpm build
 FROM build AS deploy
 RUN pnpm deploy --filter=@keypage/api --prod /out/api
 
-FROM node:22-alpine AS runtime
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 RUN apk add --no-cache su-exec
 WORKDIR /app
 COPY --from=deploy /out/api /app
