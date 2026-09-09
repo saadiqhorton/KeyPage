@@ -109,6 +109,14 @@ export class HttpInvalidSetupToken extends HttpError {
   }
 }
 
+export class HttpHttpsRequired extends HttpError {
+  constructor(
+    message = "First-boot setup over clear HTTP is disabled. Open KeyPage through Cloudflare Tunnel or a TLS reverse proxy, or unset KEYPAGE_REQUIRE_HTTPS_SETUP.",
+  ) {
+    super(403, "https_required", message);
+  }
+}
+
 export class HttpInternalError extends HttpError {
   constructor(message = "Internal server error") {
     super(500, "internal_error", message);

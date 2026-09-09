@@ -20,6 +20,7 @@ const KEYS = [
   "KEYPAGE_WEB_DIR",
   "LOG_LEVEL",
   "KEYPAGE_TRUST_PROXY",
+  "KEYPAGE_REQUIRE_HTTPS_SETUP",
   "KEYPAGE_SESSION_IDLE_MINUTES",
   "KEYPAGE_SESSION_ABSOLUTE_HOURS",
   "KEYPAGE_LOGIN_MAX_ATTEMPTS",
@@ -55,6 +56,7 @@ describe("loadConfig", () => {
     assert.equal(cfg.dataDir, path.resolve("./data"));
     assert.equal(cfg.logLevel, "info");
     assert.equal(cfg.trustProxy, false);
+    assert.equal(cfg.requireHttpsSetup, false);
     assert.equal(cfg.sessionIdleMinutes, DEFAULT_SESSION_IDLE_MINUTES);
     assert.equal(cfg.sessionAbsoluteHours, SESSION_ABSOLUTE_HOURS);
     assert.equal(cfg.loginMaxAttempts, LOGIN_MAX_ATTEMPTS);
@@ -70,6 +72,7 @@ describe("loadConfig", () => {
     process.env.KEYPAGE_WEB_DIR = "/tmp/keypage-config-web";
     process.env.LOG_LEVEL = "error";
     process.env.KEYPAGE_TRUST_PROXY = "true";
+    process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "true";
     process.env.KEYPAGE_SESSION_IDLE_MINUTES = "25";
     process.env.KEYPAGE_SESSION_ABSOLUTE_HOURS = "6";
     process.env.KEYPAGE_LOGIN_MAX_ATTEMPTS = "7";
@@ -83,6 +86,7 @@ describe("loadConfig", () => {
     assert.equal(cfg.webDir, path.resolve("/tmp/keypage-config-web"));
     assert.equal(cfg.logLevel, "error");
     assert.equal(cfg.trustProxy, true);
+    assert.equal(cfg.requireHttpsSetup, true);
     assert.equal(cfg.sessionIdleMinutes, 25);
     assert.equal(cfg.sessionAbsoluteHours, 6);
     assert.equal(cfg.loginMaxAttempts, 7);
@@ -92,6 +96,7 @@ describe("loadConfig", () => {
   it("treats 1 as true for KEYPAGE_TRUST_PROXY and falls back on invalid ints", () => {
     snapshotEnv();
     process.env.KEYPAGE_TRUST_PROXY = "1";
+    process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "1";
     process.env.KEYPAGE_SESSION_IDLE_MINUTES = "0";
     process.env.KEYPAGE_SESSION_ABSOLUTE_HOURS = "nope";
     process.env.KEYPAGE_LOGIN_MAX_ATTEMPTS = "";
@@ -100,6 +105,7 @@ describe("loadConfig", () => {
     const cfg = loadConfig();
 
     assert.equal(cfg.trustProxy, true);
+    assert.equal(cfg.requireHttpsSetup, true);
     assert.equal(cfg.sessionIdleMinutes, DEFAULT_SESSION_IDLE_MINUTES);
     assert.equal(cfg.sessionAbsoluteHours, SESSION_ABSOLUTE_HOURS);
     assert.equal(cfg.loginMaxAttempts, LOGIN_MAX_ATTEMPTS);
@@ -116,6 +122,15 @@ describe("loadConfig", () => {
 
     process.env.KEYPAGE_TRUST_PROXY = "yes";
     assert.equal(loadConfig().trustProxy, false);
+
+    process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "";
+    assert.equal(loadConfig().requireHttpsSetup, false);
+
+    process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "false";
+    assert.equal(loadConfig().requireHttpsSetup, false);
+
+    process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "yes";
+    assert.equal(loadConfig().requireHttpsSetup, false);
   });
 
   it("rounds a fractional positive int env value", () => {

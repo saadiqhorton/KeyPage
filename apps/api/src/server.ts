@@ -24,6 +24,7 @@ type BuildServerOptions = {
   instance: InstanceRecord;
   db: Database.Database;
   setupGate: SetupGate;
+  requireHttpsSetup?: boolean;
 };
 
 /** Pino/Fastify paths that must never appear in request or application logs. */
@@ -88,6 +89,7 @@ export async function buildServer(options: BuildServerOptions) {
     prefix: `${API_BASE}/vault`,
     db: options.db,
     setupGate: options.setupGate,
+    requireHttpsSetup: options.requireHttpsSetup ?? config.requireHttpsSetup,
   });
 
   await app.register(keyEntryRoutes, {

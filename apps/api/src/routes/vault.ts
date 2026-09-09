@@ -68,6 +68,7 @@ import { validateCipherPayload } from "../keys/validate.js";
 import { clearSessionCookie, setSessionCookie } from "../cookies.js";
 import type { VaultAuthRow } from "../db/rows.js";
 import {
+  HttpHttpsRequired,
   HttpInvalidCredentials,
   HttpInvalidRecoveryCode,
   HttpInvalidRecoveryTicket,
@@ -88,6 +89,7 @@ const LOOKUP_HASH_PATTERN = /^[0-9a-f]{64}$/;
 export type VaultRouteOptions = {
   db: Database.Database;
   setupGate: SetupGate;
+  requireHttpsSetup?: boolean;
 };
 
 function idleTimeoutSeconds(db: Database.Database): number {
@@ -251,7 +253,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
   app,
   options,
 ) => {
-  const { db, setupGate } = options;
+  const { db, setupGate, requireHttpsSetup = false } = options;
   const requireSession = createRequireSession(db, () =>
     idleTimeoutSeconds(db),
   );
@@ -303,6 +305,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       },
     },
     async (request, reply): Promise<VaultSetupResponse> => {
+      if (requireHttpsSetup && request.protocol !== "https") {
+        throw new HttpHttpsRequired();
+      }
+
       const body = request.body as {
         setupToken: string;
         kdf: KdfParams;

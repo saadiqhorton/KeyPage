@@ -80,8 +80,12 @@ function createSetupGate(token: string): { gate: SetupGate; consumed: () => bool
 async function buildTestApp(
   db: Database.Database,
   setupGate: SetupGate,
+  options: { requireHttpsSetup?: boolean; trustProxy?: boolean } = {},
 ): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    trustProxy: options.trustProxy ?? false,
+  });
   await app.register(fastifyCookie);
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
@@ -103,6 +107,7 @@ async function buildTestApp(
     prefix: "/api/vault",
     db,
     setupGate,
+    requireHttpsSetup: options.requireHttpsSetup ?? false,
   });
   await app.ready();
   return app;
@@ -176,5 +181,117 @@ describe("vault setup route (SAA-174)", () => {
 
     assert.equal(second.statusCode, 409);
     assert.equal(second.json().error, "vault_already_initialized");
+  });
+});
+
+describe("vault setup HTTPS guard (SAA-223)", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+  let gateBundle: ReturnType<typeof createSetupGate>;
+
+  afterEach(async () => {
+    await app?.close();
+    db?.close();
+  });
+
+  async function start(options: {
+    requireHttpsSetup?: boolean;
+    trustProxy?: boolean;
+  }) {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    runMigrations(db);
+    gateBundle = createSetupGate(SETUP_TOKEN);
+    app = await buildTestApp(db, gateBundle.gate, options);
+  }
+
+  it("keeps HTTP setup working when the opt-in flag is off", async () => {
+    await start({ requireHttpsSetup: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(isVaultInitialized(db), true);
+    assert.equal(gateBundle.consumed(), true);
+  });
+
+  it("rejects clear HTTP setup when the opt-in flag is on", async () => {
+    await start({ requireHttpsSetup: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, "https_required");
+    assert.equal(isVaultInitialized(db), false);
+    assert.equal(gateBundle.consumed(), false);
+  });
+
+  it("does not verify the setup token when rejecting clear HTTP", async () => {
+    await start({ requireHttpsSetup: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      payload: setupBody(WRONG_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, "https_required");
+    assert.equal(isVaultInitialized(db), false);
+    assert.equal(gateBundle.consumed(), false);
+  });
+
+  it("ignores a spoofed X-Forwarded-Proto header unless trust proxy is on", async () => {
+    await start({ requireHttpsSetup: true, trustProxy: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      headers: { "x-forwarded-proto": "https" },
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, "https_required");
+    assert.equal(isVaultInitialized(db), false);
+  });
+
+  it("accepts setup over X-Forwarded-Proto https when trust proxy is on", async () => {
+    await start({ requireHttpsSetup: true, trustProxy: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      headers: { "x-forwarded-proto": "https" },
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(isVaultInitialized(db), true);
+    assert.equal(gateBundle.consumed(), true);
+  });
+
+  it("rejects X-Forwarded-Proto http even when trust proxy is on", async () => {
+    await start({ requireHttpsSetup: true, trustProxy: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      headers: { "x-forwarded-proto": "http" },
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, "https_required");
+    assert.equal(isVaultInitialized(db), false);
+    assert.equal(gateBundle.consumed(), false);
   });
 });
