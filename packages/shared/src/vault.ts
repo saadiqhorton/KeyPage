@@ -53,6 +53,7 @@ export type ApiErrorCode =
   | "invalid_recovery_code"
   | "invalid_recovery_ticket"
   | "invalid_setup_token"
+  | "https_required"
   | "key_version_mismatch"
   | "internal_error";
 

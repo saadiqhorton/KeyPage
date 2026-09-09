@@ -41,6 +41,7 @@ export async function bootstrapApp(
     instance,
     db,
     setupGate,
+    requireHttpsSetup: cfg.requireHttpsSetup,
   });
 
   if (setupGate.token) {
@@ -53,6 +54,15 @@ export async function bootstrapApp(
   Anyone who can reach this server but cannot read this file
   cannot claim the vault.
 ────────────────────────────────────────────────────────────────`);
+    if (cfg.requireHttpsSetup) {
+      console.warn(
+        "KEYPAGE_REQUIRE_HTTPS_SETUP is on: POST /setup is rejected over clear HTTP. Use Cloudflare Tunnel or a TLS reverse proxy (and KEYPAGE_TRUST_PROXY=true if TLS terminates in front of KeyPage).",
+      );
+    } else {
+      console.warn(
+        "First-boot setup over plain HTTP exposes the setup POST body (including the setup token) to anyone who can observe this LAN. Prefer Cloudflare Tunnel or a TLS reverse proxy before claiming the vault, or set KEYPAGE_REQUIRE_HTTPS_SETUP=true to reject cleartext claims.",
+      );
+    }
   }
 
   return { app, db };

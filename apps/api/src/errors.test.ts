@@ -8,6 +8,7 @@ import {
   HttpInvalidRecoveryCode,
   HttpInvalidRecoveryTicket,
   HttpInvalidRequest,
+  HttpHttpsRequired,
   HttpInvalidSetupToken,
   HttpKeyVersionMismatch,
   HttpRateLimited,
@@ -80,6 +81,13 @@ describe("HttpError subclasses", () => {
       "Recovery ticket is invalid or expired",
     );
     assert.equal(new HttpInvalidSetupToken().code, "invalid_setup_token");
+  });
+
+  it("HttpHttpsRequired uses 403 https_required", () => {
+    const error = new HttpHttpsRequired();
+    assert.equal(error.statusCode, 403);
+    assert.equal(error.code, "https_required");
+    assert.match(error.message, /HTTPS|Tunnel|KEYPAGE_REQUIRE_HTTPS_SETUP/i);
   });
 
   it("HttpKeyVersionMismatch includes expected and received versions", () => {

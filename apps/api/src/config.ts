@@ -48,6 +48,7 @@ export function loadConfig() {
     ),
     logLevel: process.env.LOG_LEVEL ?? "info",
     trustProxy: readBoolEnv("KEYPAGE_TRUST_PROXY", false),
+    requireHttpsSetup: readBoolEnv("KEYPAGE_REQUIRE_HTTPS_SETUP", false),
     sessionIdleMinutes: readPositiveIntEnv(
       "KEYPAGE_SESSION_IDLE_MINUTES",
       DEFAULT_SESSION_IDLE_MINUTES,

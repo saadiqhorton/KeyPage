@@ -44,7 +44,7 @@ The one-shot / Docker path needs **Git** and **Docker** (Compose v2) on the host
 
 Practical floor (not a hard guarantee): about **1 vCPU** and **~1 GB RAM** free for a comfortable VM (512 MB–1 GB for the container; 256 MB is too tight), plus a few hundred MB of disk for the image and `./data`.
 
-Do **not** publish port `:9090` to the open internet. KeyPage does not terminate TLS. For remote access use a Tunnel or reverse proxy (HTTPS).
+Do **not** publish port `:9090` to the open internet. KeyPage does not terminate TLS. For remote access use a Tunnel or reverse proxy (HTTPS). First-boot setup over plain LAN HTTP exposes the setup POST body — see [First run](#first-run).
 
 ## Quick start (Docker)
 
@@ -93,6 +93,7 @@ The image includes a Docker `HEALTHCHECK` that hits `/api/health` on `$PORT` ins
    - `cat ./data/setup-token` on the host (bind mount)
    - `docker compose exec keypage cat /app/data/setup-token`
    The server binds `0.0.0.0` so anyone on your LAN or holding a Cloudflare Tunnel URL can reach the setup screen; the token is what stops them claiming your vault.
+   **Transport:** the setup `POST` body (token plus first-boot secrets) rides the same connection you use. Plain LAN HTTP is visible to anyone who can observe that network. Prefer Cloudflare Tunnel or a reverse proxy with TLS **before** you claim the vault. The one-line installer still allows HTTP so `http://127.0.0.1:9090` works; set `KEYPAGE_REQUIRE_HTTPS_SETUP=true` to reject cleartext claims (and `KEYPAGE_TRUST_PROXY=true` if Tunnel/proxy terminates TLS in front of KeyPage).
 2. **Setup** — Open the app. If the vault is new, you are redirected to `/setup`. Paste the setup token and choose a Master Password (minimum 12 characters). KeyPage derives your encryption key in the browser and sends only a login verifier to the server.
 3. **Recovery codes** — After setup, 10 one-time recovery codes are shown and a `keypage-recovery-codes-*.txt` file downloads automatically. Save this file offline before continuing. Any single unused code can reset your Master Password later.
 4. **Unlock** — After a page reload (or when the vault locks from inactivity), enter your Master Password on `/unlock` to decrypt keys in the browser. A valid session cookie alone does not unlock the vault - the encryption key lives only in memory until you log in again.
@@ -144,7 +145,7 @@ sudo chown -R 1000:1000 ./data
 
 Plain HTTP to a LAN IP (e.g. `http://192.168.1.x:9090`) is **not** a secure context. KeyPage automatically falls back to a JavaScript crypto backend (`@noble/*`) so setup and login still work; vaults created in either mode remain compatible.
 
-If you put KeyPage behind a reverse proxy that rewrites `Host` or terminates TLS, set `KEYPAGE_TRUST_PROXY=true` so session cookies and CSRF origin checks follow the forwarded headers.
+If you put KeyPage behind a reverse proxy that rewrites `Host` or terminates TLS, set `KEYPAGE_TRUST_PROXY=true` so session cookies, CSRF origin checks, and the optional HTTPS setup guard follow the forwarded headers.
 
 ## Environment variables
 
@@ -158,6 +159,7 @@ Copy `.env.example` to `.env` and adjust as needed. Compose loads `.env` when pr
 | `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package); `/app/apps/web/dist` (Docker image) | Path to the built web UI served as static files |
 | `LOG_LEVEL` | `info` | Fastify log level |
 | `KEYPAGE_TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy that sets `X-Forwarded-Proto` / `X-Forwarded-Host` |
+| `KEYPAGE_REQUIRE_HTTPS_SETUP` | `false` | When `true`, reject `POST /setup` over clear HTTP. Accepts real TLS or `X-Forwarded-Proto: https` (only if `KEYPAGE_TRUST_PROXY=true`). Default stays off so the one-line installer can claim the vault on LAN HTTP |
 | `KEYPAGE_SESSION_IDLE_MINUTES` | *(unset)* | Lock the vault after this many minutes without activity (valid range 15–30; Settings options are 15, 20, 25, 30). When set, pins the timeout: the Settings control becomes read-only and `PATCH /api/settings` is rejected. Leave unset to manage timeout from Settings |
 | `KEYPAGE_SESSION_ABSOLUTE_HOURS` | `12` | Maximum session lifetime regardless of activity |
 | `KEYPAGE_CLIPBOARD_CLEAR_SECONDS` | `30` | Seconds before copied key material is cleared from the clipboard (valid range 5–300) |

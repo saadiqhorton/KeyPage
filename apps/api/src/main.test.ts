@@ -15,6 +15,7 @@ const ENV_KEYS = [
   "KEYPAGE_WEB_DIR",
   "LOG_LEVEL",
   "KEYPAGE_SESSION_IDLE_MINUTES",
+  "KEYPAGE_REQUIRE_HTTPS_SETUP",
 ] as const;
 
 async function captureStdio<T>(fn: () => Promise<T>): Promise<{ result: T; output: string }> {
@@ -124,6 +125,7 @@ describe("bootstrapApp", () => {
     process.env.KEYPAGE_WEB_DIR = path.join(dataDir, "no-web");
     process.env.LOG_LEVEL = "silent";
     delete process.env.KEYPAGE_SESSION_IDLE_MINUTES;
+    delete process.env.KEYPAGE_REQUIRE_HTTPS_SETUP;
 
     const { result, output } = await captureStdio(() => bootstrapApp(loadConfig()));
     const { app, db } = result;
@@ -134,6 +136,30 @@ describe("bootstrapApp", () => {
       assert.equal(output.includes(token), false, "plaintext setup token must not appear in logs");
       assert.match(output, /setup-token/);
       assert.match(output, new RegExp(tokenFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(output, /plain HTTP exposes the setup POST body/);
+      assert.equal(output.includes("KEYPAGE_REQUIRE_HTTPS_SETUP is on"), false);
+    } finally {
+      await app.close();
+      closeDatabase(db);
+    }
+  });
+
+  it("warns that HTTPS setup is required when the opt-in flag is on (SAA-223)", async () => {
+    snapshotEnv();
+    const dataDir = await makeTempDir();
+    process.env.KEYPAGE_DATA_DIR = dataDir;
+    process.env.KEYPAGE_WEB_DIR = path.join(dataDir, "no-web");
+    process.env.LOG_LEVEL = "silent";
+    process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "true";
+    delete process.env.KEYPAGE_SESSION_IDLE_MINUTES;
+
+    const { result, output } = await captureStdio(() => bootstrapApp(loadConfig()));
+    const { app, db } = result;
+    try {
+      const token = (await fs.readFile(path.join(dataDir, "setup-token"), "utf8")).trim();
+      assert.equal(output.includes(token), false, "plaintext setup token must not appear in logs");
+      assert.match(output, /KEYPAGE_REQUIRE_HTTPS_SETUP is on/);
+      assert.equal(output.includes("plain HTTP exposes the setup POST body"), false);
     } finally {
       await app.close();
       closeDatabase(db);
