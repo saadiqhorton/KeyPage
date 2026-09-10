@@ -24,10 +24,6 @@ export function KeyEntryCardGrid({
   onCopy,
   onEdit,
   onDelete,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
   onDropEntry,
   reorderBusy,
 }: KeyEntryCardGridProps) {
@@ -47,10 +43,6 @@ export function KeyEntryCardGrid({
             onCopy={() => onCopy(entry)}
             onEdit={onEdit}
             onDelete={onDelete}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
             onDropEntry={onDropEntry}
             reorderBusy={reorderBusy}
           />

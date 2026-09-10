@@ -14,10 +14,6 @@ export type KeyEntryActionProps = {
 };
 
 export type KeyEntryReorderProps = {
-  canMoveUp(entry: KeyEntry): boolean;
-  canMoveDown(entry: KeyEntry): boolean;
-  onMoveUp(entry: KeyEntry): void;
-  onMoveDown(entry: KeyEntry): void;
   onDropEntry(draggedId: string, targetId: string): void;
   reorderBusy: boolean;
 };

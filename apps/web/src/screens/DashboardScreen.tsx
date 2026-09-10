@@ -34,10 +34,7 @@ import {
   toggleTagKey,
 } from "@/lib/key-entry-filter";
 import { useIdleLock } from "@/vault/useIdleLock";
-import {
-  dropVisibleEntry,
-  moveVisibleEntry,
-} from "@/lib/key-entry-order";
+import { dropVisibleEntry } from "@/lib/key-entry-order";
 import { useKeyEntries } from "@/vault/useKeyEntries.js";
 import { useKeyEntrySecret } from "@/vault/useKeyEntrySecret.js";
 import { useVault } from "@/vault/useVault";
@@ -240,28 +237,6 @@ export function DashboardScreen() {
 
   const reorderProps = useMemo<KeyEntryReorderProps>(
     () => ({
-      canMoveUp: (entry) => visible[0]?.id !== entry.id,
-      canMoveDown: (entry) => visible[visible.length - 1]?.id !== entry.id,
-      onMoveUp: (entry) => {
-        void persistOrder(
-          moveVisibleEntry(
-            entries.map((item) => item.id),
-            visible.map((item) => item.id),
-            entry.id,
-            -1,
-          ),
-        );
-      },
-      onMoveDown: (entry) => {
-        void persistOrder(
-          moveVisibleEntry(
-            entries.map((item) => item.id),
-            visible.map((item) => item.id),
-            entry.id,
-            1,
-          ),
-        );
-      },
       onDropEntry: (draggedId, targetId) => {
         void persistOrder(
           dropVisibleEntry(

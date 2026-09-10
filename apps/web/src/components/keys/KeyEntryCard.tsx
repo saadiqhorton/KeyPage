@@ -35,10 +35,6 @@ export function KeyEntryCard({
   onCopy,
   onEdit,
   onDelete,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
   onDropEntry,
   reorderBusy,
 }: Readonly<KeyEntryCardProps>) {
@@ -54,11 +50,7 @@ export function KeyEntryCard({
           <KeyEntryReorderControls
             entryId={entry.id}
             entryLabel={entry.label}
-            canMoveUp={canMoveUp(entry)}
-            canMoveDown={canMoveDown(entry)}
             disabled={reorderBusy}
-            onMoveUp={() => onMoveUp(entry)}
-            onMoveDown={() => onMoveDown(entry)}
           />
           <ServiceIcon serviceId={entry.serviceId} size="md" />
           <div className="min-w-0 flex-1">

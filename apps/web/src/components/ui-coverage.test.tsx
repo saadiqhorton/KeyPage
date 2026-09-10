@@ -75,10 +75,6 @@ const revealProps = {
   onCopy: () => undefined,
   onEdit: () => undefined,
   onDelete: () => undefined,
-  canMoveUp: () => true,
-  canMoveDown: () => true,
-  onMoveUp: () => undefined,
-  onMoveDown: () => undefined,
   onDropEntry: () => undefined,
   reorderBusy: false,
 };
@@ -404,10 +400,6 @@ describe("key entry views", () => {
           onCopy={() => undefined}
           onEdit={() => undefined}
           onDelete={() => undefined}
-          canMoveUp={() => true}
-          canMoveDown={() => true}
-          onMoveUp={() => undefined}
-          onMoveDown={() => undefined}
           onDropEntry={() => undefined}
           reorderBusy={false}
         />,
@@ -431,10 +423,6 @@ describe("key entry views", () => {
           onCopy={() => undefined}
           onEdit={() => undefined}
           onDelete={() => undefined}
-          canMoveUp={() => true}
-          canMoveDown={() => true}
-          onMoveUp={() => undefined}
-          onMoveDown={() => undefined}
           onDropEntry={() => undefined}
           reorderBusy={false}
         />,
@@ -445,14 +433,16 @@ describe("key entry views", () => {
       <KeyEntryCardGrid entries={[entry]} {...revealProps} />,
     );
     assert.match(grid, /Production/);
-    assert.match(grid, /Move Production up/);
-    assert.match(grid, /Move Production down/);
+    assert.match(grid, /Drag to reorder Production/);
+    assert.doesNotMatch(grid, /Move Production up/);
+    assert.doesNotMatch(grid, /Move Production down/);
     const list = renderToStaticMarkup(
       <KeyEntryList entries={[entry]} {...revealProps} />,
     );
     assert.match(list, /Main billing key/);
-    assert.match(list, /Move Production up/);
     assert.match(list, /Drag to reorder Production/);
+    assert.doesNotMatch(list, /Move Production up/);
+    assert.doesNotMatch(list, /Move Production down/);
     const table = renderToStaticMarkup(
       <KeyEntryTable
         entries={[entry, makeEntry({ id: "other", description: null })]}
@@ -463,17 +453,15 @@ describe("key entry views", () => {
         onCopy={() => undefined}
         onEdit={() => undefined}
         onDelete={() => undefined}
-        canMoveUp={() => true}
-        canMoveDown={() => true}
-        onMoveUp={() => undefined}
-        onMoveDown={() => undefined}
         onDropEntry={() => undefined}
         reorderBusy={false}
       />,
     );
     assert.match(table, /Key Entries/);
     assert.match(table, /sk-live/);
-    assert.match(table, /Move Production up/);
+    assert.match(table, /Drag to reorder Production/);
+    assert.doesNotMatch(table, /Move Production up/);
+    assert.doesNotMatch(table, /Move Production down/);
     assert.match(table, /Reorder/);
   });
 
