@@ -26,7 +26,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: http://177.7.36.102:9000
+          SONAR_HOST_URL: https://sonarqube.dezignerdrugz.com
         with:
           args: >
             -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
@@ -42,7 +42,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: http://177.7.36.102:9000
+          SONAR_HOST_URL: https://sonarqube.dezignerdrugz.com
         with:
           args: >
             -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
@@ -61,7 +61,7 @@ jobs:
           import base64, json, os, time, urllib.request
 
           token = os.environ["SONAR_TOKEN"]
-          host = "http://177.7.36.102:9000"
+          host = "https://sonarqube.dezignerdrugz.com"
           key = "saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503"
           auth = base64.b64encode(f"{token}:".encode()).decode()
 
