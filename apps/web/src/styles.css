@@ -317,6 +317,41 @@
   animation: menu-pop-in 120ms var(--ease-out-soft) both;
 }
 
+.key-entry-sortable-item {
+  transition: transform 180ms var(--ease-out-soft);
+}
+
+.key-entry-drop-placeholder {
+  position: fixed;
+  z-index: 40;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px dashed rgba(200, 162, 74, 0.55);
+  border-radius: 2px;
+  background: rgba(200, 162, 74, 0.08);
+}
+
+.key-entry-drag-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  pointer-events: none;
+  border: 1px solid var(--color-hairline);
+  border-radius: 2px;
+  background: var(--color-surface);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .entrance-stagger > *,
   .card-grid-enter > *,
@@ -330,6 +365,10 @@
   .modal-panel-out,
   .menu-pop-in {
     animation: none;
+  }
+
+  .key-entry-sortable-item {
+    transition: none;
   }
 
   .pressable:active:not(:disabled) {

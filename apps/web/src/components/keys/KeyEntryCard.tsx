@@ -2,10 +2,8 @@ import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
 import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
-import {
-  KeyEntryReorderControls,
-  keyEntryDropTargetProps,
-} from "@/components/keys/KeyEntryReorderControls";
+import { KeyEntryReorderControls } from "@/components/keys/KeyEntryReorderControls";
+import { useKeyEntrySortableItem } from "@/components/keys/KeyEntrySortable";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatEntryDate } from "@/lib/format";
@@ -35,15 +33,16 @@ export function KeyEntryCard({
   onCopy,
   onEdit,
   onDelete,
-  onDropEntry,
   reorderBusy,
 }: Readonly<KeyEntryCardProps>) {
   const displayName = serviceDisplayName(entry);
+  const { setRef, style } = useKeyEntrySortableItem(entry.id);
 
   return (
     <article
-      className={cn("bezel-shell h-full", className)}
-      {...keyEntryDropTargetProps({ entryId: entry.id, onDropEntry })}
+      ref={setRef}
+      style={style}
+      className={cn("bezel-shell key-entry-sortable-item h-full", className)}
     >
       <div className="bezel-core flex h-full flex-col gap-4 p-5">
         <header className="flex items-start gap-3">
