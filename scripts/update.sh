@@ -175,7 +175,8 @@ else
     fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
   tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*")"
-  if [[ -n "${tracked_data}" ]]; then
+  incoming_data="$(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" -- data)"
+  if [[ -n "${tracked_data}" || -n "${incoming_data}" ]]; then
     fail "${KEYPAGE_DIR}/data is tracked in git — refusing to reset so vault files are not overwritten. Vault data was not deleted."
   fi
   env_backup=""

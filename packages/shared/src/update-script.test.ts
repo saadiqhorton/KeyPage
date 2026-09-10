@@ -219,6 +219,7 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /mkdir -p data/);
     assert.match(src, /docker compose logs/);
     assert.match(src, /ls-files -- "data"/);
+    assert.match(src, /ls-tree -r --name-only/);
 
     const compose = fs.readFileSync(COMPOSE_YML, "utf8");
     assert.doesNotMatch(compose, TUNNEL_PRODUCT);
@@ -463,6 +464,39 @@ describe("scripts/update.sh behavior", () => {
     const output = `${result.stdout}\n${result.stderr}`;
     assert.notEqual(result.status, 0, output);
     assert.match(output, /origin is .*expected/);
+    assert.doesNotMatch(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up /);
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("fails closed when the fetched tip newly tracks ./data", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+    fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
+    fs.writeFileSync(path.join(remoteWork, ".gitignore"), ".env\n");
+    fs.mkdirSync(path.join(remoteWork, "data"), { recursive: true });
+    fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "evil-vault");
+    git(remoteWork, ["add", "-f", ".gitignore", "data/keypage.db"]);
+    git(remoteWork, ["commit", "-m", "accidentally track vault"]);
+    git(remoteWork, ["push", bare, "main"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notEqual(result.status, 0, output);
+    assert.match(output, /data is tracked/i);
     assert.doesNotMatch(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up /);
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(remoteWork, { recursive: true, force: true });
