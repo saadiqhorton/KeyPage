@@ -60,7 +60,7 @@ Already have the repo checked out?
 
 ```bash
 docker compose up -d --build
-cat ./data/setup-token
+cat ~/keypage/data/setup-token
 ```
 
 Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. The default listen port is **9090** (`DEFAULT_LISTEN_PORT` in `packages/shared`; override with `PORT`). Installer default directory: `~/keypage` (override with `KEYPAGE_DIR`).
@@ -89,8 +89,8 @@ The image includes a Docker `HEALTHCHECK` that hits `/api/health` on `$PORT` ins
 
 ## First run
 
-1. **Get your setup token** — On first boot of an unclaimed vault, KeyPage writes a one-time setup token to `./data/setup-token` (mode `0600`). It is not printed to container logs. Retrieve it with:
-   - `cat ./data/setup-token` on the host (bind mount)
+1. **Get your setup token** — On first boot of an unclaimed vault, KeyPage writes a one-time setup token to `~/keypage/data/setup-token` (mode `0600`). It is not printed to container logs. Retrieve it with:
+   - `cat ~/keypage/data/setup-token` on the host (bind mount; installer default)
    - `docker compose exec keypage cat /app/data/setup-token`
    The server binds `0.0.0.0` so anyone on your LAN or holding a Cloudflare Tunnel URL can reach the setup screen; the token is what stops them claiming your vault.
    **Transport:** the setup `POST` body (token plus first-boot secrets) rides the same connection you use. Plain LAN HTTP is visible to anyone who can observe that network. Prefer Cloudflare Tunnel or a reverse proxy with TLS **before** you claim the vault. The one-line installer still allows HTTP so `http://127.0.0.1:9090` works; set `KEYPAGE_REQUIRE_HTTPS_SETUP=true` to reject cleartext claims (and `KEYPAGE_TRUST_PROXY=true` if Tunnel/proxy terminates TLS in front of KeyPage).

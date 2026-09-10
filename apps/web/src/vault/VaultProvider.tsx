@@ -170,7 +170,7 @@ export function VaultProvider({ children }: Readonly<VaultProviderProps>) {
       throw new ApiError({
         error: "invalid_setup_token",
         message:
-          "That setup token doesn't look right. Copy it from ./data/setup-token.",
+          "That setup token doesn't look right. Copy it from ~/keypage/data/setup-token.",
       });
     }
 
