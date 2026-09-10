@@ -192,7 +192,10 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /\/api\/health/);
     assert.match(src, /compose up -d --build/);
     assert.match(src, /rev-parse FETCH_HEAD/);
-    assert.match(src, /reset --hard/);
+    assert.doesNotMatch(src, /reset --hard/);
+    assert.doesNotMatch(src, /checkout -q -B/);
+    assert.match(src, /reset --soft/);
+    assert.match(src, /:\(exclude\)data/);
     assert.doesNotMatch(src, /^\s*PORT=/m);
     assert.doesNotMatch(src, /sed[^\n]*PORT/);
     assert.doesNotMatch(src, /(?:sed|tee|printf|cat\s*>)[^\n]*docker-compose\.yml/);
@@ -221,8 +224,14 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /docker compose logs/);
     assert.match(src, /ls-files -- "data"/);
     assert.match(src, /ls-tree -r --name-only/);
+    assert.match(src, /bind-mount, outside source control/);
+
+    const gitignore = fs.readFileSync(path.join(repoRoot, ".gitignore"), "utf8");
+    assert.match(gitignore, /^data\/$/m);
+    assert.match(gitignore, /^\*\.db$/m);
 
     const compose = fs.readFileSync(COMPOSE_YML, "utf8");
+    assert.match(compose, /^\s+-\s+\.\/data:\/app\/data$/m);
     assert.doesNotMatch(compose, TUNNEL_PRODUCT);
     assert.doesNotMatch(compose, /^\s+cloudflared:/m);
 
@@ -246,6 +255,8 @@ describe("README update path", () => {
     );
     assert.match(section, /tracked/i);
     assert.match(section, /\.\/data/);
+    assert.match(section, /gitignore/i);
+    assert.match(section, /bind-mount/i);
     assert.doesNotMatch(section, /^\s*git reset --hard/m);
     assert.doesNotMatch(section, /stash or discard/i);
   });
@@ -498,6 +509,7 @@ describe("scripts/update.sh behavior", () => {
     const output = `${result.stdout}\n${result.stderr}`;
     assert.notEqual(result.status, 0, output);
     assert.match(output, /data is tracked/i);
+    assert.match(output, /bind-mount, outside source control/);
     assert.doesNotMatch(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up /);
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(remoteWork, { recursive: true, force: true });
@@ -525,6 +537,7 @@ describe("scripts/update.sh behavior", () => {
     const output = `${result.stdout}\n${result.stderr}`;
     assert.notEqual(result.status, 0, output);
     assert.match(output, /data is tracked/i);
+    assert.match(output, /bind-mount, outside source control/);
     assert.doesNotMatch(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up /);
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(remoteWork, { recursive: true, force: true });
