@@ -474,12 +474,15 @@ describe("RecoveryCodesScreen", () => {
 
 describe("SetupScreen", () => {
   it("renders password setup and ready steps", () => {
-    assert.match(
-      renderToStaticMarkup(
-        wrapVault(<SetupScreen />, { phase: "setup_required" }, { kind: "setup", step: 1 }),
-      ),
-      /Create Master Password/,
+    const setupHtml = renderToStaticMarkup(
+      wrapVault(<SetupScreen />, { phase: "setup_required" }, { kind: "setup", step: 1 }),
     );
+    assert.match(setupHtml, /Create Master Password/);
+    assert.match(setupHtml, /cat ~\/keypage\/data\/setup-token/);
+    assert.match(setupHtml, /installer default/);
+    assert.match(setupHtml, /docker compose exec keypage cat \/app\/data\/setup-token/);
+    assert.doesNotMatch(setupHtml, /printed in the server log/i);
+    assert.doesNotMatch(setupHtml, /docker compose logs/);
     assert.match(
       renderToStaticMarkup(
         wrapVault(<SetupScreen />, { phase: "unlocked", idleTimeoutSeconds: 1200 }, {

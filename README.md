@@ -54,7 +54,7 @@ One-shot install (clones into `~/keypage`, builds, and starts):
 curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/install.sh | bash
 ```
 
-Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. Re-running the same command updates the checkout when possible and brings the stack back up.
+Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. Re-running the same command updates the checkout when possible and brings the stack back up. Setup token after the one-line installer: `cat ~/keypage/data/setup-token` (or `cat ${KEYPAGE_DIR}/data/setup-token` if you overrode `KEYPAGE_DIR`).
 
 Already have the repo checked out?
 
@@ -89,9 +89,10 @@ The image includes a Docker `HEALTHCHECK` that hits `/api/health` on `$PORT` ins
 
 ## First run
 
-1. **Get your setup token** — On first boot of an unclaimed vault, KeyPage writes a one-time setup token to `./data/setup-token` (mode `0600`). It is not printed to container logs. Retrieve it with:
-   - `cat ./data/setup-token` on the host (bind mount)
-   - `docker compose exec keypage cat /app/data/setup-token`
+1. **Get your setup token** — On first boot of an unclaimed vault, KeyPage writes a one-time setup token to the compose data dir (mode `0600`; installer default `~/keypage/data/setup-token`, or `$KEYPAGE_DIR/data/setup-token` if you overrode `KEYPAGE_DIR`). It is not printed to container logs. Retrieve it with:
+   - One-line installer: `cat ~/keypage/data/setup-token`
+   - Repo checkout / `docker compose` from the clone: `cat ./data/setup-token`
+   - In-container (always the image path): `docker compose exec keypage cat /app/data/setup-token`
    The server binds `0.0.0.0` so anyone on your LAN or holding a Cloudflare Tunnel URL can reach the setup screen; the token is what stops them claiming your vault.
    **Transport:** the setup `POST` body (token plus first-boot secrets) rides the same connection you use. Plain LAN HTTP is visible to anyone who can observe that network. Prefer Cloudflare Tunnel or a reverse proxy with TLS **before** you claim the vault. The one-line installer still allows HTTP so `http://127.0.0.1:9090` works; set `KEYPAGE_REQUIRE_HTTPS_SETUP=true` to reject cleartext claims (and `KEYPAGE_TRUST_PROXY=true` if Tunnel/proxy terminates TLS in front of KeyPage).
 2. **Setup** — Open the app. If the vault is new, you are redirected to `/setup`. Paste the setup token and choose a Master Password (minimum 12 characters). KeyPage derives your encryption key in the browser and sends only a login verifier to the server.
