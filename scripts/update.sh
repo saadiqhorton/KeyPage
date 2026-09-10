@@ -212,10 +212,12 @@ else
       ':(exclude)setup-token'; then
     fail "restore of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
-  # restore does not delete paths absent from the tip. Drop those tracked
-  # source files with git rm (never vault paths — excluded in the pathspec).
-  gone_files="$(git -C "${KEYPAGE_DIR}" diff --name-only --diff-filter=D HEAD "${wanted}" -- \
-    . ':(exclude)data' ':(exclude)data/**' ':(exclude)*.db' ':(exclude)setup-token' || true)"
+  # restore does not drop paths absent from the tip (deletes or rename
+  # sources). Remove tracked source files that are not in the fetched tree.
+  # Never git-rm vault paths.
+  gone_files="$(comm -23 \
+    <(git -C "${KEYPAGE_DIR}" ls-files | sort) \
+    <(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" | sort))"
   if [[ -n "${gone_files}" ]]; then
     while IFS= read -r gone; do
       [[ -z "${gone}" ]] && continue
