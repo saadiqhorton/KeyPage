@@ -54,7 +54,7 @@ One-shot install (clones into `~/keypage`, builds, and starts):
 curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/install.sh | bash
 ```
 
-Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. Re-running the same command updates the checkout when possible and brings the stack back up. Setup token after the one-line installer: `cat ~/keypage/data/setup-token` (or `cat ${KEYPAGE_DIR}/data/setup-token` if you overrode `KEYPAGE_DIR`).
+Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. To update an existing install, use [Updates](#updates). Setup token after the one-line installer: `cat ~/keypage/data/setup-token` (or `cat ${KEYPAGE_DIR}/data/setup-token` if you overrode `KEYPAGE_DIR`).
 
 Already have the repo checked out?
 
@@ -138,7 +138,27 @@ sudo chown -R 1000:1000 ./data
 
 ### Updates
 
-`docker compose up -d --build` rebuilds the image but keeps the `./data` bind mount. Your vault survives image and container updates as long as you do not delete `./data`.
+From an existing Docker / one-line install (`~/keypage` by default), including checkouts created before `scripts/update.sh` existed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/update.sh | bash
+```
+
+That fetches the updater from `main`, pulls the checkout (default branch `main`), rebuilds the image, and recreates the container. `./data` (vault / SQLite / setup-token) is left in place. The published listen port is not rewritten.
+
+Once the checkout has the script:
+
+```bash
+cd ~/keypage && bash scripts/update.sh
+```
+
+The updater fetches `KEYPAGE_REF` (default `main`) and moves a clean tree to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. If HEAD does not reach that ref (fetch failure or local edits), it exits before rebuild. Vault files are not deleted.
+
+If `/api/health` does not come back, the script exits non-zero and prints how to read `docker compose logs`. Vault files are not deleted.
+
+If you terminate TLS elsewhere (reverse proxy or a personal Tunnel), update the container this way; keep targeting the same host port. Expect brief downtime while the container restarts.
+
+Compose-only equivalent: `docker compose up -d --build` also keeps the `./data` bind mount. Your vault survives image and container updates as long as you do not delete `./data`.
 
 The `Dockerfile` pins `node:22-alpine` by digest (`node:22-alpine@sha256:…`) so rebuilds stay on the same Node/Alpine. To take a newer official image on purpose:
 

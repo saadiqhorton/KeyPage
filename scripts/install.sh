@@ -130,14 +130,16 @@ if [[ -d "${KEYPAGE_DIR}/.git" ]]; then
 
   note "fetching ${KEYPAGE_REF}"
   if git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
-    if git -C "${KEYPAGE_DIR}" checkout -q "${KEYPAGE_REF}" 2>/dev/null \
-      || git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" "FETCH_HEAD" 2>/dev/null; then
-      if ! git -C "${KEYPAGE_DIR}" pull --ff-only origin "${KEYPAGE_REF}"; then
-        warn "pull skipped (local changes or diverged) — using current tree"
+    if git -C "${KEYPAGE_DIR}" diff --quiet && git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
+      # Depth-1 installs cannot `pull --ff-only`: old HEAD and the new tip
+      # are disconnected shallow boundaries. Move a clean tree to FETCH_HEAD.
+      if git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" FETCH_HEAD; then
+        ok "updated ${KEYPAGE_DIR}"
+      else
+        warn "checkout of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
       fi
-      ok "updated ${KEYPAGE_DIR}"
     else
-      warn "checkout of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
+      warn "local changes present — using current tree so Compose can still start"
     fi
   else
     warn "fetch of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
@@ -225,5 +227,6 @@ note "First visit: paste the setup token, create a Master Password (12+ chars), 
 warn "First-boot setup over plain LAN HTTP exposes the setup POST body (including the setup token)."
 note "Prefer Cloudflare Tunnel or a TLS reverse proxy before claiming the vault."
 note "To reject cleartext claims: KEYPAGE_REQUIRE_HTTPS_SETUP=true (plus KEYPAGE_TRUST_PROXY=true behind a Tunnel/proxy)."
+note "Later updates: cd ${KEYPAGE_DIR} && bash scripts/update.sh"
 note "Later: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 printf '\n'

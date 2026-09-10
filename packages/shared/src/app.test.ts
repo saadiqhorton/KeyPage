@@ -69,5 +69,14 @@ describe("app constants", () => {
       new RegExp(`^DEFAULT_LISTEN_PORT=${DEFAULT_LISTEN_PORT}$`, "m"),
     );
     assert.match(smoke, new RegExp(`^HEALTH_STATUS_OK=${HEALTH_STATUS_OK}$`, "m"));
+
+    const update = fs.readFileSync(
+      path.join(repoRoot, "scripts/update.sh"),
+      "utf8",
+    );
+    assert.match(
+      update,
+      new RegExp(`^DEFAULT_LISTEN_PORT=${DEFAULT_LISTEN_PORT}$`, "m"),
+    );
   });
 });
