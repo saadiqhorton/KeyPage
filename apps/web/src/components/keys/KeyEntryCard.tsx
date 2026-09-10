@@ -2,11 +2,16 @@ import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
 import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
+import {
+  KeyEntryReorderControls,
+  keyEntryDropTargetProps,
+} from "@/components/keys/KeyEntryReorderControls";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatEntryDate } from "@/lib/format";
 import { serviceDisplayName } from "@/lib/key-entry-filter";
 import { cn } from "@/lib/cn";
+import type { KeyEntryReorderProps } from "@/components/keys/key-entry-view-props";
 
 type KeyEntryCardProps = {
   entry: KeyEntry;
@@ -18,7 +23,7 @@ type KeyEntryCardProps = {
   onCopy(): void;
   onEdit(entry: KeyEntry): void;
   onDelete(entry: KeyEntry): void;
-};
+} & KeyEntryReorderProps;
 
 export function KeyEntryCard({
   entry,
@@ -30,13 +35,31 @@ export function KeyEntryCard({
   onCopy,
   onEdit,
   onDelete,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  onDropEntry,
+  reorderBusy,
 }: Readonly<KeyEntryCardProps>) {
   const displayName = serviceDisplayName(entry);
 
   return (
-    <article className={cn("bezel-shell h-full", className)}>
+    <article
+      className={cn("bezel-shell h-full", className)}
+      {...keyEntryDropTargetProps({ entryId: entry.id, onDropEntry })}
+    >
       <div className="bezel-core flex h-full flex-col gap-4 p-5">
         <header className="flex items-start gap-3">
+          <KeyEntryReorderControls
+            entryId={entry.id}
+            entryLabel={entry.label}
+            canMoveUp={canMoveUp(entry)}
+            canMoveDown={canMoveDown(entry)}
+            disabled={reorderBusy}
+            onMoveUp={() => onMoveUp(entry)}
+            onMoveDown={() => onMoveDown(entry)}
+          />
           <ServiceIcon serviceId={entry.serviceId} size="md" />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">

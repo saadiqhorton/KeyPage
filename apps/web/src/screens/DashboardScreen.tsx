@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { KeyEntry } from "@keypage/shared";
 
@@ -8,7 +8,11 @@ import { KeyEntryList } from "@/components/keys/KeyEntryList";
 import { KeyEntryModal } from "@/components/keys/KeyEntryModal";
 import { KeyEntryTable } from "@/components/keys/KeyEntryTable";
 import { KeyEntryToolbar } from "@/components/keys/KeyEntryToolbar";
-import type { KeyEntryActionProps, KeyEntryRevealProps } from "@/components/keys/key-entry-view-props";
+import type {
+  KeyEntryActionProps,
+  KeyEntryReorderProps,
+  KeyEntryRevealProps,
+} from "@/components/keys/key-entry-view-props";
 import { NoFilterMatchesState } from "@/components/keys/NoFilterMatchesState";
 import { DashboardShell } from "@/components/DashboardShell";
 import { EmptyVaultState } from "@/components/EmptyVaultState";
@@ -21,6 +25,7 @@ import { Toast } from "@/components/ui/Toast";
 import { useKeyEntryView } from "@/hooks/useKeyEntryView";
 import { useHealth } from "@/hooks/useHealth";
 import { useToast } from "@/hooks/useToast";
+import { ApiError } from "@/lib/api";
 import { formatCountdown } from "@/lib/format";
 import {
   collectTagFacets,
@@ -29,6 +34,10 @@ import {
   toggleTagKey,
 } from "@/lib/key-entry-filter";
 import { useIdleLock } from "@/vault/useIdleLock";
+import {
+  dropVisibleEntry,
+  moveVisibleEntry,
+} from "@/lib/key-entry-order";
 import { useKeyEntries } from "@/vault/useKeyEntries.js";
 import { useKeyEntrySecret } from "@/vault/useKeyEntrySecret.js";
 import { useVault } from "@/vault/useVault";
@@ -43,6 +52,7 @@ type DashboardContentProps = {
   view: KeyEntryView;
   revealProps: KeyEntryRevealProps;
   actionProps: KeyEntryActionProps;
+  reorderProps: KeyEntryReorderProps;
   onAddKey: () => void;
   onClearFilters: () => void;
 };
@@ -56,6 +66,7 @@ export function renderDashboardContent({
   view,
   revealProps,
   actionProps,
+  reorderProps,
   onAddKey,
   onClearFilters,
 }: DashboardContentProps): ReactNode {
@@ -78,12 +89,33 @@ export function renderDashboardContent({
     return <NoFilterMatchesState onClearFilters={onClearFilters} />;
   }
   if (view === "table") {
-    return <KeyEntryTable entries={visible} {...revealProps} {...actionProps} />;
+    return (
+      <KeyEntryTable
+        entries={visible}
+        {...revealProps}
+        {...actionProps}
+        {...reorderProps}
+      />
+    );
   }
   if (view === "list") {
-    return <KeyEntryList entries={visible} {...revealProps} {...actionProps} />;
+    return (
+      <KeyEntryList
+        entries={visible}
+        {...revealProps}
+        {...actionProps}
+        {...reorderProps}
+      />
+    );
   }
-  return <KeyEntryCardGrid entries={visible} {...revealProps} {...actionProps} />;
+  return (
+    <KeyEntryCardGrid
+      entries={visible}
+      {...revealProps}
+      {...actionProps}
+      {...reorderProps}
+    />
+  );
 }
 
 export function DashboardScreen() {
@@ -99,9 +131,11 @@ export function DashboardScreen() {
     createKeyEntry,
     updateKeyEntry,
     deleteKeyEntry,
+    reorderKeyEntries,
     clipboardClearMs,
     noteLastUsed,
   } = useKeyEntries(vaultUnlocked);
+  const [reorderBusy, setReorderBusy] = useState(false);
   const { toast, showToast } = useToast();
   const {
     revealedId,
@@ -179,6 +213,70 @@ export function DashboardScreen() {
     [queryFiltered, activeTagKeys],
   );
 
+  const persistOrder = useCallback(
+    async (orderedIds: string[]) => {
+      const currentIds = entries.map((entry) => entry.id);
+      if (
+        orderedIds.length !== currentIds.length ||
+        orderedIds.every((id, index) => id === currentIds[index])
+      ) {
+        return;
+      }
+      setReorderBusy(true);
+      try {
+        await reorderKeyEntries(orderedIds);
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : "Failed to reorder Key Entries.";
+        showToast(message, "danger", 4500);
+      } finally {
+        setReorderBusy(false);
+      }
+    },
+    [entries, reorderKeyEntries, showToast],
+  );
+
+  const reorderProps = useMemo<KeyEntryReorderProps>(
+    () => ({
+      canMoveUp: (entry) => visible[0]?.id !== entry.id,
+      canMoveDown: (entry) => visible[visible.length - 1]?.id !== entry.id,
+      onMoveUp: (entry) => {
+        void persistOrder(
+          moveVisibleEntry(
+            entries.map((item) => item.id),
+            visible.map((item) => item.id),
+            entry.id,
+            -1,
+          ),
+        );
+      },
+      onMoveDown: (entry) => {
+        void persistOrder(
+          moveVisibleEntry(
+            entries.map((item) => item.id),
+            visible.map((item) => item.id),
+            entry.id,
+            1,
+          ),
+        );
+      },
+      onDropEntry: (draggedId, targetId) => {
+        void persistOrder(
+          dropVisibleEntry(
+            entries.map((item) => item.id),
+            visible.map((item) => item.id),
+            draggedId,
+            targetId,
+          ),
+        );
+      },
+      reorderBusy,
+    }),
+    [entries, persistOrder, reorderBusy, visible],
+  );
+
   function openAddKey() {
     setAddKeyOpen(true);
   }
@@ -203,6 +301,7 @@ export function DashboardScreen() {
     view,
     revealProps,
     actionProps,
+    reorderProps,
     onAddKey: openAddKey,
     onClearFilters: clearFilters,
   });

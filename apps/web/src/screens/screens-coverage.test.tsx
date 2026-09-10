@@ -138,10 +138,20 @@ const actionProps = {
   onDelete: () => undefined,
 };
 
+const reorderProps = {
+  canMoveUp: () => false,
+  canMoveDown: () => false,
+  onMoveUp: () => undefined,
+  onMoveDown: () => undefined,
+  onDropEntry: () => undefined,
+  reorderBusy: false,
+};
+
 describe("renderDashboardContent", () => {
   const base = {
     revealProps,
     actionProps,
+    reorderProps,
     onAddKey: () => undefined,
     onClearFilters: () => undefined,
   };
@@ -235,48 +245,45 @@ describe("renderDashboardContent", () => {
       ),
       /No matching Key Entries/,
     );
-    assert.match(
-      renderToStaticMarkup(
-        renderDashboardContent({
-          ...base,
-          vaultUnlocked: true,
-          status: "ready",
-          error: null,
-          entries: [entry],
-          visible: [entry],
-          view: "table",
-        }) as never,
-      ),
-      /Key Entries/,
+    const table = renderToStaticMarkup(
+      renderDashboardContent({
+        ...base,
+        vaultUnlocked: true,
+        status: "ready",
+        error: null,
+        entries: [entry],
+        visible: [entry],
+        view: "table",
+      }) as never,
     );
-    assert.match(
-      renderToStaticMarkup(
-        renderDashboardContent({
-          ...base,
-          vaultUnlocked: true,
-          status: "ready",
-          error: null,
-          entries: [entry],
-          visible: [entry],
-          view: "list",
-        }) as never,
-      ),
-      /Production/,
+    assert.match(table, /Key Entries/);
+    assert.match(table, /Move Production up/);
+    const list = renderToStaticMarkup(
+      renderDashboardContent({
+        ...base,
+        vaultUnlocked: true,
+        status: "ready",
+        error: null,
+        entries: [entry],
+        visible: [entry],
+        view: "list",
+      }) as never,
     );
-    assert.match(
-      renderToStaticMarkup(
-        renderDashboardContent({
-          ...base,
-          vaultUnlocked: true,
-          status: "ready",
-          error: null,
-          entries: [entry],
-          visible: [entry],
-          view: "grid",
-        }) as never,
-      ),
-      /Production/,
+    assert.match(list, /Production/);
+    assert.match(list, /Move Production down/);
+    const grid = renderToStaticMarkup(
+      renderDashboardContent({
+        ...base,
+        vaultUnlocked: true,
+        status: "ready",
+        error: null,
+        entries: [entry],
+        visible: [entry],
+        view: "grid",
+      }) as never,
     );
+    assert.match(grid, /Production/);
+    assert.match(grid, /Drag to reorder Production/);
   });
 });
 

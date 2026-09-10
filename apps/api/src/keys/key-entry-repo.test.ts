@@ -18,6 +18,7 @@ import {
   insertKeyEntry,
   listKeyEntries,
   listKeyEntryCipherIvs,
+  reorderKeyEntries,
   listKeyEntryIds,
   markKeyEntryUsed,
   replaceKeyEntryCiphers,
@@ -261,5 +262,39 @@ describe("key-entry-repo", () => {
       updatedAt: "2026-04-01T00:00:00.000Z",
     });
     assert.equal(missingUpdate, null);
+  });
+
+  it("lists newest inserts first and persists an explicit reorder", () => {
+    insertKeyEntry(db, {
+      id: ENTRY_ID,
+      label: "Primary",
+      serviceId: "openai",
+      customServiceName: null,
+      description: null,
+      tags: [],
+      cipher: cipher(1),
+    });
+    insertKeyEntry(db, {
+      id: OTHER_ID,
+      label: "Second",
+      serviceId: "openai",
+      customServiceName: null,
+      description: null,
+      tags: [],
+      cipher: cipher(1, 6),
+    });
+
+    assert.deepEqual(
+      listKeyEntries(db).map((entry) => entry.id),
+      [OTHER_ID, ENTRY_ID],
+    );
+    assert.deepEqual(
+      reorderKeyEntries(db, [ENTRY_ID, OTHER_ID]).map((entry) => entry.id),
+      [ENTRY_ID, OTHER_ID],
+    );
+    assert.deepEqual(
+      listKeyEntries(db).map((entry) => entry.id),
+      [ENTRY_ID, OTHER_ID],
+    );
   });
 });

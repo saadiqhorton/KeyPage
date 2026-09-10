@@ -148,6 +148,19 @@ ALTER TABLE login_challenges ADD COLUMN purpose TEXT NOT NULL DEFAULT 'login'
   CHECK (purpose IN ('login', 'key-write'));
 `;
 
+const MIGRATION_6_SQL = `
+-- SAA-226: persist owner key-list order across dashboard views.
+ALTER TABLE key_entries ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+
+UPDATE key_entries SET sort_order = (
+  SELECT COUNT(*) FROM key_entries AS other
+  WHERE other.created_at > key_entries.created_at
+     OR (other.created_at = key_entries.created_at AND other.id > key_entries.id)
+);
+
+CREATE INDEX idx_key_entries_sort_order ON key_entries (sort_order, id);
+`;
+
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -181,6 +194,12 @@ export const MIGRATIONS: Migration[] = [
     version: 5,
     up(db) {
       db.exec(MIGRATION_5_SQL);
+    },
+  },
+  {
+    version: 6,
+    up(db) {
+      db.exec(MIGRATION_6_SQL);
     },
   },
 ];

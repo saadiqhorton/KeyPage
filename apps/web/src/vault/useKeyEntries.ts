@@ -1,7 +1,7 @@
 import type { KeyEntry } from "@keypage/shared";
 import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, getKeyEntries } from "@/lib/api.js";
+import { ApiError, getKeyEntries, patchKeyEntryOrder } from "@/lib/api.js";
 import { resolveClipboardClearMs } from "@/lib/clipboard-timeout.js";
 import { onKeyCleared } from "@/vault/session-keys.js";
 import type {
@@ -21,6 +21,7 @@ export type UseKeyEntriesResult = {
   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
   updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
   deleteKeyEntry(id: string): Promise<void>;
+  reorderKeyEntries(orderedIds: string[]): Promise<void>;
   noteLastUsed(id: string, lastUsedAt: string | null): void;
 };
 
@@ -109,6 +110,26 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     [ops],
   );
 
+  const reorderKeyEntries = useCallback(
+    async (orderedIds: string[]): Promise<void> => {
+      const previous = entries;
+      setEntries((current) => {
+        const byId = new Map(current.map((entry) => [entry.id, entry]));
+        return orderedIds
+          .map((id) => byId.get(id))
+          .filter((entry): entry is KeyEntry => entry !== undefined);
+      });
+      try {
+        const response = await patchKeyEntryOrder({ orderedIds });
+        setEntries(response.entries);
+      } catch (err) {
+        setEntries(previous);
+        throw err;
+      }
+    },
+    [entries],
+  );
+
   const noteLastUsed = useCallback(
     (id: string, lastUsedAt: string | null): void => {
       setEntries((previous) =>
@@ -129,6 +150,7 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     createKeyEntry,
     updateKeyEntry,
     deleteKeyEntry,
+    reorderKeyEntries,
     noteLastUsed,
   };
 }
