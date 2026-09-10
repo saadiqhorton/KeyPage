@@ -165,8 +165,9 @@ else
 
   note "fetching ${KEYPAGE_REF}"
   # Depth-1 one-line installs cannot `pull --ff-only`: old HEAD and the new
-  # tip are disconnected shallow boundaries. Fetch the ref, hard-reset
-  # tracked files onto origin/$KEYPAGE_REF, and leave untracked ./data.
+  # tip are disconnected shallow boundaries. Fetch the ref, then advance
+  # tracked *source* files only. Vault paths (data/, *.db, setup-token)
+  # are never in restore/reset pathspecs.
   if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
     fail "fetch of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
@@ -174,10 +175,10 @@ else
   if [[ -z "${wanted}" ]]; then
     fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
-  tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*")"
-  incoming_data="$(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" -- data)"
+  tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*" "data/**" "*.db" "setup-token")"
+  incoming_data="$(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" -- data "*.db" setup-token)"
   if [[ -n "${tracked_data}" || -n "${incoming_data}" ]]; then
-    fail "${KEYPAGE_DIR}/data is tracked in git — refusing to reset so vault files are not overwritten. Vault data was not deleted."
+    fail "${KEYPAGE_DIR}/data is tracked in git — vault must stay on the ./data bind-mount, outside source control. Not resetting or rebuilding. Vault data was not deleted."
   fi
   env_backup=""
   restore_env_backup() {
@@ -199,12 +200,24 @@ else
   if git -C "${KEYPAGE_DIR}" rev-parse --verify --quiet "origin/${KEYPAGE_REF}^{commit}" >/dev/null; then
     reset_to="origin/${KEYPAGE_REF}"
   fi
-  if ! git -C "${KEYPAGE_DIR}" reset --hard "${reset_to}"; then
+  # Worktree+index for source files only. Pathspecs never include data/.
+  if ! git -C "${KEYPAGE_DIR}" restore \
+      --source="${reset_to}" \
+      --staged --worktree \
+      -- \
+      . \
+      ':(exclude)data' \
+      ':(exclude)data/**' \
+      ':(exclude)*.db' \
+      ':(exclude)setup-token'; then
+    fail "restore of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+  fi
+  # Move HEAD only — does not touch the worktree (so cannot rewrite ./data).
+  if ! git -C "${KEYPAGE_DIR}" reset --soft "${reset_to}"; then
     fail "reset to ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
-  if ! git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" "${reset_to}"; then
-    fail "checkout of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
-  fi
+  git -C "${KEYPAGE_DIR}" update-ref "refs/heads/${KEYPAGE_REF}" "${wanted}"
+  git -C "${KEYPAGE_DIR}" symbolic-ref HEAD "refs/heads/${KEYPAGE_REF}"
   restore_env_backup
   now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   if [[ "${now}" != "${wanted}" ]]; then
