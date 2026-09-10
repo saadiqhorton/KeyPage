@@ -75,6 +75,8 @@ const revealProps = {
   onCopy: () => undefined,
   onEdit: () => undefined,
   onDelete: () => undefined,
+  onDropEntry: () => undefined,
+  reorderBusy: false,
 };
 
 describe("presentational shells", () => {
@@ -398,6 +400,8 @@ describe("key entry views", () => {
           onCopy={() => undefined}
           onEdit={() => undefined}
           onDelete={() => undefined}
+          onDropEntry={() => undefined}
+          reorderBusy={false}
         />,
       ),
       /Production/,
@@ -419,20 +423,26 @@ describe("key entry views", () => {
           onCopy={() => undefined}
           onEdit={() => undefined}
           onDelete={() => undefined}
+          onDropEntry={() => undefined}
+          reorderBusy={false}
         />,
       ),
       /Internal/,
     );
-    assert.match(
-      renderToStaticMarkup(
-        <KeyEntryCardGrid entries={[entry]} {...revealProps} />,
-      ),
-      /Production/,
+    const grid = renderToStaticMarkup(
+      <KeyEntryCardGrid entries={[entry]} {...revealProps} />,
     );
-    assert.match(
-      renderToStaticMarkup(<KeyEntryList entries={[entry]} {...revealProps} />),
-      /Main billing key/,
+    assert.match(grid, /Production/);
+    assert.match(grid, /Drag to reorder Production/);
+    assert.doesNotMatch(grid, /Move Production up/);
+    assert.doesNotMatch(grid, /Move Production down/);
+    const list = renderToStaticMarkup(
+      <KeyEntryList entries={[entry]} {...revealProps} />,
     );
+    assert.match(list, /Main billing key/);
+    assert.match(list, /Drag to reorder Production/);
+    assert.doesNotMatch(list, /Move Production up/);
+    assert.doesNotMatch(list, /Move Production down/);
     const table = renderToStaticMarkup(
       <KeyEntryTable
         entries={[entry, makeEntry({ id: "other", description: null })]}
@@ -443,10 +453,16 @@ describe("key entry views", () => {
         onCopy={() => undefined}
         onEdit={() => undefined}
         onDelete={() => undefined}
+        onDropEntry={() => undefined}
+        reorderBusy={false}
       />,
     );
     assert.match(table, /Key Entries/);
     assert.match(table, /sk-live/);
+    assert.match(table, /Drag to reorder Production/);
+    assert.doesNotMatch(table, /Move Production up/);
+    assert.doesNotMatch(table, /Move Production down/);
+    assert.match(table, /Reorder/);
   });
 
   it("renders the toolbar counts", () => {

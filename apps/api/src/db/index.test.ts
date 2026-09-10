@@ -29,7 +29,7 @@ describe("openDatabase / closeDatabase", () => {
       assert.equal(String(journal).toLowerCase(), "wal");
 
       const version = db.pragma("user_version", { simple: true });
-      assert.equal(version, 5);
+      assert.equal(version, 6);
 
       const tables = db
         .prepare(

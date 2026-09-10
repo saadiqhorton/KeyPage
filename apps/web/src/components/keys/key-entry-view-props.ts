@@ -12,3 +12,8 @@ export type KeyEntryActionProps = {
   onEdit(entry: KeyEntry): void;
   onDelete(entry: KeyEntry): void;
 };
+
+export type KeyEntryReorderProps = {
+  onDropEntry(draggedId: string, targetId: string): void;
+  reorderBusy: boolean;
+};

@@ -14,6 +14,7 @@ import {
   getAppSettings,
   getKeyEntries,
   getVaultSession,
+  patchKeyEntryOrder,
   getVaultStatus,
   patchAppSettings,
   patchKeyEntry,
@@ -209,6 +210,32 @@ describe("vault and settings API wrappers", () => {
       clipboardClearSeconds: 30,
     });
     assert.deepEqual(calls, ["/api/vault/status", "/api/keys"]);
+  });
+
+  it("PATCHes key order without a write proof", async () => {
+    const methods: Array<{ url: string; method: string; body?: string }> = [];
+    installFetch((url, init) => {
+      methods.push({
+        url,
+        method: String(init?.method ?? "GET"),
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
+      return jsonResponse({
+        entries: [{ id: "b" }, { id: "a" }],
+      });
+    });
+
+    const result = await patchKeyEntryOrder({
+      orderedIds: ["b", "a"],
+    });
+    assert.deepEqual(result.entries.map((entry) => entry.id), ["b", "a"]);
+    assert.deepEqual(methods, [
+      {
+        url: "/api/keys/order",
+        method: "PATCH",
+        body: JSON.stringify({ orderedIds: ["b", "a"] }),
+      },
+    ]);
   });
 
   it("POSTs setup, login challenge, login, and session touch", async () => {
