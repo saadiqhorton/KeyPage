@@ -68,21 +68,48 @@ export function hitTestRects(
       return id;
     }
   }
+  return null;
+}
 
-  let nearestId: string | null = null;
-  let nearest = Number.POSITIVE_INFINITY;
-  for (const [index, id] of ids.entries()) {
-    const rect = rects[index];
-    if (!rect) {
-      continue;
-    }
-    const cx = (rect.left + rect.right) / 2;
-    const cy = (rect.top + rect.bottom) / 2;
-    const distance = (x - cx) ** 2 + (y - cy) ** 2;
-    if (distance < nearest) {
-      nearest = distance;
-      nearestId = id;
-    }
-  }
-  return nearestId;
+export function resolveOverId(
+  x: number,
+  y: number,
+  ids: readonly string[],
+  rects: readonly SortableRect[],
+  current: string | null,
+): string | null {
+  return hitTestRects(x, y, ids, rects) ?? current;
+}
+
+export function layoutStrides(
+  rects: readonly SortableRect[],
+  columns: number,
+): { strideX: number; strideY: number } {
+  const first = rects[0];
+  const next = rects[1];
+  const nextRow = rects[columns];
+  const strideX =
+    columns > 1 && next && first ? next.left - first.left : 0;
+  const strideY = nextRow && first
+    ? nextRow.top - first.top
+    : next && first && columns === 1
+      ? next.top - first.top
+      : first
+        ? first.bottom - first.top
+        : 0;
+  return { strideX, strideY };
+}
+
+export function itemTranslate(
+  from: number,
+  to: number,
+  index: number,
+  columns: number,
+  strideX: number,
+  strideY: number,
+): string {
+  const shift = sortableShift(from, to, index);
+  const delta =
+    columns > 1 ? flowDelta(index, shift, columns) : { col: 0, row: shift };
+  return `translate3d(${delta.col * strideX}px, ${delta.row * strideY}px, 0)`;
 }

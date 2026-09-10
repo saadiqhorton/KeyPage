@@ -3,50 +3,21 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
 import {
-  flowDelta,
-  hitTestRects,
   inferColumnCount,
-  sortableShift,
+  itemTranslate,
+  layoutStrides,
+  resolveOverId,
   type SortableRect,
 } from "@/lib/key-entry-sortable";
-
-type SortableContextValue = {
-  activeId: string | null;
-  disabled: boolean;
-  registerItem(id: string, node: HTMLElement | null): void;
-  startDrag(id: string, event: ReactPointerEvent<HTMLElement>): void;
-  itemStyle(id: string): CSSProperties | undefined;
-};
-
-const SortableContext = createContext<SortableContextValue>({
-  activeId: null,
-  disabled: false,
-  registerItem() {},
-  startDrag() {},
-  itemStyle() {
-    return undefined;
-  },
-});
-
-type KeyEntrySortableProps = {
-  ids: readonly string[];
-  labels: Readonly<Record<string, string>>;
-  layout: "vertical" | "grid";
-  disabled: boolean;
-  onDropEntry(draggedId: string, targetId: string): void;
-  children: ReactNode;
-};
 
 function measureRects(
   ids: readonly string[],
@@ -63,6 +34,27 @@ function measureRects(
   });
 }
 
+type SortableContextValue = {
+  disabled: boolean;
+  registerItem(id: string, node: HTMLElement | null): void;
+  startDrag(id: string, event: ReactPointerEvent<HTMLElement>): void;
+};
+
+const SortableContext = createContext<SortableContextValue>({
+  disabled: false,
+  registerItem() {},
+  startDrag() {},
+});
+
+type KeyEntrySortableProps = {
+  ids: readonly string[];
+  labels: Readonly<Record<string, string>>;
+  layout: "vertical" | "grid";
+  disabled: boolean;
+  onDropEntry(draggedId: string, targetId: string): void;
+  children: ReactNode;
+};
+
 function overlayTransform(x: number, y: number): string {
   return `translate3d(${x}px, ${y}px, 0) scale(1.02)`;
 }
@@ -72,6 +64,21 @@ function sortableLabels(entries: ReadonlyArray<{ id: string; label: string }>) {
 }
 
 export { sortableLabels };
+
+const SORTING_CLASS = "is-key-entry-sorting";
+
+function placePlaceholder(
+  node: HTMLElement | null,
+  rect: SortableRect | undefined,
+): void {
+  if (!node || !rect) {
+    return;
+  }
+  node.style.left = `${rect.left}px`;
+  node.style.top = `${rect.top}px`;
+  node.style.width = `${rect.right - rect.left}px`;
+  node.style.height = `${rect.bottom - rect.top}px`;
+}
 
 export function KeyEntrySortable({
   ids,
@@ -84,15 +91,22 @@ export function KeyEntrySortable({
   const nodesRef = useRef(new Map<string, HTMLElement>());
   const rectsRef = useRef<SortableRect[]>([]);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const placeholderRef = useRef<HTMLDivElement | null>(null);
   const overlayPosRef = useRef({ x: 0, y: 0 });
+  const pointerRef = useRef({ x: 0, y: 0 });
   const grabOffsetRef = useRef({ x: 0, y: 0 });
   const activeIdRef = useRef<string | null>(null);
   const overIdRef = useRef<string | null>(null);
   const detachRef = useRef<(() => void) | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const stridesRef = useRef({ strideX: 0, strideY: 0, columns: 1 });
 
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-  const [overlaySize, setOverlaySize] = useState({ width: 0, height: 0 });
+  const [session, setSession] = useState<{
+    id: string;
+    label: string;
+    width: number;
+    height: number;
+  } | null>(null);
 
   const registerItem = useCallback((id: string, node: HTMLElement | null) => {
     if (node) {
@@ -102,54 +116,58 @@ export function KeyEntrySortable({
     }
   }, []);
 
-  const itemStyle = useCallback(
-    (id: string): CSSProperties | undefined => {
-      if (!activeId) {
-        return undefined;
-      }
-      if (id === activeId) {
-        return {
-          opacity: 0,
-          visibility: "hidden",
-          animation: "none",
-          pointerEvents: "none",
-        };
-      }
-
+  const applyShifts = useCallback(
+    (activeId: string, overId: string) => {
       const from = ids.indexOf(activeId);
-      const to = ids.indexOf(overId ?? activeId);
-      const index = ids.indexOf(id);
-      const shift = sortableShift(from, to, index);
-      const rects = rectsRef.current;
-      const columns = layout === "grid" ? inferColumnCount(rects) : 1;
-      const first = rects[0];
-      const next = rects[1];
-      const nextRow = rects[columns];
-      const strideX =
-        columns > 1 && next && first ? next.left - first.left : 0;
-      const strideY = nextRow && first
-        ? nextRow.top - first.top
-        : next && first && columns === 1
-          ? next.top - first.top
-          : first
-            ? first.bottom - first.top
-            : 0;
-      const delta =
-        layout === "grid"
-          ? flowDelta(index, shift, columns)
-          : { col: 0, row: shift };
-
-      return {
-        transform: `translate3d(${delta.col * strideX}px, ${delta.row * strideY}px, 0)`,
-        zIndex: 1,
-        willChange: "transform",
-      };
+      const to = ids.indexOf(overId);
+      const { columns, strideX, strideY } = stridesRef.current;
+      for (const [index, id] of ids.entries()) {
+        const node = nodesRef.current.get(id);
+        if (!node) {
+          continue;
+        }
+        node.style.animation = "none";
+        if (id === activeId) {
+          node.classList.add("is-sortable-active");
+          node.style.opacity = "0";
+          node.style.visibility = "hidden";
+          node.style.pointerEvents = "none";
+          node.style.transform = "none";
+          continue;
+        }
+        node.style.transform = itemTranslate(
+          from,
+          to,
+          index,
+          columns,
+          strideX,
+          strideY,
+        );
+      }
+      placePlaceholder(placeholderRef.current, rectsRef.current[to]);
     },
-    [activeId, ids, layout, overId],
+    [ids],
   );
+
+  const clearShifts = useCallback(() => {
+    for (const node of nodesRef.current.values()) {
+      node.style.transition = "none";
+      node.style.removeProperty("transform");
+      node.style.removeProperty("opacity");
+      node.style.removeProperty("visibility");
+      node.style.removeProperty("pointer-events");
+      node.style.removeProperty("animation");
+      node.classList.remove("is-sortable-active");
+    }
+    document.documentElement.classList.remove(SORTING_CLASS);
+  }, []);
 
   const finishDrag = useCallback(
     (commit: boolean) => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       detachRef.current?.();
       detachRef.current = null;
       const draggedId = activeIdRef.current;
@@ -158,14 +176,40 @@ export function KeyEntrySortable({
       overIdRef.current = null;
       document.body.style.removeProperty("cursor");
       document.body.style.removeProperty("user-select");
-      setActiveId(null);
-      setOverId(null);
+      clearShifts();
+      setSession(null);
       if (commit && draggedId && targetId) {
         onDropEntry(draggedId, targetId);
       }
     },
-    [onDropEntry],
+    [clearShifts, onDropEntry],
   );
+
+  const flushMove = useCallback(() => {
+    rafRef.current = null;
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.transform = overlayTransform(
+        overlayPosRef.current.x,
+        overlayPosRef.current.y,
+      );
+    }
+    const activeId = activeIdRef.current;
+    if (!activeId) {
+      return;
+    }
+    const nextOver = resolveOverId(
+      pointerRef.current.x,
+      pointerRef.current.y,
+      ids,
+      rectsRef.current,
+      overIdRef.current,
+    );
+    if (nextOver && nextOver !== overIdRef.current) {
+      overIdRef.current = nextOver;
+      applyShifts(activeId, nextOver);
+    }
+  }, [applyShifts, ids]);
 
   const startDrag = useCallback(
     (id: string, event: ReactPointerEvent<HTMLElement>) => {
@@ -181,50 +225,42 @@ export function KeyEntrySortable({
 
       const rects = measureRects(ids, nodesRef.current);
       rectsRef.current = rects;
+      const columns = layout === "grid" ? inferColumnCount(rects) : 1;
+      const { strideX, strideY } = layoutStrides(rects, columns);
+      stridesRef.current = { columns, strideX, strideY };
+
       const origin = node.getBoundingClientRect();
       grabOffsetRef.current = {
         x: event.clientX - origin.left,
         y: event.clientY - origin.top,
       };
       overlayPosRef.current = { x: origin.left, y: origin.top };
+      pointerRef.current = { x: event.clientX, y: event.clientY };
       activeIdRef.current = id;
       overIdRef.current = id;
-      setOverlaySize({ width: origin.width, height: origin.height });
-      setActiveId(id);
-      setOverId(id);
+      document.documentElement.classList.add(SORTING_CLASS);
       document.body.style.cursor = "grabbing";
       document.body.style.userSelect = "none";
+      setSession({
+        id,
+        label: labels[id] ?? "Key Entry",
+        width: origin.width,
+        height: origin.height,
+      });
 
       const onMove = (moveEvent: PointerEvent) => {
-        const x = moveEvent.clientX - grabOffsetRef.current.x;
-        const y = moveEvent.clientY - grabOffsetRef.current.y;
-        overlayPosRef.current = { x, y };
-        const liveOverlay = overlayRef.current;
-        if (liveOverlay) {
-          liveOverlay.style.transform = overlayTransform(x, y);
+        overlayPosRef.current = {
+          x: moveEvent.clientX - grabOffsetRef.current.x,
+          y: moveEvent.clientY - grabOffsetRef.current.y,
+        };
+        pointerRef.current = { x: moveEvent.clientX, y: moveEvent.clientY };
+        if (rafRef.current === null) {
+          rafRef.current = requestAnimationFrame(flushMove);
         }
-        const nextOver = hitTestRects(
-          moveEvent.clientX,
-          moveEvent.clientY,
-          ids,
-          rectsRef.current,
-        );
-        if (nextOver && nextOver !== overIdRef.current) {
-          overIdRef.current = nextOver;
-          setOverId(nextOver);
-        }
-      };
-
-      const onUp = () => {
-        finishDrag(true);
-      };
-
-      const onCancel = () => {
-        finishDrag(false);
       };
 
       detachRef.current?.();
-      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointermove", onMove, { passive: true });
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
       window.addEventListener("scroll", onCancel);
@@ -234,22 +270,43 @@ export function KeyEntrySortable({
         window.removeEventListener("pointercancel", onCancel);
         window.removeEventListener("scroll", onCancel);
       };
+
+      function onUp() {
+        finishDrag(true);
+      }
+
+      function onCancel() {
+        finishDrag(false);
+      }
     },
-    [disabled, finishDrag, ids],
+    [disabled, finishDrag, flushMove, ids, labels, layout],
   );
 
-  useLayoutEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay || !activeId) {
+  useEffect(() => {
+    if (!session) {
       return;
     }
-    const { x, y } = overlayPosRef.current;
-    overlay.style.transform = overlayTransform(x, y);
-  }, [activeId, overId]);
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.transform = overlayTransform(
+        overlayPosRef.current.x,
+        overlayPosRef.current.y,
+      );
+    }
+    const activeId = activeIdRef.current;
+    const overId = overIdRef.current;
+    if (activeId && overId) {
+      applyShifts(activeId, overId);
+    }
+  }, [applyShifts, session]);
 
   useEffect(() => {
     return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
       detachRef.current?.();
+      document.documentElement.classList.remove(SORTING_CLASS);
       document.body.style.removeProperty("cursor");
       document.body.style.removeProperty("user-select");
     };
@@ -257,44 +314,36 @@ export function KeyEntrySortable({
 
   const value = useMemo<SortableContextValue>(
     () => ({
-      activeId,
       disabled,
       registerItem,
       startDrag,
-      itemStyle,
     }),
-    [activeId, disabled, itemStyle, registerItem, startDrag],
+    [disabled, registerItem, startDrag],
   );
 
-  const overIndex = overId ? ids.indexOf(overId) : -1;
-  const placeholderRect = overIndex >= 0 ? rectsRef.current[overIndex] : null;
   const canPortal = typeof document !== "undefined";
 
   return (
     <SortableContext.Provider value={value}>
       {children}
-      {canPortal && activeId && placeholderRect
+      {canPortal && session
         ? createPortal(
             <>
-              <div
-                className="key-entry-drop-placeholder"
-                style={{
-                  left: placeholderRect.left,
-                  top: placeholderRect.top,
-                  width: placeholderRect.right - placeholderRect.left,
-                  height: placeholderRect.bottom - placeholderRect.top,
-                }}
-              />
+              <div ref={placeholderRef} className="key-entry-drop-placeholder" />
               <div
                 ref={overlayRef}
                 className="key-entry-drag-overlay"
                 style={{
-                  width: overlaySize.width,
-                  height: overlaySize.height,
+                  width: session.width,
+                  height: session.height,
+                  transform: overlayTransform(
+                    overlayPosRef.current.x,
+                    overlayPosRef.current.y,
+                  ),
                 }}
               >
                 <p className="truncate font-display text-sm font-medium text-text">
-                  {labels[activeId] ?? "Key Entry"}
+                  {session.label}
                 </p>
                 <p className="text-[11px] uppercase tracking-[0.14em] text-muted">
                   Drop to reorder
@@ -309,7 +358,7 @@ export function KeyEntrySortable({
 }
 
 export function useKeyEntrySortableItem(id: string) {
-  const { registerItem, itemStyle, activeId } = useContext(SortableContext);
+  const { registerItem } = useContext(SortableContext);
   const setRef = useCallback(
     (node: HTMLElement | null) => {
       registerItem(id, node);
@@ -319,9 +368,9 @@ export function useKeyEntrySortableItem(id: string) {
 
   return {
     setRef,
-    style: itemStyle(id),
-    isActive: activeId === id,
-    className: activeId === id ? "is-sortable-active" : undefined,
+    style: undefined,
+    isActive: false,
+    className: undefined,
   };
 }
 

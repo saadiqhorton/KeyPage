@@ -5,6 +5,8 @@ import {
   flowDelta,
   hitTestRects,
   inferColumnCount,
+  itemTranslate,
+  resolveOverId,
   sortableShift,
 } from "./key-entry-sortable.ts";
 
@@ -60,7 +62,32 @@ describe("hitTestRects", () => {
     assert.equal(hitTestRects(10, 25, ["a", "b", "c"], rects), "b");
   });
 
-  it("falls back to the nearest slot center", () => {
-    assert.equal(hitTestRects(80, 10, ["a", "b", "c"], rects), "a");
+  it("returns null outside every slot so the current over can stay", () => {
+    assert.equal(hitTestRects(80, 10, ["a", "b", "c"], rects), null);
+  });
+});
+
+describe("resolveOverId", () => {
+  const rects = [
+    { left: 0, right: 40, top: 0, bottom: 20 },
+    { left: 0, right: 40, top: 20, bottom: 40 },
+  ];
+
+  it("keeps the current over while the pointer is in a gap", () => {
+    assert.equal(resolveOverId(80, 10, ["a", "b"], rects, "b"), "b");
+  });
+
+  it("switches when the pointer enters another original slot", () => {
+    assert.equal(resolveOverId(10, 10, ["a", "b"], rects, "b"), "a");
+  });
+});
+
+describe("itemTranslate", () => {
+  it("slides a later item backward one vertical slot", () => {
+    assert.equal(itemTranslate(0, 2, 1, 1, 0, 40), "translate3d(0px, -40px, 0)");
+  });
+
+  it("slides a later item left one grid cell", () => {
+    assert.equal(itemTranslate(0, 2, 1, 3, 120, 80), "translate3d(-120px, 0px, 0)");
   });
 });
