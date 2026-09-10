@@ -321,6 +321,15 @@
   transition: transform 180ms var(--ease-out-soft);
 }
 
+html.is-key-entry-sorting .card-grid-enter > *,
+html.is-key-entry-sorting .key-entry-sortable-item {
+  animation: none !important;
+}
+
+html.is-key-entry-sorting .key-entry-sortable-item {
+  will-change: transform;
+}
+
 .key-entry-sortable-item.is-sortable-active {
   animation: none !important;
   opacity: 0 !important;
