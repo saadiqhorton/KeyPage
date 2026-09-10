@@ -180,9 +180,17 @@ else
     fail "${KEYPAGE_DIR}/data is tracked in git — refusing to reset so vault files are not overwritten. Vault data was not deleted."
   fi
   env_backup=""
+  restore_env_backup() {
+    if [[ -n "${env_backup:-}" && -f "${env_backup}" ]]; then
+      cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
+      rm -f "${env_backup}"
+      env_backup=""
+    fi
+  }
   if [[ -f "${KEYPAGE_DIR}/.env" ]]; then
     env_backup="$(mktemp)"
     cp -p "${KEYPAGE_DIR}/.env" "${env_backup}"
+    trap restore_env_backup EXIT
   fi
   if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
     note "resetting tracked files to origin/${KEYPAGE_REF}; leaving ./data alone"
@@ -192,23 +200,12 @@ else
     reset_to="origin/${KEYPAGE_REF}"
   fi
   if ! git -C "${KEYPAGE_DIR}" reset --hard "${reset_to}"; then
-    if [[ -n "${env_backup}" ]]; then
-      cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
-      rm -f "${env_backup}"
-    fi
     fail "reset to ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
   if ! git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" "${reset_to}"; then
-    if [[ -n "${env_backup}" ]]; then
-      cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
-      rm -f "${env_backup}"
-    fi
     fail "checkout of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
-  if [[ -n "${env_backup}" ]]; then
-    cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
-    rm -f "${env_backup}"
-  fi
+  restore_env_backup
   now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   if [[ "${now}" != "${wanted}" ]]; then
     fail "working tree did not reach ${KEYPAGE_REF} (wanted ${wanted}, HEAD is ${now}). Vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
