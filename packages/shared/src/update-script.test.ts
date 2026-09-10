@@ -19,7 +19,8 @@ const COMPOSE_YML = path.join(repoRoot, "docker-compose.yml");
 const README = path.join(repoRoot, "README.md");
 
 const TUNNEL_PRODUCT = /cloudflared|CLOUDFLARE_TUNNEL|TUNNEL_TOKEN|TUNNEL_HOSTNAME/i;
-const DATA_WIPE = /rm\s+-[a-zA-Z]*r[a-zA-Z]*\s+.*\bdata\b|compose\s+down\s+[^\n]*-v/;
+const DATA_WIPE =
+  /rm\s+(-[a-zA-Z]*\s+)*(\.\/)?data\b|rm\s+[^\n]*data\/(keypage\.db|setup-token)|compose\s+down\s+[^\n]*-v/;
 
 function readUpdateScript(): string {
   return fs.readFileSync(UPDATE_SH, "utf8");
@@ -111,26 +112,68 @@ exit 0
 }
 
 function runUpdate(opts: {
-  keypageDir: string;
+  keypageDir?: string;
   binDir: string;
   extraEnv?: NodeJS.ProcessEnv;
+  viaStdin?: boolean;
+  cwd?: string;
 }): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync("bash", [UPDATE_SH], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: `${opts.binDir}:${process.env.PATH ?? "/usr/bin"}`,
-      KEYPAGE_DIR: opts.keypageDir,
-      KEYPAGE_SKIP_GIT: "1",
-      TERM: "dumb",
-      ...opts.extraEnv,
-    },
-  });
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `${opts.binDir}:${process.env.PATH ?? "/usr/bin"}`,
+    KEYPAGE_SKIP_GIT: "1",
+    TERM: "dumb",
+    ...opts.extraEnv,
+  };
+  if (opts.keypageDir !== undefined) {
+    env.KEYPAGE_DIR = opts.keypageDir;
+  } else if (!opts.extraEnv || !("KEYPAGE_DIR" in opts.extraEnv)) {
+    delete env.KEYPAGE_DIR;
+  }
+  const result = opts.viaStdin
+    ? spawnSync("bash", [], {
+        encoding: "utf8",
+        input: fs.readFileSync(UPDATE_SH),
+        cwd: opts.cwd,
+        env,
+      })
+    : spawnSync("bash", [UPDATE_SH], {
+        encoding: "utf8",
+        cwd: opts.cwd,
+        env,
+      });
   return {
     status: result.status,
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
   };
+}
+
+function seedRemoteAndShallowClone(opts?: { trackData?: boolean }): {
+  remoteWork: string;
+  bare: string;
+  install: string;
+} {
+  const remoteWork = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-remote-"));
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bare-"));
+  const install = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-clone-"));
+  git(remoteWork, ["init", "-b", "main"]);
+  fs.writeFileSync(path.join(remoteWork, "docker-compose.yml"), fs.readFileSync(COMPOSE_YML, "utf8"));
+  fs.writeFileSync(path.join(remoteWork, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
+  fs.mkdirSync(path.join(remoteWork, "data"));
+  fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "vault-bytes");
+  if (opts?.trackData) {
+    git(remoteWork, ["add", "docker-compose.yml", ".env", "data/keypage.db"]);
+  } else {
+    fs.writeFileSync(path.join(remoteWork, ".gitignore"), "data/\n.env\n");
+    git(remoteWork, ["add", "docker-compose.yml", ".gitignore"]);
+  }
+  git(remoteWork, ["commit", "-m", "initial"]);
+  git(remoteWork, ["clone", "--bare", remoteWork, bare]);
+  git(remoteWork, ["clone", "--depth", "1", bare, install]);
+  fs.mkdirSync(path.join(install, "data"), { recursive: true });
+  fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
+  return { remoteWork, bare, install };
 }
 
 describe("scripts/update.sh contract", () => {
@@ -149,9 +192,24 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /\/api\/health/);
     assert.match(src, /compose up -d --build/);
     assert.match(src, /rev-parse FETCH_HEAD/);
+    assert.match(src, /reset --hard/);
     assert.doesNotMatch(src, /^\s*PORT=/m);
     assert.doesNotMatch(src, /sed[^\n]*PORT/);
     assert.doesNotMatch(src, /(?:sed|tee|printf|cat\s*>)[^\n]*docker-compose\.yml/);
+    assert.match(
+      src,
+      /sed 's\|\^KEYPAGE_WEB_DIR=\/app\/web\$\|KEYPAGE_WEB_DIR=\/app\/apps\/web\/dist\|'/,
+    );
+  });
+
+  it("resolves a piped self path safely and never treats stdin as the install dir", () => {
+    const src = readUpdateScript();
+    assert.match(src, /BASH_SOURCE\[0\]:-/);
+    assert.match(src, /\/dev\/fd/);
+    assert.match(src, /\/dev\/stdin|\/proc\/self\/fd/);
+    assert.match(src, /HOME\}\/keypage/);
+    assert.doesNotMatch(src, /Stash or discard/);
+    assert.doesNotMatch(src, /git clean/);
   });
 
   it("does not wipe the data dir or ship Tunnel product tooling", () => {
@@ -160,6 +218,7 @@ describe("scripts/update.sh contract", () => {
     assert.doesNotMatch(src, TUNNEL_PRODUCT);
     assert.match(src, /mkdir -p data/);
     assert.match(src, /docker compose logs/);
+    assert.match(src, /ls-files -- "data"/);
 
     const compose = fs.readFileSync(COMPOSE_YML, "utf8");
     assert.doesNotMatch(compose, TUNNEL_PRODUCT);
@@ -183,6 +242,10 @@ describe("README update path", () => {
       /curl -fsSL https:\/\/raw\.githubusercontent\.com\/saadiqhorton\/KeyPage\/main\/scripts\/update\.sh/,
       "first update from a pre-update.sh install must fetch the script from the remote",
     );
+    assert.match(section, /tracked/i);
+    assert.match(section, /\.\/data/);
+    assert.doesNotMatch(section, /^\s*git reset --hard/m);
+    assert.doesNotMatch(section, /stash or discard/i);
   });
 });
 
@@ -245,23 +308,10 @@ describe("scripts/update.sh behavior", () => {
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 
-  it("moves a clean shallow clone to FETCH_HEAD when the remote advances", () => {
-    const remoteWork = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-remote-"));
-    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bare-"));
-    const install = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-shallow-"));
+  it("moves a clean shallow clone to origin/KEYPAGE_REF when the remote advances", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
     makeStubBin(binDir, { healthOk: true, stubGit: false });
-
-    git(remoteWork, ["init", "-b", "main"]);
-    fs.writeFileSync(path.join(remoteWork, "docker-compose.yml"), fs.readFileSync(COMPOSE_YML, "utf8"));
-    fs.writeFileSync(path.join(remoteWork, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
-    fs.mkdirSync(path.join(remoteWork, "data"));
-    fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "vault-bytes");
-    git(remoteWork, ["add", "."]);
-    git(remoteWork, ["commit", "-m", "initial"]);
-    git(remoteWork, ["clone", "--bare", remoteWork, bare]);
-    git(remoteWork, ["clone", "--depth", "1", bare, install]);
-    fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
 
     fs.writeFileSync(path.join(remoteWork, "release-marker"), "v-next");
     git(remoteWork, ["add", "release-marker"]);
@@ -292,23 +342,139 @@ describe("scripts/update.sh behavior", () => {
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 
-  it("fails before rebuild when a dirty tree cannot advance to KEYPAGE_REF", () => {
-    const remoteWork = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-remote-"));
-    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bare-"));
-    const install = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-dirty-"));
+  it("auto-resets dirty tracked files, leaves untracked ./data and .env, and rebuilds", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
     makeStubBin(binDir, { healthOk: true, stubGit: false });
 
-    git(remoteWork, ["init", "-b", "main"]);
-    fs.writeFileSync(path.join(remoteWork, "docker-compose.yml"), fs.readFileSync(COMPOSE_YML, "utf8"));
-    fs.writeFileSync(path.join(remoteWork, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
-    fs.mkdirSync(path.join(remoteWork, "data"));
-    fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "vault-bytes");
-    git(remoteWork, ["add", "."]);
-    git(remoteWork, ["commit", "-m", "initial"]);
-    git(remoteWork, ["clone", "--bare", remoteWork, bare]);
-    git(remoteWork, ["clone", "--depth", "1", bare, install]);
-    fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
+    fs.writeFileSync(
+      path.join(install, ".env"),
+      `PORT=18081\nKEYPAGE_WEB_DIR=/app/apps/web/dist\n`,
+    );
+    fs.appendFileSync(path.join(install, "docker-compose.yml"), "\n# dirty\n");
+    fs.writeFileSync(path.join(remoteWork, "release-marker"), "v-next");
+    git(remoteWork, ["add", "release-marker"]);
+    git(remoteWork, ["commit", "-m", "advance"]);
+    git(remoteWork, ["push", bare, "main"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.match(output, /resetting tracked files to origin\/main; leaving \.\/data alone/);
+    assert.doesNotMatch(output, /stash or discard/i);
+    assert.doesNotMatch(output, /git reset --hard origin\//);
+    assert.doesNotMatch(fs.readFileSync(path.join(install, "docker-compose.yml"), "utf8"), /# dirty/);
+    assert.equal(fs.readFileSync(path.join(install, "release-marker"), "utf8"), "v-next");
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    assert.match(fs.readFileSync(path.join(install, ".env"), "utf8"), /^PORT=18081$/m);
+    assert.match(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up -d --build/);
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("runs via stdin without BASH_SOURCE and still uses KEYPAGE_DIR", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true });
+
+    const result = runUpdate({
+      keypageDir: root,
+      binDir,
+      viaStdin: true,
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.equal(result.status, 0, output);
+    assert.doesNotMatch(output, /BASH_SOURCE|unbound variable/);
+    assert.doesNotMatch(output, /\/dev\/fd|\/dev\/stdin|\/proc\/self\/fd/);
+    assert.match(result.stdout, new RegExp(`install dir ${root}`));
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("piped bootstrap without KEYPAGE_DIR uses ~/keypage, not cwd or a fake parent checkout", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-home-"));
+    const install = path.join(home, "keypage");
+    fs.mkdirSync(install);
+    const dataDir = path.join(install, "data");
+    fs.mkdirSync(dataDir);
+    fs.writeFileSync(path.join(dataDir, "keypage.db"), "vault-bytes");
+    fs.writeFileSync(path.join(install, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
+    fs.copyFileSync(COMPOSE_YML, path.join(install, "docker-compose.yml"));
+
+    const fakeRepo = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-fake-"));
+    fs.copyFileSync(COMPOSE_YML, path.join(fakeRepo, "docker-compose.yml"));
+    const nestedCwd = path.join(fakeRepo, "nested");
+    fs.mkdirSync(nestedCwd);
+
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true });
+
+    const result = runUpdate({
+      binDir,
+      viaStdin: true,
+      cwd: nestedCwd,
+      extraEnv: {
+        HOME: home,
+        KEYPAGE_SKIP_GIT: "1",
+      },
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.equal(result.status, 0, output);
+    assert.match(result.stdout, new RegExp(`install dir ${install}`));
+    assert.doesNotMatch(output, new RegExp(`install dir ${fakeRepo}`));
+    assert.doesNotMatch(output, /\/dev\/fd|\/dev\/stdin|\/proc\/self\/fd/);
+    assert.doesNotMatch(output, /BASH_SOURCE|unbound variable/);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(fakeRepo, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("fails closed when origin is not the expected KeyPage repo", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+    git(install, ["remote", "set-url", "origin", "https://example.com/not-keypage.git"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: "https://github.com/saadiqhorton/KeyPage.git",
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notEqual(result.status, 0, output);
+    assert.match(output, /origin is .*expected/);
+    assert.doesNotMatch(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up /);
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("fails closed when ./data is tracked so reset cannot overwrite vault files", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone({ trackData: true });
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
     fs.appendFileSync(path.join(install, "docker-compose.yml"), "\n# dirty\n");
 
     const result = runUpdate({
@@ -321,10 +487,43 @@ describe("scripts/update.sh behavior", () => {
       },
     });
 
-    assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     const output = `${result.stdout}\n${result.stderr}`;
-    assert.match(output, /local changes|did not reach|cannot advance/i);
+    assert.notEqual(result.status, 0, output);
+    assert.match(output, /data is tracked/i);
     assert.doesNotMatch(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up /);
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("piped dirty tree auto-resets tracked files and preserves vault data", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+    fs.appendFileSync(path.join(install, "docker-compose.yml"), "\n# dirty\n");
+    fs.writeFileSync(path.join(remoteWork, "release-marker"), "v-next");
+    git(remoteWork, ["add", "release-marker"]);
+    git(remoteWork, ["commit", "-m", "advance"]);
+    git(remoteWork, ["push", bare, "main"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      viaStdin: true,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.equal(result.status, 0, output);
+    assert.doesNotMatch(output, /BASH_SOURCE|unbound variable/);
+    assert.match(output, /resetting tracked files to origin\/main; leaving \.\/data alone/);
+    assert.equal(fs.readFileSync(path.join(install, "release-marker"), "utf8"), "v-next");
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(remoteWork, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });

@@ -10,7 +10,8 @@
 #   bash scripts/update.sh
 #
 # Overrides:
-#   KEYPAGE_DIR               install directory (default: this repo, else ~/keypage)
+#   KEYPAGE_DIR               install directory (default: this repo when
+#                             executed from a checkout; ~/keypage when piped)
 #   KEYPAGE_REPO              git remote URL (used to verify origin)
 #   KEYPAGE_REF               branch or tag to update to (default: main)
 #   KEYPAGE_SKIP_GIT=1        rebuild the current tree only (no fetch)
@@ -19,8 +20,29 @@
 
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
+# Piped `curl | bash` leaves BASH_SOURCE unset (set -u) or pointing at a
+# stdin path such as /dev/fd/63. Never treat those as the checkout.
+_self="${BASH_SOURCE[0]:-}"
+SCRIPT_DIR=""
+REPO_ROOT=""
+case "${_self}" in
+  ""|/dev/fd/*|/dev/stdin|/proc/self/fd/*|-)
+    ;;
+  *)
+    if [[ -f "${_self}" ]]; then
+      SCRIPT_DIR=$(cd "$(dirname "${_self}")" && pwd)
+      case "${SCRIPT_DIR}" in
+        /dev/fd|/dev/fd/*|/proc/self/fd|/proc/self/fd/*)
+          SCRIPT_DIR=""
+          ;;
+        *)
+          REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
+          ;;
+      esac
+    fi
+    ;;
+esac
+
 KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
 KEYPAGE_REF="${KEYPAGE_REF:-main}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
@@ -29,7 +51,7 @@ HEALTH_ATTEMPTS="${KEYPAGE_HEALTH_ATTEMPTS:-60}"
 HEALTH_SLEEP_SECS="${KEYPAGE_HEALTH_SLEEP_SECS:-2}"
 
 if [[ -z "${KEYPAGE_DIR:-}" ]]; then
-  if [[ -f "${REPO_ROOT}/docker-compose.yml" ]]; then
+  if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
     KEYPAGE_DIR="${REPO_ROOT}"
   else
     KEYPAGE_DIR="${HOME}/keypage"
@@ -143,8 +165,8 @@ else
 
   note "fetching ${KEYPAGE_REF}"
   # Depth-1 one-line installs cannot `pull --ff-only`: old HEAD and the new
-  # tip are disconnected shallow boundaries. Fetch the ref explicitly, move
-  # a clean tree to FETCH_HEAD, and refuse to rebuild unless HEAD matches.
+  # tip are disconnected shallow boundaries. Fetch the ref, hard-reset
+  # tracked files onto origin/$KEYPAGE_REF, and leave untracked ./data.
   if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
     fail "fetch of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
@@ -152,11 +174,39 @@ else
   if [[ -z "${wanted}" ]]; then
     fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
-  if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
-    fail "local changes present — cannot advance to ${KEYPAGE_REF}. Vault data was not deleted (${KEYPAGE_DIR}/data). Stash or discard changes, then re-run."
+  tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*")"
+  if [[ -n "${tracked_data}" ]]; then
+    fail "${KEYPAGE_DIR}/data is tracked in git — refusing to reset so vault files are not overwritten. Vault data was not deleted."
   fi
-  if ! git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" FETCH_HEAD; then
+  env_backup=""
+  if [[ -f "${KEYPAGE_DIR}/.env" ]]; then
+    env_backup="$(mktemp)"
+    cp -p "${KEYPAGE_DIR}/.env" "${env_backup}"
+  fi
+  if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
+    note "resetting tracked files to origin/${KEYPAGE_REF}; leaving ./data alone"
+  fi
+  reset_to="FETCH_HEAD"
+  if git -C "${KEYPAGE_DIR}" rev-parse --verify --quiet "origin/${KEYPAGE_REF}^{commit}" >/dev/null; then
+    reset_to="origin/${KEYPAGE_REF}"
+  fi
+  if ! git -C "${KEYPAGE_DIR}" reset --hard "${reset_to}"; then
+    if [[ -n "${env_backup}" ]]; then
+      cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
+      rm -f "${env_backup}"
+    fi
+    fail "reset to ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+  fi
+  if ! git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" "${reset_to}"; then
+    if [[ -n "${env_backup}" ]]; then
+      cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
+      rm -f "${env_backup}"
+    fi
     fail "checkout of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+  fi
+  if [[ -n "${env_backup}" ]]; then
+    cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
+    rm -f "${env_backup}"
   fi
   now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   if [[ "${now}" != "${wanted}" ]]; then

@@ -144,7 +144,7 @@ From an existing Docker / one-line install (`~/keypage` by default), including c
 curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/update.sh | bash
 ```
 
-That fetches the updater from `main`, pulls the checkout (default branch `main`), rebuilds the image, and recreates the container. `./data` (vault / SQLite / setup-token) is left in place. The published listen port is not rewritten.
+That one command fetches the updater from `main`, advances the checkout (default branch `main`), rebuilds the image, and recreates the container. Tracked local edits are reset onto `origin/main`. Untracked `./data` (vault / SQLite / setup-token) and your `.env` listen port stay in place.
 
 Once the checkout has the script:
 
@@ -152,7 +152,7 @@ Once the checkout has the script:
 cd ~/keypage && bash scripts/update.sh
 ```
 
-The updater fetches `KEYPAGE_REF` (default `main`) and moves a clean tree to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. If HEAD does not reach that ref (fetch failure or local edits), it exits before rebuild. Vault files are not deleted.
+The updater fetches `KEYPAGE_REF` (default `main`) and hard-resets tracked files to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. Untracked `./data` is left alone. If origin is not the KeyPage repo, fetch fails, or vault files are tracked in git, it exits before rebuild. Vault files are not deleted.
 
 If `/api/health` does not come back, the script exits non-zero and prints how to read `docker compose logs`. Vault files are not deleted.
 
