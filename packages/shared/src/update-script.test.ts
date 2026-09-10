@@ -197,6 +197,8 @@ describe("scripts/update.sh contract", () => {
     assert.doesNotMatch(src, /checkout -q -B/);
     assert.match(src, /update-ref/);
     assert.match(src, /:\(exclude\)data/);
+    assert.match(src, /diff-filter=D/);
+    assert.match(src, /rm -f --ignore-unmatch/);
     assert.doesNotMatch(src, /^\s*PORT=/m);
     assert.doesNotMatch(src, /sed[^\n]*PORT/);
     assert.doesNotMatch(src, /(?:sed|tee|printf|cat\s*>)[^\n]*docker-compose\.yml/);
@@ -350,6 +352,40 @@ describe("scripts/update.sh behavior", () => {
     assert.equal(wanted.status, 0);
     assert.equal(actual.status, 0);
     assert.equal(actual.stdout.trim(), wanted.stdout.trim());
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("removes tracked source files deleted on KEYPAGE_REF and leaves ./data", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+    fs.writeFileSync(path.join(remoteWork, "stale-source.txt"), "gone-soon");
+    git(remoteWork, ["add", "stale-source.txt"]);
+    git(remoteWork, ["commit", "-m", "add stale"]);
+    git(remoteWork, ["push", bare, "main"]);
+    git(install, ["fetch", "--depth", "1", "origin", "main"]);
+    git(install, ["reset", "--hard", "FETCH_HEAD"]);
+    fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
+    git(remoteWork, ["rm", "stale-source.txt"]);
+    git(remoteWork, ["commit", "-m", "drop stale"]);
+    git(remoteWork, ["push", bare, "main"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(fs.existsSync(path.join(install, "stale-source.txt")), false);
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(remoteWork, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });
     fs.rmSync(install, { recursive: true, force: true });

@@ -212,6 +212,19 @@ else
       ':(exclude)setup-token'; then
     fail "restore of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
+  # restore does not delete paths absent from the tip. Drop those tracked
+  # source files with git rm (never vault paths — excluded in the pathspec).
+  gone_files="$(git -C "${KEYPAGE_DIR}" diff --name-only --diff-filter=D HEAD "${wanted}" -- \
+    . ':(exclude)data' ':(exclude)data/**' ':(exclude)*.db' ':(exclude)setup-token' || true)"
+  if [[ -n "${gone_files}" ]]; then
+    while IFS= read -r gone; do
+      [[ -z "${gone}" ]] && continue
+      case "${gone}" in
+        data|data/*|*.db|*/keypage.db|setup-token|*/setup-token) continue ;;
+      esac
+      git -C "${KEYPAGE_DIR}" rm -f --ignore-unmatch -- "${gone}" >/dev/null
+    done <<< "${gone_files}"
+  fi
   # Point KEYPAGE_REF at the fetched tip and switch HEAD to that ref.
   # A soft reset of the current branch would rewrite a non-target tip.
   # update-ref + symbolic-ref do not touch the worktree (so cannot rewrite ./data).
