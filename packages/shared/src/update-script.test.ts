@@ -49,18 +49,36 @@ function makeInstallTree(): { root: string; dataDir: string; envPath: string } {
   return { root, dataDir, envPath };
 }
 
-function makeStubBin(binDir: string, healthOk: boolean): void {
-  writeExecutable(
-    path.join(binDir, "git"),
-    `#!/bin/sh
+function git(cwd: string, args: string[]): void {
+  const result = spawnSync("git", ["-c", "user.email=test@keypage.local", "-c", "user.name=KeyPage Test", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, `${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+}
+
+function makeStubBin(
+  binDir: string,
+  opts: { healthOk: boolean; publishedPort?: number; stubGit?: boolean },
+): void {
+  if (opts.stubGit !== false) {
+    writeExecutable(
+      path.join(binDir, "git"),
+      `#!/bin/sh
 echo "git $*" >> "${binDir}/calls.log"
 exit 0
 `,
-  );
+    );
+  }
+  const published = opts.publishedPort ?? DEFAULT_LISTEN_PORT;
   writeExecutable(
     path.join(binDir, "docker"),
     `#!/bin/sh
 echo "docker $*" >> "${binDir}/calls.log"
+if [ "$1" = "compose" ] && [ "$2" = "port" ]; then
+  printf '%s\\n' "0.0.0.0:${published}"
+  exit 0
+fi
 if [ "$1" = "info" ] || [ "$1" = "compose" ]; then
   exit 0
 fi
@@ -72,7 +90,7 @@ exit 0
     `#!/bin/sh
 echo "curl $*" >> "${binDir}/calls.log"
 if printf '%s' "$*" | grep -q '/api/health'; then
-  if [ "${healthOk ? "1" : "0"}" = "1" ]; then
+  if [ "${opts.healthOk ? "1" : "0"}" = "1" ]; then
     printf '%s\\n' '{"status":"${HEALTH_STATUS_OK}","app":"KeyPage"}'
     exit 0
   fi
@@ -150,6 +168,11 @@ describe("README update path", () => {
     assert.match(section, /brief downtime/i);
     assert.doesNotMatch(section, /cloudflared/i);
     assert.doesNotMatch(section, /install[^\n]*tunnel/i);
+    assert.match(
+      section,
+      /curl -fsSL https:\/\/raw\.githubusercontent\.com\/saadiqhorton\/KeyPage\/main\/scripts\/update\.sh/,
+      "first update from a pre-update.sh install must fetch the script from the remote",
+    );
   });
 });
 
@@ -157,7 +180,7 @@ describe("scripts/update.sh behavior", () => {
   it("rebuilds the container, preserves vault files, and leaves PORT alone", () => {
     const { root, dataDir, envPath } = makeInstallTree();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
-    makeStubBin(binDir, true);
+    makeStubBin(binDir, { healthOk: true });
     const envBefore = fs.readFileSync(envPath, "utf8");
     const composeBefore = fs.readFileSync(path.join(root, "docker-compose.yml"), "utf8");
 
@@ -180,7 +203,7 @@ describe("scripts/update.sh behavior", () => {
   it("exits non-zero when health fails and tells the operator how to read logs", () => {
     const { root, dataDir } = makeInstallTree();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
-    makeStubBin(binDir, false);
+    makeStubBin(binDir, { healthOk: false });
 
     const result = runUpdate({
       keypageDir: root,
@@ -194,6 +217,63 @@ describe("scripts/update.sh behavior", () => {
     assert.match(output, /docker compose logs/);
     assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("polls /api/health on the published host port", () => {
+    const { root } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, publishedPort: 18080 });
+
+    const result = runUpdate({ keypageDir: root, binDir });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /compose port keypage /);
+    assert.match(calls, /curl -fsS http:\/\/127\.0\.0\.1:18080\/api\/health/);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("moves a clean shallow clone to FETCH_HEAD when the remote advances", () => {
+    const remoteWork = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-remote-"));
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bare-"));
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-shallow-"));
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+
+    git(remoteWork, ["init", "-b", "main"]);
+    fs.writeFileSync(path.join(remoteWork, "docker-compose.yml"), fs.readFileSync(COMPOSE_YML, "utf8"));
+    fs.writeFileSync(path.join(remoteWork, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
+    fs.mkdirSync(path.join(remoteWork, "data"));
+    fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "vault-bytes");
+    git(remoteWork, ["add", "."]);
+    git(remoteWork, ["commit", "-m", "initial"]);
+    git(remoteWork, ["clone", "--bare", remoteWork, bare]);
+    git(remoteWork, ["clone", "--depth", "1", bare, install]);
+    fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
+
+    fs.writeFileSync(path.join(remoteWork, "release-marker"), "v-next");
+    git(remoteWork, ["add", "release-marker"]);
+    git(remoteWork, ["commit", "-m", "advance"]);
+    git(remoteWork, ["push", bare, "main"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(fs.readFileSync(path.join(install, "release-marker"), "utf8"), "v-next");
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 });

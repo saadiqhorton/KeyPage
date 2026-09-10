@@ -3,7 +3,10 @@
 # KeyPage updater — pull/rebuild an existing Docker install without wiping
 # vault data or changing the published listen port.
 #
-# Usage (from an existing checkout, typically ~/keypage):
+# Usage (works for installs that predate this script):
+#   curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/update.sh | bash
+#
+# Or from a checkout that already has the file:
 #   bash scripts/update.sh
 #
 # Overrides:
@@ -22,8 +25,6 @@ KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
 KEYPAGE_REF="${KEYPAGE_REF:-main}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
-APP_URL="http://127.0.0.1:${DEFAULT_LISTEN_PORT}"
-HEALTH_URL="${APP_URL}/api/health"
 HEALTH_ATTEMPTS="${KEYPAGE_HEALTH_ATTEMPTS:-60}"
 HEALTH_SLEEP_SECS="${KEYPAGE_HEALTH_SLEEP_SECS:-2}"
 
@@ -142,14 +143,16 @@ else
 
   note "fetching ${KEYPAGE_REF}"
   if git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
-    if git -C "${KEYPAGE_DIR}" checkout -q "${KEYPAGE_REF}" 2>/dev/null \
-      || git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" "FETCH_HEAD" 2>/dev/null; then
-      if ! git -C "${KEYPAGE_DIR}" pull --ff-only origin "${KEYPAGE_REF}"; then
-        warn "pull skipped (local changes or diverged) — using current tree"
+    if git -C "${KEYPAGE_DIR}" diff --quiet && git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
+      # Depth-1 installs cannot `pull --ff-only`: old HEAD and the new tip
+      # are disconnected shallow boundaries. Move a clean tree to FETCH_HEAD.
+      if git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" FETCH_HEAD; then
+        ok "updated ${KEYPAGE_DIR}"
+      else
+        warn "checkout of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
       fi
-      ok "updated ${KEYPAGE_DIR}"
     else
-      warn "checkout of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
+      warn "local changes present — using current tree so Compose can still start"
     fi
   else
     warn "fetch of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
@@ -176,6 +179,18 @@ stage "Rebuild and recreate container"
 compose up -d --build
 ok "container recreated"
 
+PUBLISHED_HOST_PORT="${DEFAULT_LISTEN_PORT}"
+published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
+if [[ "${published}" == *:* ]]; then
+  derived="${published##*:}"
+  derived="${derived//$'\r'/}"
+  if [[ "${derived}" =~ ^[0-9]+$ ]]; then
+    PUBLISHED_HOST_PORT="${derived}"
+  fi
+fi
+APP_URL="http://127.0.0.1:${PUBLISHED_HOST_PORT}"
+HEALTH_URL="${APP_URL}/api/health"
+
 # ── 4. Health ─────────────────────────────────────────────────────────────
 stage "Check health at ${HEALTH_URL}"
 
@@ -192,7 +207,7 @@ for _ in $(seq 1 "${HEALTH_ATTEMPTS}"); do
 done
 
 if [[ "${healthy}" -ne 1 ]]; then
-  fail "health check failed at ${HEALTH_URL}. Vault data was not deleted (${KEYPAGE_DIR}/data). Published listen port is still ${DEFAULT_LISTEN_PORT}. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+  fail "health check failed at ${HEALTH_URL}. Vault data was not deleted (${KEYPAGE_DIR}/data). Published listen port is still ${PUBLISHED_HOST_PORT}. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 fi
 ok "healthy"
 
@@ -200,7 +215,7 @@ printf '\n%s%s  ✓ KeyPage update complete%s\n\n' "$BOLD" "$GREEN" "$RESET"
 say "App:      ${APP_URL}"
 say "Install:  ${KEYPAGE_DIR}"
 say "Data:     ${KEYPAGE_DIR}/data (preserved)"
-say "Port:     ${DEFAULT_LISTEN_PORT} (unchanged)"
+say "Port:     ${PUBLISHED_HOST_PORT} (unchanged)"
 printf '\n'
 note "If you reverse-proxy or Tunnel to KeyPage yourself, keep pointing at the same host port. Expect brief downtime while the container restarts."
 note "Later: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"

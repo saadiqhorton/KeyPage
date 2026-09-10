@@ -54,7 +54,7 @@ One-shot install (clones into `~/keypage`, builds, and starts):
 curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/install.sh | bash
 ```
 
-Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. To update an existing install, use [Updates](#updates) (`scripts/update.sh`). Re-running the installer also refreshes the checkout when possible and brings the stack back up. Setup token after the one-line installer: `cat ~/keypage/data/setup-token` (or `cat ${KEYPAGE_DIR}/data/setup-token` if you overrode `KEYPAGE_DIR`).
+Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. To update an existing install, use [Updates](#updates). Setup token after the one-line installer: `cat ~/keypage/data/setup-token` (or `cat ${KEYPAGE_DIR}/data/setup-token` if you overrode `KEYPAGE_DIR`).
 
 Already have the repo checked out?
 
@@ -138,13 +138,19 @@ sudo chown -R 1000:1000 ./data
 
 ### Updates
 
-From an existing Docker / one-line install (`~/keypage` by default):
+From an existing Docker / one-line install (`~/keypage` by default), including checkouts created before `scripts/update.sh` existed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/update.sh | bash
+```
+
+That fetches the updater from `main`, pulls the checkout (default branch `main`), rebuilds the image, and recreates the container. `./data` (vault / SQLite / setup-token) is left in place. The published listen port is not rewritten.
+
+Once the checkout has the script:
 
 ```bash
 cd ~/keypage && bash scripts/update.sh
 ```
-
-That pulls the checkout (default branch `main`), rebuilds the image, and recreates the container. `./data` (vault / SQLite / setup-token) is left in place. The published listen port stays **9090** unless you already changed it yourself.
 
 If `/api/health` does not come back, the script exits non-zero and prints how to read `docker compose logs`. Vault files are not deleted.
 
