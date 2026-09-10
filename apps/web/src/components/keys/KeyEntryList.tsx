@@ -31,10 +31,6 @@ export function KeyEntryList({
   onCopy,
   onEdit,
   onDelete,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
   onDropEntry,
   reorderBusy,
 }: KeyEntryListProps) {
@@ -54,11 +50,7 @@ export function KeyEntryList({
                 <KeyEntryReorderControls
                   entryId={entry.id}
                   entryLabel={entry.label}
-                  canMoveUp={canMoveUp(entry)}
-                  canMoveDown={canMoveDown(entry)}
                   disabled={reorderBusy}
-                  onMoveUp={() => onMoveUp(entry)}
-                  onMoveDown={() => onMoveDown(entry)}
                 />
                 <div className="flex min-w-0 flex-1 items-start gap-4">
                   <ServiceIcon serviceId={entry.serviceId} size="sm" />

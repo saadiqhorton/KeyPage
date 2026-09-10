@@ -139,10 +139,6 @@ const actionProps = {
 };
 
 const reorderProps = {
-  canMoveUp: () => false,
-  canMoveDown: () => false,
-  onMoveUp: () => undefined,
-  onMoveDown: () => undefined,
   onDropEntry: () => undefined,
   reorderBusy: false,
 };
@@ -257,7 +253,9 @@ describe("renderDashboardContent", () => {
       }) as never,
     );
     assert.match(table, /Key Entries/);
-    assert.match(table, /Move Production up/);
+    assert.match(table, /Drag to reorder Production/);
+    assert.doesNotMatch(table, /Move Production up/);
+    assert.doesNotMatch(table, /Move Production down/);
     const list = renderToStaticMarkup(
       renderDashboardContent({
         ...base,
@@ -270,7 +268,9 @@ describe("renderDashboardContent", () => {
       }) as never,
     );
     assert.match(list, /Production/);
-    assert.match(list, /Move Production down/);
+    assert.match(list, /Drag to reorder Production/);
+    assert.doesNotMatch(list, /Move Production up/);
+    assert.doesNotMatch(list, /Move Production down/);
     const grid = renderToStaticMarkup(
       renderDashboardContent({
         ...base,
@@ -284,6 +284,8 @@ describe("renderDashboardContent", () => {
     );
     assert.match(grid, /Production/);
     assert.match(grid, /Drag to reorder Production/);
+    assert.doesNotMatch(grid, /Move Production up/);
+    assert.doesNotMatch(grid, /Move Production down/);
   });
 });
 

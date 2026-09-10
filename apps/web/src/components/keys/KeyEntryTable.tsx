@@ -31,10 +31,6 @@ export function KeyEntryTable({
   onCopy,
   onEdit,
   onDelete,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
   onDropEntry,
   reorderBusy,
 }: KeyEntryTableProps) {
@@ -82,11 +78,7 @@ export function KeyEntryTable({
                     <KeyEntryReorderControls
                       entryId={entry.id}
                       entryLabel={entry.label}
-                      canMoveUp={canMoveUp(entry)}
-                      canMoveDown={canMoveDown(entry)}
                       disabled={reorderBusy}
-                      onMoveUp={() => onMoveUp(entry)}
-                      onMoveDown={() => onMoveDown(entry)}
                     />
                   </td>
                   <td className="px-4 py-3">
