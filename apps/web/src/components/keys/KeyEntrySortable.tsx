@@ -108,7 +108,12 @@ export function KeyEntrySortable({
         return undefined;
       }
       if (id === activeId) {
-        return { opacity: 0 };
+        return {
+          opacity: 0,
+          visibility: "hidden",
+          animation: "none",
+          pointerEvents: "none",
+        };
       }
 
       const from = ids.indexOf(activeId);
@@ -316,6 +321,7 @@ export function useKeyEntrySortableItem(id: string) {
     setRef,
     style: itemStyle(id),
     isActive: activeId === id,
+    className: activeId === id ? "is-sortable-active" : undefined,
   };
 }
 

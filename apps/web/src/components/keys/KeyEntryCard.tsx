@@ -36,13 +36,18 @@ export function KeyEntryCard({
   reorderBusy,
 }: Readonly<KeyEntryCardProps>) {
   const displayName = serviceDisplayName(entry);
-  const { setRef, style } = useKeyEntrySortableItem(entry.id);
+  const { setRef, style, className: sortableClassName } =
+    useKeyEntrySortableItem(entry.id);
 
   return (
     <article
       ref={setRef}
       style={style}
-      className={cn("bezel-shell key-entry-sortable-item h-full", className)}
+      className={cn(
+        "bezel-shell key-entry-sortable-item h-full",
+        sortableClassName,
+        className,
+      )}
     >
       <div className="bezel-core flex h-full flex-col gap-4 p-5">
         <header className="flex items-start gap-3">

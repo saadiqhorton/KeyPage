@@ -15,6 +15,7 @@ import {
 } from "@/components/keys/KeyEntrySortable";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
+import { cn } from "@/lib/cn";
 import { formatShortDate } from "@/lib/format";
 import { serviceDisplayName } from "@/lib/key-entry-filter";
 
@@ -47,13 +48,17 @@ function KeyEntryListItem({
   onEdit,
   onDelete,
 }: Readonly<KeyEntryListItemProps>) {
-  const { setRef, style } = useKeyEntrySortableItem(entry.id);
+  const { setRef, style, className: sortableClassName } =
+    useKeyEntrySortableItem(entry.id);
 
   return (
     <li
       ref={setRef}
       style={style}
-      className="key-entry-sortable-item flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-start"
+      className={cn(
+        "key-entry-sortable-item flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-start",
+        sortableClassName,
+      )}
     >
       <KeyEntryReorderControls
         entryId={entry.id}
