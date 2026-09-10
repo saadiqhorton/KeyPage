@@ -15,6 +15,7 @@ import {
 } from "@/components/keys/KeyEntrySortable";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
+import { cn } from "@/lib/cn";
 import { formatShortDate } from "@/lib/format";
 import { serviceDisplayName } from "@/lib/key-entry-filter";
 
@@ -47,13 +48,17 @@ function KeyEntryTableRow({
   onEdit,
   onDelete,
 }: Readonly<KeyEntryTableRowProps>) {
-  const { setRef, style } = useKeyEntrySortableItem(entry.id);
+  const { setRef, style, className: sortableClassName } =
+    useKeyEntrySortableItem(entry.id);
 
   return (
     <tr
       ref={setRef}
       style={style}
-      className="key-entry-sortable-item border-b border-hairline last:border-b-0 hover:bg-brass/5"
+      className={cn(
+        "key-entry-sortable-item border-b border-hairline last:border-b-0 hover:bg-brass/5",
+        sortableClassName,
+      )}
     >
       <td className="px-2 py-3">
         <KeyEntryReorderControls

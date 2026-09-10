@@ -321,6 +321,13 @@
   transition: transform 180ms var(--ease-out-soft);
 }
 
+.key-entry-sortable-item.is-sortable-active {
+  animation: none !important;
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .key-entry-drop-placeholder {
   position: fixed;
   z-index: 40;
