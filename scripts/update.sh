@@ -142,21 +142,27 @@ else
   fi
 
   note "fetching ${KEYPAGE_REF}"
-  if git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
-    if git -C "${KEYPAGE_DIR}" diff --quiet && git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
-      # Depth-1 installs cannot `pull --ff-only`: old HEAD and the new tip
-      # are disconnected shallow boundaries. Move a clean tree to FETCH_HEAD.
-      if git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" FETCH_HEAD; then
-        ok "updated ${KEYPAGE_DIR}"
-      else
-        warn "checkout of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
-      fi
-    else
-      warn "local changes present — using current tree so Compose can still start"
-    fi
-  else
-    warn "fetch of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
+  # Depth-1 one-line installs cannot `pull --ff-only`: old HEAD and the new
+  # tip are disconnected shallow boundaries. Fetch the ref explicitly, move
+  # a clean tree to FETCH_HEAD, and refuse to rebuild unless HEAD matches.
+  if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
+    fail "fetch of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
+  wanted="$(git -C "${KEYPAGE_DIR}" rev-parse FETCH_HEAD 2>/dev/null || true)"
+  if [[ -z "${wanted}" ]]; then
+    fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+  fi
+  if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
+    fail "local changes present — cannot advance to ${KEYPAGE_REF}. Vault data was not deleted (${KEYPAGE_DIR}/data). Stash or discard changes, then re-run."
+  fi
+  if ! git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" FETCH_HEAD; then
+    fail "checkout of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+  fi
+  now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
+  if [[ "${now}" != "${wanted}" ]]; then
+    fail "working tree did not reach ${KEYPAGE_REF} (wanted ${wanted}, HEAD is ${now}). Vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
+  fi
+  ok "updated ${KEYPAGE_DIR} to ${wanted:0:12}"
 fi
 
 cd "${KEYPAGE_DIR}"
@@ -179,8 +185,18 @@ stage "Rebuild and recreate container"
 compose up -d --build
 ok "container recreated"
 
-PUBLISHED_HOST_PORT="${DEFAULT_LISTEN_PORT}"
-published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
+CONTAINER_LISTEN_PORT="${DEFAULT_LISTEN_PORT}"
+if [[ -f .env ]]; then
+  env_port="$(grep -m1 '^PORT=' .env | cut -d= -f2- | tr -d ' \t\r' || true)"
+  if [[ "${env_port}" =~ ^[0-9]+$ ]]; then
+    CONTAINER_LISTEN_PORT="${env_port}"
+  fi
+fi
+PUBLISHED_HOST_PORT="${CONTAINER_LISTEN_PORT}"
+published="$(compose port keypage "${CONTAINER_LISTEN_PORT}" 2>/dev/null || true)"
+if [[ -z "${published}" && "${CONTAINER_LISTEN_PORT}" != "${DEFAULT_LISTEN_PORT}" ]]; then
+  published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
+fi
 if [[ "${published}" == *:* ]]; then
   derived="${published##*:}"
   derived="${derived//$'\r'/}"

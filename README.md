@@ -152,6 +152,8 @@ Once the checkout has the script:
 cd ~/keypage && bash scripts/update.sh
 ```
 
+The updater fetches `KEYPAGE_REF` (default `main`) and moves a clean tree to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. If HEAD does not reach that ref (fetch failure or local edits), it exits before rebuild. Vault files are not deleted.
+
 If `/api/health` does not come back, the script exits non-zero and prints how to read `docker compose logs`. Vault files are not deleted.
 
 If you terminate TLS elsewhere (reverse proxy or a personal Tunnel), update the container this way; keep targeting the same host port. Expect brief downtime while the container restarts.

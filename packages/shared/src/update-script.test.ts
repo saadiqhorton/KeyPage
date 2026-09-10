@@ -59,7 +59,11 @@ function git(cwd: string, args: string[]): void {
 
 function makeStubBin(
   binDir: string,
-  opts: { healthOk: boolean; publishedPort?: number; stubGit?: boolean },
+  opts: {
+    healthOk: boolean;
+    publishedPort?: number | null;
+    stubGit?: boolean;
+  },
 ): void {
   if (opts.stubGit !== false) {
     writeExecutable(
@@ -70,15 +74,20 @@ exit 0
 `,
     );
   }
-  const published = opts.publishedPort ?? DEFAULT_LISTEN_PORT;
+  const portLine =
+    opts.publishedPort === null
+      ? `if [ "$1" = "compose" ] && [ "$2" = "port" ]; then
+  exit 1
+fi`
+      : `if [ "$1" = "compose" ] && [ "$2" = "port" ]; then
+  printf '%s\\n' "0.0.0.0:${opts.publishedPort ?? DEFAULT_LISTEN_PORT}"
+  exit 0
+fi`;
   writeExecutable(
     path.join(binDir, "docker"),
     `#!/bin/sh
 echo "docker $*" >> "${binDir}/calls.log"
-if [ "$1" = "compose" ] && [ "$2" = "port" ]; then
-  printf '%s\\n' "0.0.0.0:${published}"
-  exit 0
-fi
+${portLine}
 if [ "$1" = "info" ] || [ "$1" = "compose" ]; then
   exit 0
 fi
@@ -139,7 +148,8 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, new RegExp(`^DEFAULT_LISTEN_PORT=${DEFAULT_LISTEN_PORT}$`, "m"));
     assert.match(src, /\/api\/health/);
     assert.match(src, /compose up -d --build/);
-    assert.doesNotMatch(src, /(?:^|[^A-Z_])PORT=/m);
+    assert.match(src, /rev-parse FETCH_HEAD/);
+    assert.doesNotMatch(src, /^\s*PORT=/m);
     assert.doesNotMatch(src, /sed[^\n]*PORT/);
     assert.doesNotMatch(src, /(?:sed|tee|printf|cat\s*>)[^\n]*docker-compose\.yml/);
   });
@@ -271,9 +281,70 @@ describe("scripts/update.sh behavior", () => {
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.equal(fs.readFileSync(path.join(install, "release-marker"), "utf8"), "v-next");
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    const wanted = spawnSync("git", ["-C", bare, "rev-parse", "main"], { encoding: "utf8" });
+    const actual = spawnSync("git", ["-C", install, "rev-parse", "HEAD"], { encoding: "utf8" });
+    assert.equal(wanted.status, 0);
+    assert.equal(actual.status, 0);
+    assert.equal(actual.stdout.trim(), wanted.stdout.trim());
     fs.rmSync(remoteWork, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });
     fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("fails before rebuild when a dirty tree cannot advance to KEYPAGE_REF", () => {
+    const remoteWork = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-remote-"));
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bare-"));
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-dirty-"));
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+
+    git(remoteWork, ["init", "-b", "main"]);
+    fs.writeFileSync(path.join(remoteWork, "docker-compose.yml"), fs.readFileSync(COMPOSE_YML, "utf8"));
+    fs.writeFileSync(path.join(remoteWork, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
+    fs.mkdirSync(path.join(remoteWork, "data"));
+    fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "vault-bytes");
+    git(remoteWork, ["add", "."]);
+    git(remoteWork, ["commit", "-m", "initial"]);
+    git(remoteWork, ["clone", "--bare", remoteWork, bare]);
+    git(remoteWork, ["clone", "--depth", "1", bare, install]);
+    fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
+    fs.appendFileSync(path.join(install, "docker-compose.yml"), "\n# dirty\n");
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.match(output, /local changes|did not reach|cannot advance/i);
+    assert.doesNotMatch(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up /);
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("falls back to .env PORT when compose does not report a published port", () => {
+    const { root, envPath, dataDir } = makeInstallTree();
+    fs.writeFileSync(envPath, "PORT=18081\nKEYPAGE_WEB_DIR=/app/apps/web/dist\n");
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, publishedPort: null });
+
+    const result = runUpdate({ keypageDir: root, binDir });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /curl -fsS http:\/\/127\.0\.0\.1:18081\/api\/health/);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 });
