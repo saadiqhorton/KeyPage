@@ -11,13 +11,6 @@ const repoRoot = path.resolve(
 
 const HOST_TOKEN_CAT = "cat ~/keypage/data/setup-token";
 
-const OPERATOR_SOURCES = [
-  "README.md",
-  "scripts/install.sh",
-  "apps/web/src/screens/SetupScreen.tsx",
-  "apps/web/src/vault/VaultProvider.tsx",
-] as const;
-
 function readRepoFile(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
@@ -29,6 +22,7 @@ describe("setup-token operator copy (SAA-225)", () => {
     const vaultProvider = readRepoFile("apps/web/src/vault/VaultProvider.tsx");
     const install = readRepoFile("scripts/install.sh");
 
+    assert.match(readme, /^cd ~\/keypage$/m);
     assert.match(readme, new RegExp(HOST_TOKEN_CAT.replaceAll("/", "\\/")));
     assert.match(setupScreen, new RegExp(HOST_TOKEN_CAT.replaceAll("/", "\\/")));
     assert.match(
@@ -45,28 +39,49 @@ describe("setup-token operator copy (SAA-225)", () => {
   });
 
   it("does not tell operators to grep logs or cat ./data/setup-token", () => {
-    for (const relativePath of OPERATOR_SOURCES) {
-      const text = readRepoFile(relativePath);
-      assert.doesNotMatch(
-        text,
-        /\.\/data\/setup-token/,
-        `${relativePath} still mentions ./data/setup-token`,
+    for (const relativePath of walkOperatorFiles(repoRoot)) {
+      const text = fs.readFileSync(relativePath, "utf8");
+      const label = path.relative(repoRoot, relativePath);
+      assert.equal(
+        text.includes("./data/setup-token"),
+        false,
+        `${label} still mentions ./data/setup-token`,
       );
       assert.doesNotMatch(
         text,
         /printed in the server log/i,
-        `${relativePath} still claims the token is printed in the server log`,
+        `${label} still claims the token is printed in the server log`,
       );
       assert.doesNotMatch(
         text,
         /docker compose logs[^\n]*\|\s*grep/,
-        `${relativePath} still greps compose logs for the setup token`,
+        `${label} still greps compose logs for the setup token`,
       );
       assert.doesNotMatch(
         text,
         /grep\s+-A4\s+['"]setup token['"]/,
-        `${relativePath} still documents grep -A4 'setup token'`,
+        `${label} still documents grep -A4 'setup token'`,
       );
     }
   });
 });
+
+function* walkOperatorFiles(dir: string): Generator<string> {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (
+      entry.name === "node_modules" ||
+      entry.name === "dist" ||
+      entry.name === ".git"
+    ) {
+      continue;
+    }
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      yield* walkOperatorFiles(full);
+      continue;
+    }
+    if (/\.(md|tsx?|sh)$/.test(entry.name) && !entry.name.includes(".test.")) {
+      yield full;
+    }
+  }
+}

@@ -56,9 +56,10 @@ curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/i
 
 Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. Re-running the same command updates the checkout when possible and brings the stack back up.
 
-Already have the repo checked out?
+Already have the repo checked out at the installer default (`~/keypage`)?
 
 ```bash
+cd ~/keypage
 docker compose up -d --build
 cat ~/keypage/data/setup-token
 ```
