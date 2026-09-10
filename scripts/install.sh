@@ -225,5 +225,6 @@ note "First visit: paste the setup token, create a Master Password (12+ chars), 
 warn "First-boot setup over plain LAN HTTP exposes the setup POST body (including the setup token)."
 note "Prefer Cloudflare Tunnel or a TLS reverse proxy before claiming the vault."
 note "To reject cleartext claims: KEYPAGE_REQUIRE_HTTPS_SETUP=true (plus KEYPAGE_TRUST_PROXY=true behind a Tunnel/proxy)."
+note "Later updates: cd ${KEYPAGE_DIR} && bash scripts/update.sh"
 note "Later: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 printf '\n'
