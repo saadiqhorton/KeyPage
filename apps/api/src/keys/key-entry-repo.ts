@@ -10,7 +10,11 @@ import type {
 
 import { getVaultAuth } from "../auth/vault-repo.js";
 import type { KeyEntryRow } from "../db/rows.js";
-import { HttpKeyVersionMismatch, HttpSetupRequired } from "../errors.js";
+import {
+  HttpInvalidRequest,
+  HttpKeyVersionMismatch,
+  HttpSetupRequired,
+} from "../errors.js";
 
 /**
  * A client-authored write must name the key version its ciphertext was produced
@@ -99,7 +103,7 @@ function rowToKeyEntry(row: KeyEntryRow): KeyEntry {
 export function listKeyEntries(db: Database.Database): KeyEntry[] {
   const rows = db
     .prepare(
-      `SELECT * FROM key_entries ORDER BY created_at DESC, id DESC`,
+      `SELECT * FROM key_entries ORDER BY sort_order ASC, id ASC`,
     )
     .all() as KeyEntryRow[];
 
@@ -170,7 +174,28 @@ export type InsertKeyEntryInput = Omit<
   createdAt?: string;
   updatedAt?: string;
   lastUsedAt?: string | null;
+  /** When omitted, new entries are prepended so they appear first in the list. */
+  place?: "start" | "end";
 };
+
+function nextSortOrder(
+  db: Database.Database,
+  place: "start" | "end",
+): number {
+  const row = db
+    .prepare(
+      place === "end"
+        ? `SELECT MAX(sort_order) AS value FROM key_entries`
+        : `SELECT MIN(sort_order) AS value FROM key_entries`,
+    )
+    .get() as { value: number | null };
+
+  if (row.value === null) {
+    return 0;
+  }
+
+  return place === "end" ? row.value + 1 : row.value - 1;
+}
 
 export function insertKeyEntry(
   db: Database.Database,
@@ -184,13 +209,14 @@ export function insertKeyEntry(
   assertCipherKeyVersion(vault.key_version, input.cipher);
 
   const now = new Date().toISOString();
+  const sortOrder = nextSortOrder(db, input.place ?? "start");
 
   db.prepare(
     `INSERT INTO key_entries (
        id, label, service_id, custom_service_name, description, tags_json,
        cipher_algorithm, cipher_iv, cipher_text, key_version,
-       created_at, updated_at, last_used_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       created_at, updated_at, last_used_at, sort_order
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.label,
@@ -205,6 +231,7 @@ export function insertKeyEntry(
     input.createdAt ?? now,
     input.updatedAt ?? now,
     input.lastUsedAt ?? null,
+    sortOrder,
   );
 
   const row = db
@@ -334,4 +361,29 @@ export function replaceKeyEntryCiphers(
   }
 
   return updated;
+}
+
+export function reorderKeyEntries(
+  db: Database.Database,
+  orderedIds: string[],
+): KeyEntry[] {
+  const existing = listKeyEntryIds(db);
+  const unique = new Set(orderedIds);
+
+  if (
+    unique.size !== orderedIds.length ||
+    unique.size !== existing.size ||
+    orderedIds.some((id) => !existing.has(id))
+  ) {
+    throw new HttpInvalidRequest("Invalid key entry order", [
+      { field: "orderedIds", message: "must be a permutation of the vault" },
+    ]);
+  }
+
+  const stmt = db.prepare(`UPDATE key_entries SET sort_order = ? WHERE id = ?`);
+  for (const [index, id] of orderedIds.entries()) {
+    stmt.run(index, id);
+  }
+
+  return listKeyEntries(db);
 }

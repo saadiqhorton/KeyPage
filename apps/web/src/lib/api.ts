@@ -11,6 +11,8 @@ import type {
   KeyEntryImportRequest,
   KeyEntryImportResponse,
   KeyEntryListResponse,
+  KeyEntryReorderRequest,
+  KeyEntryReorderResponse,
   KeyEntryUseAction,
   KeyEntryUseResponse,
   RecoveryCancelRequest,
@@ -190,6 +192,15 @@ export function postRecoveryReset(
 
 export function getKeyEntries(): Promise<KeyEntryListResponse> {
   return apiFetch<KeyEntryListResponse>("/api/keys");
+}
+
+export function patchKeyEntryOrder(
+  body: KeyEntryReorderRequest,
+): Promise<KeyEntryReorderResponse> {
+  return apiFetch<KeyEntryReorderResponse>("/api/keys/order", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
 }
 
 async function keyEntryWrite<T>(

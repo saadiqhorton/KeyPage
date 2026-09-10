@@ -24,6 +24,7 @@ import { keyEntryRoutes } from "./key-entries.js";
 
 const ENTRY_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ENTRY_ID = "22222222-2222-4222-8222-222222222222";
+const THIRD_ENTRY_ID = "33333333-3333-4333-8333-333333333333";
 const AUTH_KEY = new Uint8Array(32).fill(9);
 
 async function injectWithProof(
@@ -777,5 +778,133 @@ describe("Key Entry list, use, duplicate, and origin", () => {
 
     assert.equal(response.statusCode, 400);
     assert.equal(response.json().details?.[0]?.field, "entries[0].id");
+  });
+});
+
+describe("key entry reorder", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+  let cookie: string;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    runMigrations(db);
+    initializeVault(db, {
+      kdf: sampleKdf(),
+      proofKeys: {
+        authStoredKeyHex: loginStoredKeyHexFromAuthKey(AUTH_KEY),
+        recoveryStoredKeyHex: Buffer.alloc(32, 10).toString("hex"),
+      },
+      recoveryCodes: sampleRecoveryCodes(),
+    });
+    app = await buildTestApp(db);
+    const { token } = createSession(db, {}, 1200);
+    cookie = `${SESSION_COOKIE_NAME}=${token}`;
+  });
+
+  afterEach(async () => {
+    await app?.close();
+    db?.close();
+  });
+
+  async function createEntries(ids: string[]) {
+    for (const [index, id] of ids.entries()) {
+      const created = await injectWithProof(app, cookie, {
+        method: "POST",
+        url: "/api/keys",
+        payload: {
+          ...createBody(id, 1, index + 4),
+          label: `Key ${index + 1}`,
+        },
+      });
+      assert.equal(created.statusCode, 201);
+    }
+  }
+
+  it("persists owner order across list reloads", async () => {
+    await createEntries([ENTRY_ID, OTHER_ENTRY_ID, THIRD_ENTRY_ID]);
+
+    const before = await app.inject({
+      method: "GET",
+      url: "/api/keys",
+      headers: { cookie },
+    });
+    assert.equal(before.statusCode, 200);
+    assert.deepEqual(
+      before.json().entries.map((entry: { id: string }) => entry.id),
+      [THIRD_ENTRY_ID, OTHER_ENTRY_ID, ENTRY_ID],
+    );
+
+    const reordered = await app.inject({
+      method: "PATCH",
+      url: "/api/keys/order",
+      headers: { cookie },
+      payload: { orderedIds: [ENTRY_ID, THIRD_ENTRY_ID, OTHER_ENTRY_ID] },
+    });
+    assert.equal(reordered.statusCode, 200);
+    assert.deepEqual(
+      reordered.json().entries.map((entry: { id: string }) => entry.id),
+      [ENTRY_ID, THIRD_ENTRY_ID, OTHER_ENTRY_ID],
+    );
+
+    const after = await app.inject({
+      method: "GET",
+      url: "/api/keys",
+      headers: { cookie },
+    });
+    assert.equal(after.statusCode, 200);
+    assert.deepEqual(
+      after.json().entries.map((entry: { id: string }) => entry.id),
+      [ENTRY_ID, THIRD_ENTRY_ID, OTHER_ENTRY_ID],
+    );
+  });
+
+  it("rejects reorder without a session", async () => {
+    await createEntries([ENTRY_ID, OTHER_ENTRY_ID]);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/keys/order",
+      payload: { orderedIds: [OTHER_ENTRY_ID, ENTRY_ID] },
+    });
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().error, "unauthenticated");
+  });
+
+  it("rejects reorder ids that are not a permutation of the vault", async () => {
+    await createEntries([ENTRY_ID, OTHER_ENTRY_ID]);
+
+    const unknown = await app.inject({
+      method: "PATCH",
+      url: "/api/keys/order",
+      headers: { cookie },
+      payload: {
+        orderedIds: [ENTRY_ID, OTHER_ENTRY_ID, THIRD_ENTRY_ID],
+      },
+    });
+    assert.equal(unknown.statusCode, 400);
+    assert.equal(unknown.json().error, "invalid_request");
+    assert.match(String(unknown.json().message), /order/i);
+
+    const missing = await app.inject({
+      method: "PATCH",
+      url: "/api/keys/order",
+      headers: { cookie },
+      payload: { orderedIds: [ENTRY_ID] },
+    });
+    assert.equal(missing.statusCode, 400);
+    assert.equal(missing.json().error, "invalid_request");
+    assert.match(String(missing.json().message), /order/i);
+
+    const duplicate = await app.inject({
+      method: "PATCH",
+      url: "/api/keys/order",
+      headers: { cookie },
+      payload: { orderedIds: [ENTRY_ID, ENTRY_ID] },
+    });
+    assert.equal(duplicate.statusCode, 400);
+    assert.equal(duplicate.json().error, "invalid_request");
+    assert.match(String(duplicate.json().message), /order/i);
   });
 });

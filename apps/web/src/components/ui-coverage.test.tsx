@@ -75,6 +75,12 @@ const revealProps = {
   onCopy: () => undefined,
   onEdit: () => undefined,
   onDelete: () => undefined,
+  canMoveUp: () => true,
+  canMoveDown: () => true,
+  onMoveUp: () => undefined,
+  onMoveDown: () => undefined,
+  onDropEntry: () => undefined,
+  reorderBusy: false,
 };
 
 describe("presentational shells", () => {
@@ -398,6 +404,12 @@ describe("key entry views", () => {
           onCopy={() => undefined}
           onEdit={() => undefined}
           onDelete={() => undefined}
+          canMoveUp={() => true}
+          canMoveDown={() => true}
+          onMoveUp={() => undefined}
+          onMoveDown={() => undefined}
+          onDropEntry={() => undefined}
+          reorderBusy={false}
         />,
       ),
       /Production/,
@@ -419,20 +431,28 @@ describe("key entry views", () => {
           onCopy={() => undefined}
           onEdit={() => undefined}
           onDelete={() => undefined}
+          canMoveUp={() => true}
+          canMoveDown={() => true}
+          onMoveUp={() => undefined}
+          onMoveDown={() => undefined}
+          onDropEntry={() => undefined}
+          reorderBusy={false}
         />,
       ),
       /Internal/,
     );
-    assert.match(
-      renderToStaticMarkup(
-        <KeyEntryCardGrid entries={[entry]} {...revealProps} />,
-      ),
-      /Production/,
+    const grid = renderToStaticMarkup(
+      <KeyEntryCardGrid entries={[entry]} {...revealProps} />,
     );
-    assert.match(
-      renderToStaticMarkup(<KeyEntryList entries={[entry]} {...revealProps} />),
-      /Main billing key/,
+    assert.match(grid, /Production/);
+    assert.match(grid, /Move Production up/);
+    assert.match(grid, /Move Production down/);
+    const list = renderToStaticMarkup(
+      <KeyEntryList entries={[entry]} {...revealProps} />,
     );
+    assert.match(list, /Main billing key/);
+    assert.match(list, /Move Production up/);
+    assert.match(list, /Drag to reorder Production/);
     const table = renderToStaticMarkup(
       <KeyEntryTable
         entries={[entry, makeEntry({ id: "other", description: null })]}
@@ -443,10 +463,18 @@ describe("key entry views", () => {
         onCopy={() => undefined}
         onEdit={() => undefined}
         onDelete={() => undefined}
+        canMoveUp={() => true}
+        canMoveDown={() => true}
+        onMoveUp={() => undefined}
+        onMoveDown={() => undefined}
+        onDropEntry={() => undefined}
+        reorderBusy={false}
       />,
     );
     assert.match(table, /Key Entries/);
     assert.match(table, /sk-live/);
+    assert.match(table, /Move Production up/);
+    assert.match(table, /Reorder/);
   });
 
   it("renders the toolbar counts", () => {

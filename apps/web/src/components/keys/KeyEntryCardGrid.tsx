@@ -3,6 +3,7 @@ import type { KeyEntry } from "@keypage/shared";
 import { KeyEntryCard } from "@/components/keys/KeyEntryCard";
 import type {
   KeyEntryActionProps,
+  KeyEntryReorderProps,
   KeyEntryRevealProps,
 } from "@/components/keys/key-entry-view-props";
 
@@ -11,7 +12,8 @@ export type { KeyEntryActionProps, KeyEntryRevealProps } from "@/components/keys
 type KeyEntryCardGridProps = {
   entries: KeyEntry[];
 } & KeyEntryRevealProps &
-  KeyEntryActionProps;
+  KeyEntryActionProps &
+  KeyEntryReorderProps;
 
 export function KeyEntryCardGrid({
   entries,
@@ -22,6 +24,12 @@ export function KeyEntryCardGrid({
   onCopy,
   onEdit,
   onDelete,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  onDropEntry,
+  reorderBusy,
 }: KeyEntryCardGridProps) {
   return (
     <div className="card-grid-enter grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 lg:gap-6">
@@ -39,6 +47,12 @@ export function KeyEntryCardGrid({
             onCopy={() => onCopy(entry)}
             onEdit={onEdit}
             onDelete={onDelete}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            onDropEntry={onDropEntry}
+            reorderBusy={reorderBusy}
           />
         );
       })}

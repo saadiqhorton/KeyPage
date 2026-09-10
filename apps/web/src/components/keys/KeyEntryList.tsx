@@ -1,8 +1,16 @@
 import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
-import type { KeyEntryRevealProps, KeyEntryActionProps } from "@/components/keys/key-entry-view-props";
+import type {
+  KeyEntryRevealProps,
+  KeyEntryActionProps,
+  KeyEntryReorderProps,
+} from "@/components/keys/key-entry-view-props";
 import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
+import {
+  KeyEntryReorderControls,
+  keyEntryDropTargetProps,
+} from "@/components/keys/KeyEntryReorderControls";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatShortDate } from "@/lib/format";
@@ -11,7 +19,8 @@ import { serviceDisplayName } from "@/lib/key-entry-filter";
 type KeyEntryListProps = {
   entries: KeyEntry[];
 } & KeyEntryRevealProps &
-  KeyEntryActionProps;
+  KeyEntryActionProps &
+  KeyEntryReorderProps;
 
 export function KeyEntryList({
   entries,
@@ -22,6 +31,12 @@ export function KeyEntryList({
   onCopy,
   onEdit,
   onDelete,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  onDropEntry,
+  reorderBusy,
 }: KeyEntryListProps) {
   return (
     <div className="view-enter bezel-shell">
@@ -34,7 +49,17 @@ export function KeyEntryList({
               <li
                 key={entry.id}
                 className="flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-start"
+                {...keyEntryDropTargetProps({ entryId: entry.id, onDropEntry })}
               >
+                <KeyEntryReorderControls
+                  entryId={entry.id}
+                  entryLabel={entry.label}
+                  canMoveUp={canMoveUp(entry)}
+                  canMoveDown={canMoveDown(entry)}
+                  disabled={reorderBusy}
+                  onMoveUp={() => onMoveUp(entry)}
+                  onMoveDown={() => onMoveDown(entry)}
+                />
                 <div className="flex min-w-0 flex-1 items-start gap-4">
                   <ServiceIcon serviceId={entry.serviceId} size="sm" />
                   <div className="min-w-0 flex-1">
