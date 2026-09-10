@@ -193,8 +193,9 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /compose up -d --build/);
     assert.match(src, /rev-parse FETCH_HEAD/);
     assert.doesNotMatch(src, /reset --hard/);
+    assert.doesNotMatch(src, /reset --soft /);
     assert.doesNotMatch(src, /checkout -q -B/);
-    assert.match(src, /reset --soft/);
+    assert.match(src, /update-ref/);
     assert.match(src, /:\(exclude\)data/);
     assert.doesNotMatch(src, /^\s*PORT=/m);
     assert.doesNotMatch(src, /sed[^\n]*PORT/);
@@ -349,6 +350,43 @@ describe("scripts/update.sh behavior", () => {
     assert.equal(wanted.status, 0);
     assert.equal(actual.status, 0);
     assert.equal(actual.stdout.trim(), wanted.stdout.trim());
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("advances KEYPAGE_REF without rewriting a different checked-out branch", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+    const otherBefore = spawnSync("git", ["-C", install, "rev-parse", "HEAD"], { encoding: "utf8" });
+    assert.equal(otherBefore.status, 0);
+    git(install, ["checkout", "-b", "other"]);
+    fs.writeFileSync(path.join(remoteWork, "release-marker"), "v-next");
+    git(remoteWork, ["add", "release-marker"]);
+    git(remoteWork, ["commit", "-m", "advance"]);
+    git(remoteWork, ["push", bare, "main"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const otherAfter = spawnSync("git", ["-C", install, "rev-parse", "other"], { encoding: "utf8" });
+    const headName = spawnSync("git", ["-C", install, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" });
+    const headSha = spawnSync("git", ["-C", install, "rev-parse", "HEAD"], { encoding: "utf8" });
+    const wanted = spawnSync("git", ["-C", bare, "rev-parse", "main"], { encoding: "utf8" });
+    assert.equal(otherAfter.stdout.trim(), otherBefore.stdout.trim());
+    assert.equal(headName.stdout.trim(), "main");
+    assert.equal(headSha.stdout.trim(), wanted.stdout.trim());
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(remoteWork, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });
     fs.rmSync(install, { recursive: true, force: true });

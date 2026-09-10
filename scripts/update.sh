@@ -212,12 +212,15 @@ else
       ':(exclude)setup-token'; then
     fail "restore of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
-  # Move HEAD only — does not touch the worktree (so cannot rewrite ./data).
-  if ! git -C "${KEYPAGE_DIR}" reset --soft "${reset_to}"; then
-    fail "reset to ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+  # Point KEYPAGE_REF at the fetched tip and switch HEAD to that ref.
+  # A soft reset of the current branch would rewrite a non-target tip.
+  # update-ref + symbolic-ref do not touch the worktree (so cannot rewrite ./data).
+  if ! git -C "${KEYPAGE_DIR}" update-ref "refs/heads/${KEYPAGE_REF}" "${wanted}"; then
+    fail "could not point ${KEYPAGE_REF} at the fetched tip — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
   fi
-  git -C "${KEYPAGE_DIR}" update-ref "refs/heads/${KEYPAGE_REF}" "${wanted}"
-  git -C "${KEYPAGE_DIR}" symbolic-ref HEAD "refs/heads/${KEYPAGE_REF}"
+  if ! git -C "${KEYPAGE_DIR}" symbolic-ref HEAD "refs/heads/${KEYPAGE_REF}"; then
+    fail "could not switch HEAD to ${KEYPAGE_REF} — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
+  fi
   restore_env_backup
   now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   if [[ "${now}" != "${wanted}" ]]; then
