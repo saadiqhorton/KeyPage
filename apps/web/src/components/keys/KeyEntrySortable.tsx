@@ -222,12 +222,12 @@ export function KeyEntrySortable({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
-      window.addEventListener("scroll", onCancel, true);
+      window.addEventListener("scroll", onCancel);
       detachRef.current = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onCancel);
-        window.removeEventListener("scroll", onCancel, true);
+        window.removeEventListener("scroll", onCancel);
       };
     },
     [disabled, finishDrag, ids],
