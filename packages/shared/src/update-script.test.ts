@@ -197,7 +197,7 @@ describe("scripts/update.sh contract", () => {
     assert.doesNotMatch(src, /checkout -q -B/);
     assert.match(src, /update-ref/);
     assert.match(src, /:\(exclude\)data/);
-    assert.match(src, /diff-filter=D/);
+    assert.match(src, /comm -23/);
     assert.match(src, /rm -f --ignore-unmatch/);
     assert.doesNotMatch(src, /^\s*PORT=/m);
     assert.doesNotMatch(src, /sed[^\n]*PORT/);
@@ -385,6 +385,41 @@ describe("scripts/update.sh behavior", () => {
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.equal(fs.existsSync(path.join(install, "stale-source.txt")), false);
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("removes the old path of a renamed source file and leaves ./data", () => {
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+    fs.writeFileSync(path.join(remoteWork, "old-name.txt"), "rename-me");
+    git(remoteWork, ["add", "old-name.txt"]);
+    git(remoteWork, ["commit", "-m", "add old name"]);
+    git(remoteWork, ["push", bare, "main"]);
+    git(install, ["fetch", "--depth", "1", "origin", "main"]);
+    git(install, ["reset", "--hard", "FETCH_HEAD"]);
+    fs.writeFileSync(path.join(install, "data/keypage.db"), "vault-bytes");
+    git(remoteWork, ["mv", "old-name.txt", "new-name.txt"]);
+    git(remoteWork, ["commit", "-m", "rename source"]);
+    git(remoteWork, ["push", bare, "main"]);
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "main",
+      },
+    });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(fs.existsSync(path.join(install, "old-name.txt")), false);
+    assert.equal(fs.readFileSync(path.join(install, "new-name.txt"), "utf8"), "rename-me");
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(remoteWork, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });
