@@ -479,7 +479,8 @@ describe("SetupScreen", () => {
     );
     assert.match(setupHtml, /Create Master Password/);
     assert.match(setupHtml, /cat ~\/keypage\/data\/setup-token/);
-    assert.doesNotMatch(setupHtml, /\.\/data\/setup-token/);
+    assert.match(setupHtml, /installer default/);
+    assert.match(setupHtml, /docker compose exec keypage cat \/app\/data\/setup-token/);
     assert.doesNotMatch(setupHtml, /printed in the server log/i);
     assert.doesNotMatch(setupHtml, /docker compose logs/);
     assert.match(
