@@ -200,6 +200,7 @@ describe("scripts/update.sh contract", () => {
       src,
       /sed 's\|\^KEYPAGE_WEB_DIR=\/app\/web\$\|KEYPAGE_WEB_DIR=\/app\/apps\/web\/dist\|'/,
     );
+    assert.match(src, /trap restore_env_backup EXIT/);
   });
 
   it("resolves a piped self path safely and never treats stdin as the install dir", () => {
