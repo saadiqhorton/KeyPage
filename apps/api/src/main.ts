@@ -32,6 +32,7 @@ export async function bootstrapApp(
   const setupGate = await openSetupGate({
     dataDir: cfg.dataDir,
     vaultInitialized: isVaultInitialized(db),
+    ttlMinutes: cfg.setupTokenTtlMinutes,
   });
 
   const app = await buildServer({
@@ -42,6 +43,9 @@ export async function bootstrapApp(
     db,
     setupGate,
     requireHttpsSetup: cfg.requireHttpsSetup,
+    allowInsecureLocalSetup: cfg.allowInsecureLocalSetup,
+    trustedProxies: cfg.trustedProxies,
+    publicOrigin: cfg.publicOrigin,
   });
 
   if (setupGate.token) {
@@ -56,7 +60,7 @@ export async function bootstrapApp(
 ────────────────────────────────────────────────────────────────`);
     if (cfg.requireHttpsSetup) {
       console.warn(
-        "KEYPAGE_REQUIRE_HTTPS_SETUP is on: POST /setup is rejected over clear HTTP. Use Cloudflare Tunnel or a TLS reverse proxy (and KEYPAGE_TRUST_PROXY=true if TLS terminates in front of KeyPage).",
+        "HTTPS-first setup is on: POST /setup is rejected over clear HTTP. Configure KEYPAGE_PUBLIC_ORIGIN and an allowlist in KEYPAGE_TRUSTED_PROXIES when TLS terminates in front of KeyPage.",
       );
     } else {
       console.warn(

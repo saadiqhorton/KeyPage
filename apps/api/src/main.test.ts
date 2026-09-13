@@ -136,8 +136,7 @@ describe("bootstrapApp", () => {
       assert.equal(output.includes(token), false, "plaintext setup token must not appear in logs");
       assert.match(output, /setup-token/);
       assert.match(output, new RegExp(tokenFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-      assert.match(output, /plain HTTP exposes the setup POST body/);
-      assert.equal(output.includes("KEYPAGE_REQUIRE_HTTPS_SETUP is on"), false);
+      assert.match(output, /HTTPS-first setup is on/);
     } finally {
       await app.close();
       closeDatabase(db);
@@ -158,7 +157,7 @@ describe("bootstrapApp", () => {
     try {
       const token = (await fs.readFile(path.join(dataDir, "setup-token"), "utf8")).trim();
       assert.equal(output.includes(token), false, "plaintext setup token must not appear in logs");
-      assert.match(output, /KEYPAGE_REQUIRE_HTTPS_SETUP is on/);
+      assert.match(output, /HTTPS-first setup is on/);
       assert.equal(output.includes("plain HTTP exposes the setup POST body"), false);
     } finally {
       await app.close();

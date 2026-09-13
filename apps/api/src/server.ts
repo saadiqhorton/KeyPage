@@ -25,6 +25,9 @@ type BuildServerOptions = {
   db: Database.Database;
   setupGate: SetupGate;
   requireHttpsSetup?: boolean;
+  allowInsecureLocalSetup?: boolean;
+  trustedProxies?: string[];
+  publicOrigin?: string;
 };
 
 /** Pino/Fastify paths that must never appear in request or application logs. */
@@ -35,7 +38,26 @@ export const LOGGER_REDACT_PATHS = [
   "setupToken",
   "req.body.setupToken",
   "body.setupToken",
+  "req.body.authKeyB64",
+  "body.authKeyB64",
 ] as const;
+
+const CLIENT_SECRET_FIELDS = new Set([
+  "masterPassword", "masterKey", "masterKeyB64", "derivedKey", "derivedKeyB64",
+  "encryptionKey", "encryptionKeyB64", "authKey", "authKeyB64",
+]);
+
+function rejectClientSecrets(value: unknown, field = "body"): void {
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (CLIENT_SECRET_FIELDS.has(key)) {
+      throw new HttpError(400, "invalid_request", "Client-only secret material is not accepted", {
+        details: [{ field: `${field}.${key}`, message: "must never be sent to the server" }],
+      });
+    }
+    rejectClientSecrets(child, `${field}.${key}`);
+  }
+}
 
 async function webDirExists(webDir: string): Promise<boolean> {
   try {
@@ -52,11 +74,26 @@ export async function buildServer(options: BuildServerOptions) {
       level: options.logLevel,
       redact: [...LOGGER_REDACT_PATHS],
     },
-    trustProxy: config.trustProxy,
+    trustProxy: options.trustedProxies ?? config.trustedProxies,
   });
 
   await app.register(fastifyCookie);
   registerRawJsonBodyParser(app);
+  app.addHook("preValidation", async (request) => rejectClientSecrets(request.body));
+  app.addHook("onRequest", async (request, reply) => {
+    const publicOrigin = options.publicOrigin ?? config.publicOrigin;
+    if (!publicOrigin) return;
+    const expected = new URL(publicOrigin);
+    if (
+      request.host !== expected.host ||
+      request.protocol !== expected.protocol.slice(0, -1)
+    ) {
+      await reply.status(421).send({
+        error: "invalid_request",
+        message: "Misdirected request",
+      });
+    }
+  });
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     if (error.validation) {
@@ -90,6 +127,9 @@ export async function buildServer(options: BuildServerOptions) {
     db: options.db,
     setupGate: options.setupGate,
     requireHttpsSetup: options.requireHttpsSetup ?? config.requireHttpsSetup,
+    allowInsecureLocalSetup:
+      options.allowInsecureLocalSetup ?? config.allowInsecureLocalSetup,
+    publicOrigin: options.publicOrigin ?? config.publicOrigin,
   });
 
   await app.register(keyEntryRoutes, {

@@ -205,10 +205,10 @@ describe("vault auth routes (SAA-177)", () => {
     });
     assert.equal(response.statusCode, 400);
     assert.equal(response.json().error, "invalid_request");
-    assert.match(response.json().message, /authKeyB64 is not accepted/);
+    assert.match(response.json().message, /Client-only secret material/);
   });
 
-  it("enrolls a legacy vault via authKeyB64 then rejects a second authKey login", async () => {
+  it("rejects legacy authKeyB64 enrollment at the zero-knowledge boundary", async () => {
     await startLegacy();
 
     const challengeBlocked = await app.inject({
@@ -222,7 +222,8 @@ describe("vault auth routes (SAA-177)", () => {
       url: "/api/vault/login",
       payload: { authKeyB64: AUTH_KEY_B64 },
     });
-    assert.equal(enroll.statusCode, 200);
+    assert.equal(enroll.statusCode, 400);
+    assert.match(enroll.json().message, /Client-only secret material/);
 
     const row = db
       .prepare(
@@ -234,12 +235,11 @@ describe("vault auth routes (SAA-177)", () => {
         auth_verifier: string;
         recovery_stored_key: string | null;
       };
-    assert.equal(row.auth_stored_key, proofKeys().authStoredKeyHex);
-    assert.equal(row.auth_verifier, AUTH_VERIFIER_PROOF_V1);
+    assert.equal(row.auth_stored_key, null);
     assert.equal(row.recovery_stored_key, null);
 
     const status = await app.inject({ method: "GET", url: "/api/vault/status" });
-    assert.equal(status.json().proofReady, true);
+    assert.equal(status.json().proofReady, false);
 
     const second = await app.inject({
       method: "POST",
@@ -247,7 +247,7 @@ describe("vault auth routes (SAA-177)", () => {
       payload: { authKeyB64: AUTH_KEY_B64 },
     });
     assert.equal(second.statusCode, 400);
-    assert.match(second.json().message, /authKeyB64 is not accepted/);
+    assert.match(second.json().message, /Client-only secret material/);
   });
 
   it("cancels an open recovery ticket and is a no-op for an unknown ticket", async () => {

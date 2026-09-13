@@ -98,6 +98,18 @@ describe("setup token gate (SAA-174)", () => {
     assert.equal(gate.verify(correctToken), false);
   });
 
+  it("fails closed after expiry and remints an expired token on restart", async () => {
+    const dataDir = await makeTempDir();
+    const first = await openSetupGate({ dataDir, vaultInitialized: false, ttlMinutes: 1 });
+    const oldToken = first.token!;
+    const expired = new Date(Date.now() - 120_000);
+    await fs.utimes(first.filePath, expired, expired);
+    const second = await openSetupGate({ dataDir, vaultInitialized: false, ttlMinutes: 1 });
+    assert.notEqual(second.token, oldToken);
+    assert.equal(second.verify(oldToken), false);
+    assert.ok(second.expiresAt);
+  });
+
   it("remints when the existing file is not a valid setup token", async () => {
     const dataDir = await makeTempDir();
     const filePath = path.join(dataDir, SETUP_TOKEN_FILENAME);

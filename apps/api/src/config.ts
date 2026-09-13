@@ -38,6 +38,23 @@ function readPositiveIntEnv(name: string, fallback: number): number {
   return Math.round(parsed);
 }
 
+function readCsvEnv(name: string): string[] {
+  return (process.env[name] ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function readPublicOrigin(): string | undefined {
+  const raw = process.env.KEYPAGE_PUBLIC_ORIGIN?.trim();
+  if (!raw) return undefined;
+  const url = new URL(raw);
+  if (url.pathname !== "/" || url.search || url.hash || url.username || url.password) {
+    throw new Error("KEYPAGE_PUBLIC_ORIGIN must contain only scheme, host, and optional port");
+  }
+  return url.origin;
+}
+
 export function loadConfig() {
   return {
     port: Number(process.env.PORT ?? DEFAULT_LISTEN_PORT),
@@ -47,8 +64,11 @@ export function loadConfig() {
       process.env.KEYPAGE_WEB_DIR ?? path.join(packageRoot, "../web/dist"),
     ),
     logLevel: process.env.LOG_LEVEL ?? "info",
-    trustProxy: readBoolEnv("KEYPAGE_TRUST_PROXY", false),
-    requireHttpsSetup: readBoolEnv("KEYPAGE_REQUIRE_HTTPS_SETUP", false),
+    trustedProxies: readCsvEnv("KEYPAGE_TRUSTED_PROXIES"),
+    publicOrigin: readPublicOrigin(),
+    requireHttpsSetup: readBoolEnv("KEYPAGE_REQUIRE_HTTPS_SETUP", true),
+    allowInsecureLocalSetup: readBoolEnv("KEYPAGE_ALLOW_INSECURE_LOCAL_SETUP", false),
+    setupTokenTtlMinutes: readPositiveIntEnv("KEYPAGE_SETUP_TOKEN_TTL_MINUTES", 15),
     sessionIdleMinutes: readPositiveIntEnv(
       "KEYPAGE_SESSION_IDLE_MINUTES",
       DEFAULT_SESSION_IDLE_MINUTES,

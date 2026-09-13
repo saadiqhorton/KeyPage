@@ -1,46 +1,30 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-import { config } from "../config.js";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export function requestHostForOriginCheck(
-  request: FastifyRequest,
-): string | undefined {
-  if (config.trustProxy) {
-    const forwarded = request.headers["x-forwarded-host"];
-    if (typeof forwarded === "string" && forwarded.length > 0) {
-      return forwarded.split(",")[0]?.trim();
-    }
-  }
-  return request.headers.host;
+function forbidden(reply: FastifyReply): void {
+  void reply.status(403).send({ error: "invalid_request", message: "Forbidden" });
 }
 
-export async function checkOrigin(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
-  const origin = request.headers.origin;
-  if (!origin) {
-    return;
-  }
-
-  const host = requestHostForOriginCheck(request);
-  if (!host) {
-    return;
-  }
-
-  try {
-    if (new URL(origin).host !== host) {
-      await reply.status(403).send({
-        error: "invalid_request",
-        message: "Forbidden",
-      });
+export function createCheckOrigin(publicOrigin?: string) {
+  return async function checkOrigin(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const origin = request.headers.origin;
+    if (SAFE_METHODS.has(request.method) && !origin) return;
+    if (!origin && publicOrigin) {
+      forbidden(reply);
       return;
     }
-  } catch {
-    await reply.status(403).send({
-      error: "invalid_request",
-      message: "Forbidden",
-    });
-    return;
-  }
+    if (!origin) return;
+    try {
+      const expected = publicOrigin ?? `${request.protocol}://${request.host}`;
+      if (new URL(origin).origin !== new URL(expected).origin) forbidden(reply);
+    } catch {
+      forbidden(reply);
+    }
+  };
 }
+
+export const checkOrigin = createCheckOrigin();
