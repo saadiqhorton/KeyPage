@@ -1,0 +1,51 @@
+name: Rollback drill
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot-rollback:
+    name: disposable snapshot rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Capture immutable revisions
+        run: |
+          echo "KEYPAGE_CANDIDATE_SHA=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_ENV"
+          echo "KEYPAGE_ROLLBACK_TARGET=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
+          echo "KEYPAGE_ROLLBACK_SNAPSHOT=$RUNNER_TEMP/keypage-pre-upgrade.tgz" >> "$GITHUB_ENV"
+      - name: Build last-known-good and take stopped snapshot
+        run: |
+          git checkout --detach "$KEYPAGE_ROLLBACK_TARGET"
+          cp .env.example .env
+          docker compose up -d --build
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:9090/api/health | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              exit 1
+            fi
+            sleep 2
+          done
+          docker compose down
+          tar -C data -czf "$KEYPAGE_ROLLBACK_SNAPSHOT" .
+      - name: Build candidate and execute rollback
+        run: |
+          git checkout --detach "$KEYPAGE_CANDIDATE_SHA"
+          docker compose up -d --build
+          bash scripts/rollback.sh
+          test "$(git rev-parse HEAD)" = "$KEYPAGE_ROLLBACK_TARGET"
+          curl -fsS http://127.0.0.1:9090/api/health | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'
+      - name: Compose status on failure
+        if: failure()
+        run: docker compose ps
+      - name: Tear down
+        if: always()
+        run: docker compose down
