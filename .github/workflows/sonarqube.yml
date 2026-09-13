@@ -1,6 +1,7 @@
 name: SonarQube
 # native quality gate check
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
   pull_request:
