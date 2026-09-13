@@ -21,24 +21,6 @@ jobs:
       - name: Run tests with native Node coverage
         run: bash scripts/run-sonar-coverage.sh
       - name: SonarQube Scan
-        id: sonar_scan
-        continue-on-error: true
-        uses: SonarSource/sonarqube-scan-action@v7
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarqube.dezignerdrugz.com
-        with:
-          args: >
-            -Dsonar.projectKey=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-            -Dsonar.sources=apps,packages
-            -Dsonar.tests=apps,packages
-            -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
-            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
-            -Dsonar.coverage.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
-            -Dsonar.ws.timeout=120
-      - name: SonarQube Scan retry
-        if: steps.sonar_scan.outcome == 'failure'
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -58,41 +40,93 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           python3 <<'PY'
-          import base64, json, os, time, urllib.request
+          import base64
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
 
-          token = os.environ["SONAR_TOKEN"]
           host = "https://sonarqube.dezignerdrugz.com"
           key = "saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503"
+          token = os.environ.get("SONAR_TOKEN", "")
+          if not token:
+              print("ERROR: SONAR_TOKEN is missing", file=sys.stderr)
+              sys.exit(1)
+
           auth = base64.b64encode(f"{token}:".encode()).decode()
 
           def get(path):
-              req = urllib.request.Request(
-                  host + path,
-                  headers={"Authorization": f"Basic {auth}"},
+              url = host + path
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Authorization": f"Basic {auth}",
+                      "Accept": "application/json",
+                  },
               )
-              with urllib.request.urlopen(req, timeout=30) as response:
-                  return json.load(response)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      body = response.read().decode("utf-8", "replace")
+                      try:
+                          return json.loads(body)
+                      except json.JSONDecodeError as error:
+                          raise RuntimeError(
+                              f"SonarQube returned invalid JSON from {path}: {body[:500]}"
+                          ) from error
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", "replace")
+                  raise RuntimeError(
+                      f"SonarQube API returned HTTP {error.code} for {path}: {body[:500]}"
+                  ) from error
+              except urllib.error.URLError as error:
+                  raise RuntimeError(
+                      f"Could not reach SonarQube at {url}: {error.reason}"
+                  ) from error
 
-          status = ""
-          for _ in range(30):
-              qg = get(f"/api/qualitygates/project_status?projectKey={key}")
-              status = qg.get("projectStatus", {}).get("status", "")
+          status = None
+          for attempt in range(1, 31):
+              qg = get(
+                  "/api/qualitygates/project_status?"
+                  + urllib.parse.urlencode({"projectKey": key})
+              )
+              project_status = qg.get("projectStatus")
+              if not isinstance(project_status, dict):
+                  raise RuntimeError(f"SonarQube response has no projectStatus: {qg}")
+              status = project_status.get("status")
               print("quality_gate", status)
-              print("conditions", json.dumps(qg.get("projectStatus", {}).get("conditions"), indent=2))
+              print("conditions", json.dumps(project_status.get("conditions", []), indent=2))
               if status in ("OK", "ERROR"):
                   break
-              time.sleep(5)
+              if attempt < 30:
+                  time.sleep(5)
+
+          if status != "OK":
+              print(f"ERROR: SonarQube quality gate is {status or 'UNKNOWN'}", file=sys.stderr)
+              sys.exit(1)
 
           measures = get(
-              f"/api/measures/component?component={key}&metricKeys=coverage,uncovered_lines,bugs,vulnerabilities,code_smells,alert_status,ncloc,new_coverage,new_violations,violations"
+              "/api/measures/component?"
+              + urllib.parse.urlencode({
+                  "component": key,
+                  "metricKeys": "coverage,uncovered_lines,bugs,vulnerabilities,code_smells,alert_status,ncloc,new_coverage,new_violations,violations",
+              })
           )
+          component = measures.get("component")
+          if not isinstance(component, dict) or not isinstance(component.get("measures"), list):
+              raise RuntimeError(f"SonarQube measures response has an unexpected shape: {measures}")
           print("measures")
-          for row in sorted(measures["component"]["measures"], key=lambda item: item["metric"]):
+          for row in sorted(component["measures"], key=lambda item: item.get("metric", "")):
               value = row.get("value") or (row.get("period") or {}).get("value")
-              print(f"  {row['metric']}={value}")
+              print(f"  {row.get('metric')}={value}")
 
-          issues = get(f"/api/issues/search?componentKeys={key}&resolved=false&ps=5")
-          print("open_issues", issues.get("total"))
+          issues = get(
+              "/api/issues/search?"
+              + urllib.parse.urlencode({"componentKeys": key, "resolved": "false", "ps": "5"})
+          )
+          print("open_issues", issues.get("total", 0))
           for issue in issues.get("issues", []):
               print(" ", issue.get("rule"), issue.get("severity"), issue.get("component"), issue.get("line"))
           PY
