@@ -1,4 +1,5 @@
 name: SonarQube
+# native quality gate check
 on:
   push:
     branches: [ main ]
