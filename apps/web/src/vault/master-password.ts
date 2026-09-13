@@ -12,7 +12,6 @@ import {
   getVaultStatus,
   postRecoveryCodesRegenerate,
   postRecoveryReset,
-  postVaultLogin,
   postVaultLoginChallenge,
   postVaultLoginWithAuthKey,
   postVaultPasswordChange,
@@ -88,15 +87,12 @@ export function formatPasswordError(
 
 export type PasswordChangeProgress = (label: string) => void;
 
-/** One-shot enroll so /login/challenge can issue a proof (SAA-178). */
-async function enrollLegacyAuthIfNeeded(
-  proofReady: boolean,
-  authKeyB64: string,
-): Promise<void> {
-  if (proofReady) {
-    return;
+function requireProofReady(proofReady: boolean): void {
+  if (!proofReady) {
+    throw new MasterPasswordError(
+      "This legacy vault must first be migrated with an unused recovery code.",
+    );
   }
-  await postVaultLogin({ authKeyB64 });
 }
 
 export async function changeMasterPassword(
@@ -109,16 +105,11 @@ export async function changeMasterPassword(
   if (!status.kdf) {
     throw new Error("Vault is not initialized.");
   }
+  requireProofReady(status.proofReady);
 
   onProgress?.("Verifying current Master Password…");
   const current = await deriveVaultKeys(currentPassword, status.kdf);
   zeroize(current.masterKey);
-  try {
-    await enrollLegacyAuthIfNeeded(status.proofReady, current.authKeyB64);
-  } catch (error) {
-    zeroizeAesKey(current.encryptionKey);
-    rethrowInvalidCredentials(error);
-  }
 
   onProgress?.("Loading key entries…");
   const { entries } = await getKeyEntries();
@@ -334,6 +325,7 @@ export async function regenerateRecoveryCodes(
   if (!status.kdf) {
     throw new Error("Vault is not initialized.");
   }
+  requireProofReady(status.proofReady);
 
   onProgress?.("Verifying Master Password…");
   const derived = await deriveVaultKeys(password, status.kdf);
@@ -344,12 +336,6 @@ export async function regenerateRecoveryCodes(
     onProgress,
   );
   zeroize(derived.masterKey);
-  try {
-    await enrollLegacyAuthIfNeeded(status.proofReady, derived.authKeyB64);
-  } catch (error) {
-    rethrowInvalidCredentials(error);
-  }
-
   onProgress?.("Saving recovery codes…");
   try {
     const challenge = await postVaultLoginChallenge();

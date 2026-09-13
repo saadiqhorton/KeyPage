@@ -43,7 +43,7 @@ describe("buildServer", () => {
     return dir;
   }
 
-  async function start(options?: { webDir?: string; logLevel?: string }) {
+  async function start(options?: { webDir?: string; logLevel?: string; publicOrigin?: string }) {
     const db = new Database(":memory:");
     db.pragma("foreign_keys = ON");
     runMigrations(db);
@@ -57,6 +57,7 @@ describe("buildServer", () => {
       instance: { firstBootAt: "2026-01-01T00:00:00.000Z", schemaVersion: 1 },
       db,
       setupGate: claimedGate(),
+      publicOrigin: options?.publicOrigin,
     });
     apps.push(app);
     return { app, dataDir };
@@ -79,6 +80,26 @@ describe("buildServer", () => {
     assert.equal(spa.statusCode, 200);
     assert.equal(spa.headers["content-type"], "text/plain");
     assert.equal(spa.body, "Web UI is not built yet.");
+  });
+
+  it("allows direct loopback health probes with a configured public origin", async () => {
+    const { app } = await start({ publicOrigin: "https://keys.example.com" });
+
+    const health = await app.inject({
+      method: "GET",
+      url: "/api/health",
+      remoteAddress: "127.0.0.1",
+      headers: { host: "127.0.0.1:9090" },
+    });
+    assert.equal(health.statusCode, 200);
+
+    const browserRoute = await app.inject({
+      method: "GET",
+      url: "/dashboard",
+      remoteAddress: "127.0.0.1",
+      headers: { host: "127.0.0.1:9090" },
+    });
+    assert.equal(browserRoute.statusCode, 421);
   });
 
   it("serves index.html for non-API routes when the web dir is built", async () => {

@@ -47,6 +47,10 @@ const CLIENT_SECRET_FIELDS = new Set([
   "encryptionKey", "encryptionKeyB64", "authKey", "authKeyB64",
 ]);
 
+function isLoopback(address: string): boolean {
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
 function rejectClientSecrets(value: unknown, field = "body"): void {
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
@@ -83,6 +87,15 @@ export async function buildServer(options: BuildServerOptions) {
   app.addHook("onRequest", async (request, reply) => {
     const publicOrigin = options.publicOrigin ?? config.publicOrigin;
     if (!publicOrigin) return;
+    // Container and host health checks are direct loopback GETs. They do not
+    // carry the browser-facing Host header and cannot mutate vault state.
+    if (
+      request.method === "GET" &&
+      request.url === `${API_BASE}/health` &&
+      isLoopback(request.ip)
+    ) {
+      return;
+    }
     const expected = new URL(publicOrigin);
     if (
       request.host !== expected.host ||

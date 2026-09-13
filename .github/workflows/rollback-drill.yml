@@ -24,7 +24,12 @@ jobs:
         run: |
           git checkout --detach "$KEYPAGE_ROLLBACK_TARGET"
           cp .env.example .env
-          docker compose up -d --build
+          # Build with the candidate toolchain while starting the exact target
+          # source. This avoids making snapshot creation depend on stale base
+          # image/package-manager metadata that the candidate is repairing.
+          git show "$KEYPAGE_CANDIDATE_SHA:Dockerfile" > "$RUNNER_TEMP/Dockerfile.candidate"
+          docker build -f "$RUNNER_TEMP/Dockerfile.candidate" -t keypage .
+          docker compose up -d --no-build
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:9090/api/health | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
               break

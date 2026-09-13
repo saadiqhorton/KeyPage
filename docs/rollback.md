@@ -22,7 +22,7 @@ export KEYPAGE_ROLLBACK_SNAPSHOT=/absolute/path/keypage-pre-upgrade.tgz
 bash scripts/rollback.sh
 ```
 
-The script refuses a dirty tree, abbreviated SHAs, a non-ancestor target, or a missing snapshot. It stops Compose without deleting volumes, replaces only `./data` from the named snapshot, checks out the target in detached mode, rebuilds, and polls `/api/health` on the published port.
+The script refuses a dirty tree, abbreviated SHAs, a non-ancestor target, or a missing snapshot. Before stopping Compose, it rejects unsafe archive paths, links, special files, empty or unrecognized archives, and extracts the snapshot into a staging directory. It then moves the current `./data` directory aside instead of deleting it, installs the validated staged directory, checks out the target in detached mode, rebuilds, and polls `/api/health` on the published port.
 
 ## Validate
 
@@ -38,4 +38,4 @@ Do not include setup tokens, passwords, key values, database files, or backup fi
 
 ## Forward recovery
 
-If the older revision fails health validation, the script returns to the candidate revision and attempts a rebuild while retaining the pre-upgrade snapshot data. Keep the service isolated, preserve both the failed-state and pre-upgrade snapshots, and diagnose before another attempt. A later forward recovery must use an exact reviewed SHA and repeat health, unlock, entry-count, known-entry, and backup round-trip checks.
+If the older revision fails to build, start, or pass health validation, the script returns to the candidate revision and attempts a rebuild while retaining the pre-upgrade snapshot data. The displaced live directory is preserved beside `./data` as `.keypage-forward-data.<timestamp>.<pid>`. Keep the service isolated, preserve both the failed-state and pre-upgrade snapshots, and diagnose before another attempt. A later forward recovery must use an exact reviewed SHA and repeat health, unlock, entry-count, known-entry, and backup round-trip checks.

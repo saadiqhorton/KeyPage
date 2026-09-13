@@ -103,9 +103,11 @@ describe("changeMasterPassword early failures", () => {
     );
   });
 
-  it("maps invalid credentials while enrolling a legacy vault", async () => {
+  it("routes a legacy vault to recovery without sending authKeyB64", async () => {
+    const requestedUrls: string[] = [];
     globalThis.fetch = async (input) => {
       const url = String(input);
+      requestedUrls.push(url);
       if (url === "/api/vault/status") {
         return jsonResponse({
           state: "unlocked",
@@ -114,12 +116,6 @@ describe("changeMasterPassword early failures", () => {
           keyVersion: 1,
         });
       }
-      if (url === "/api/vault/login") {
-        return jsonResponse(
-          { error: "invalid_credentials", message: "nope" },
-          401,
-        );
-      }
       return jsonResponse({});
     };
 
@@ -127,10 +123,11 @@ describe("changeMasterPassword early failures", () => {
       () => changeMasterPassword("wrong-password", "new-password-12"),
       (error: unknown) => {
         assert.ok(error instanceof MasterPasswordError);
-        assert.equal(error.message, "That's not your Master Password.");
+        assert.match(error.message, /migrated with an unused recovery code/);
         return true;
       },
     );
+    assert.deepEqual(requestedUrls, ["/api/vault/status"]);
   });
 });
 

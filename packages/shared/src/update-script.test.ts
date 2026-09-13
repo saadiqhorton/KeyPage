@@ -15,6 +15,7 @@ const repoRoot = path.resolve(
 );
 
 const UPDATE_SH = path.join(repoRoot, "scripts/update.sh");
+const ROLLBACK_SH = path.join(repoRoot, "scripts/rollback.sh");
 const COMPOSE_YML = path.join(repoRoot, "docker-compose.yml");
 const README = path.join(repoRoot, "README.md");
 
@@ -167,6 +168,30 @@ describe("scripts/update.sh contract", () => {
 
     const envExample = fs.readFileSync(path.join(repoRoot, ".env.example"), "utf8");
     assert.doesNotMatch(envExample, TUNNEL_PRODUCT);
+  });
+});
+
+describe("scripts/rollback.sh safety contract", () => {
+  it("validates and stages the snapshot before replacing live data", () => {
+    const src = fs.readFileSync(ROLLBACK_SH, "utf8");
+    const validation = src.indexOf('archive_entries=$(tar -tzf "$SNAPSHOT")');
+    const staging = src.indexOf('tar -xzf "$SNAPSHOT" --no-same-owner');
+    const liveMove = src.indexOf('mv -- "$DATA_DIR" "$FAILED_DATA_DIR"');
+
+    assert.ok(validation >= 0);
+    assert.ok(staging > validation);
+    assert.ok(liveMove > staging);
+    assert.match(src, /snapshot contains an unsafe path/);
+    assert.match(src, /snapshot contains links or special files/);
+    assert.doesNotMatch(src, /find data[^\n]*rm -rf/);
+  });
+
+  it("uses candidate forward recovery for target build and health failures", () => {
+    const src = fs.readFileSync(ROLLBACK_SH, "utf8");
+    assert.match(src, /forward_recover "rollback target build\/start failed"/);
+    assert.match(src, /forward_recover "rollback target failed health validation"/);
+    assert.match(src, /git checkout --detach "\$CANDIDATE"/);
+    assert.match(src, /candidate forward-recovery build\/start also failed/);
   });
 });
 

@@ -34,7 +34,7 @@ Open source project — each deployment is single-user, but the code is public f
 ## Security Model
 - General security best practices for API key storage and management
 - Login protocol: Argon2id stretches the Master Password into a `masterKey`, then HKDF splits it into an `encryptionKey` (browser-only) and an `authKey` (browser-only). The server stores SCRAM-style `storedKey` digests derived from `authKey` / `masterKey`; login and sensitive mutations use a one-time challenge + client proof so those secrets never cross the wire (even on LAN HTTP)
-- One-time upgrade (pre-proof vaults only): if `auth_stored_key` is still null and `auth_verifier` is a legacy PHC hash, `POST /login` accepts `authKeyB64` once, derives and persists the stored key, then rejects `authKeyB64` on every later login. `GET /status` reports `proofReady` (true once `auth_stored_key` is set) so unlock, Master Password change, and recovery-code regen pick enroll vs challenge
+- Legacy-vault migration: if `auth_stored_key` is still null, `GET /status` reports `proofReady: false` and the UI requires an unused recovery code. Recovery unwraps and re-encrypts in the browser, stores proof verifiers, and never transmits `authKeyB64`.
 - Recovery reset: a proof-ready vault (`recovery_stored_key` set) requires a masterKey client proof bound to the claim nonce. A pre-migration open ticket (`challenge_nonce` null) or a vault with no `recovery_stored_key` may finish with the ticket alone so a burned recovery code is not stranded; reset then writes both stored keys
 - Client-side encryption: master password never leaves the browser
 - Keys encrypted/decrypted in the browser via Web Crypto API (AES-256-GCM)

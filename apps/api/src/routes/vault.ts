@@ -207,7 +207,7 @@ function requireAuthStoredKey(db: Database.Database): VaultAuthRow {
         {
           field: "auth",
           message:
-            "auth_stored_key is missing; POST /login with authKeyB64 to enroll",
+            "auth_stored_key is missing; migrate with an unused recovery code",
         },
       ],
     );
@@ -393,7 +393,6 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
             challengeId: { type: "string" },
             nonceB64: { type: "string" },
             clientProofB64: { type: "string" },
-            authKeyB64: { type: "string" },
           },
         },
       },
@@ -409,10 +408,9 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         challengeId?: string;
         nonceB64?: string;
         clientProofB64?: string;
-        authKeyB64?: string;
       };
 
-      if (body.authKeyB64 !== undefined) {
+      if ("authKeyB64" in (request.body as Record<string, unknown>)) {
         throw new HttpInvalidRequest("Client-only secret material is not accepted", [
           { field: "authKeyB64", message: "must never be sent to the server" },
         ]);

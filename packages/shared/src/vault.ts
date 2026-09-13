@@ -130,12 +130,7 @@ export type VaultLoginProofRequest = {
   clientProofB64: string;
 };
 
-/** One-shot enroll for pre-proof vaults (SAA-177). Rejected once proofReady. */
-export type VaultLoginEnrollRequest = {
-  authKeyB64: string;
-};
-
-export type VaultLoginRequest = VaultLoginProofRequest | VaultLoginEnrollRequest;
+export type VaultLoginRequest = VaultLoginProofRequest;
 export type VaultLoginResponse = { keyVersion: number; session: SessionInfo };
 
 export type VaultSessionResponse = {
