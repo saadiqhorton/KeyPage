@@ -94,7 +94,7 @@ The image includes a Docker `HEALTHCHECK` that hits `/api/health` on `$PORT` ins
    - Repo checkout / `docker compose` from the clone: `cat ./data/setup-token`
    - In-container (always the image path): `docker compose exec keypage cat /app/data/setup-token`
    The server binds `0.0.0.0` so anyone on your LAN or holding a Cloudflare Tunnel URL can reach the setup screen; the token is what stops them claiming your vault.
-   **Transport:** the setup `POST` body (token plus first-boot secrets) rides the same connection you use. Plain LAN HTTP is visible to anyone who can observe that network. Prefer Cloudflare Tunnel or a reverse proxy with TLS **before** you claim the vault. The one-line installer still allows HTTP so `http://127.0.0.1:9090` works; set `KEYPAGE_REQUIRE_HTTPS_SETUP=true` to reject cleartext claims (and `KEYPAGE_TRUST_PROXY=true` if Tunnel/proxy terminates TLS in front of KeyPage).
+   **Transport:** setup is HTTPS-first and tokens expire after 15 minutes. Configure `KEYPAGE_PUBLIC_ORIGIN` plus a narrow `KEYPAGE_TRUSTED_PROXIES` IP/CIDR allowlist when TLS terminates at a proxy. Forwarded headers from other peers are ignored. Emergency local recovery requires the explicit `KEYPAGE_ALLOW_INSECURE_LOCAL_SETUP=true` override and accepts only a direct loopback client; turn it off after the claim.
 2. **Setup** — Open the app. If the vault is new, you are redirected to `/setup`. Paste the setup token and choose a Master Password (minimum 12 characters). KeyPage derives your encryption key in the browser and sends only a login verifier to the server.
 3. **Recovery codes** — After setup, 10 one-time recovery codes are shown and a `keypage-recovery-codes-*.txt` file downloads automatically. Save this file offline before continuing. Any single unused code can reset your Master Password later.
 4. **Unlock** — After a page reload (or when the vault locks from inactivity), enter your Master Password on `/unlock` to decrypt keys in the browser. A valid session cookie alone does not unlock the vault - the encryption key lives only in memory until you log in again.
@@ -154,6 +154,8 @@ cd ~/keypage && bash scripts/update.sh
 
 The updater fetches `KEYPAGE_REF` (default `main`) and moves a clean tree to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. If HEAD does not reach that ref (fetch failure or local edits), it exits before rebuild. Vault files are not deleted.
 
+For a failed upgrade, use the bounded, snapshot-based [rollback runbook](docs/rollback.md). It restores pre-upgrade data before starting an older revision because database migrations are forward-only.
+
 If `/api/health` does not come back, the script exits non-zero and prints how to read `docker compose logs`. Vault files are not deleted.
 
 If you terminate TLS elsewhere (reverse proxy or a personal Tunnel), update the container this way; keep targeting the same host port. Expect brief downtime while the container restarts.
@@ -174,7 +176,7 @@ Replace both `FROM node:22-alpine@sha256:…` lines (`AS base` and `AS runtime`)
 
 Plain HTTP to a LAN IP (e.g. `http://192.168.1.x:9090`) is **not** a secure context. KeyPage automatically falls back to a JavaScript crypto backend (`@noble/*`) so setup and login still work; vaults created in either mode remain compatible.
 
-If you put KeyPage behind a reverse proxy that rewrites `Host` or terminates TLS, set `KEYPAGE_TRUST_PROXY=true` so session cookies, CSRF origin checks, and the optional HTTPS setup guard follow the forwarded headers.
+If a reverse proxy rewrites `Host` or terminates TLS, set `KEYPAGE_PUBLIC_ORIGIN` to the exact browser origin and set `KEYPAGE_TRUSTED_PROXIES` to the proxy's narrow IP/CIDR allowlist. KeyPage ignores forwarded protocol and host headers from every other peer. Keep port `9090` unreachable from the public internet and ensure clients cannot bypass the trusted proxy path.
 
 ## Environment variables
 
@@ -187,8 +189,11 @@ Copy `.env.example` to `.env` and adjust as needed. Compose loads `.env` when pr
 | `KEYPAGE_DATA_DIR` | `./data` (local); `/app/data` (Docker image) | Persistent data directory (SQLite, etc.) |
 | `KEYPAGE_WEB_DIR` | `apps/web/dist` (relative to API package); `/app/apps/web/dist` (Docker image) | Path to the built web UI served as static files |
 | `LOG_LEVEL` | `info` | Fastify log level |
-| `KEYPAGE_TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy that sets `X-Forwarded-Proto` / `X-Forwarded-Host` |
-| `KEYPAGE_REQUIRE_HTTPS_SETUP` | `false` | When `true`, reject `POST /setup` over clear HTTP. Accepts real TLS or `X-Forwarded-Proto: https` (only if `KEYPAGE_TRUST_PROXY=true`). Default stays off so the one-line installer can claim the vault on LAN HTTP |
+| `KEYPAGE_TRUSTED_PROXIES` | *(empty)* | Comma-separated trusted proxy IP/CIDR allowlist. Only these peers may supply forwarded protocol/host headers |
+| `KEYPAGE_PUBLIC_ORIGIN` | *(unset)* | Exact browser origin, such as `https://keys.example.com`; required operator control for proxied/remote use and used for Host/protocol/Origin checks |
+| `KEYPAGE_REQUIRE_HTTPS_SETUP` | `true` | Reject initial claim over clear HTTP |
+| `KEYPAGE_ALLOW_INSECURE_LOCAL_SETUP` | `false` | Temporary recovery override for a direct loopback claim only |
+| `KEYPAGE_SETUP_TOKEN_TTL_MINUTES` | `15` | First-boot token lifetime; an expired token is replaced on restart |
 | `KEYPAGE_SESSION_IDLE_MINUTES` | *(unset)* | Lock the vault after this many minutes without activity (valid range 15–30; Settings options are 15, 20, 25, 30). When set, pins the timeout: the Settings control becomes read-only and `PATCH /api/settings` is rejected. Leave unset to manage timeout from Settings |
 | `KEYPAGE_SESSION_ABSOLUTE_HOURS` | `12` | Maximum session lifetime regardless of activity |
 | `KEYPAGE_CLIPBOARD_CLEAR_SECONDS` | `30` | Seconds before copied key material is cleared from the clipboard (valid range 5–300) |
