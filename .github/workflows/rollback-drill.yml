@@ -40,7 +40,11 @@ jobs:
             sleep 2
           done
           docker compose down
-          tar -C data -czf "$KEYPAGE_ROLLBACK_SNAPSHOT" .
+          # Runtime data is deliberately private to the container user. The
+          # hosted runner has passwordless sudo, so read the stopped volume as
+          # root without weakening the live files' ownership or permissions.
+          sudo tar -C data -czf "$KEYPAGE_ROLLBACK_SNAPSHOT" .
+          sudo chown "$(id -u):$(id -g)" "$KEYPAGE_ROLLBACK_SNAPSHOT"
       - name: Build candidate and execute rollback
         run: |
           git checkout --detach "$KEYPAGE_CANDIDATE_SHA"
