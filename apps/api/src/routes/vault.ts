@@ -74,6 +74,7 @@ import {
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
 import { createCheckOrigin } from "../plugins/check-origin.js";
+import { isLoopbackAddress } from "../plugins/loopback.js";
 import { createRequireSession } from "../plugins/require-session.js";
 import { resolveIdleTimeoutSeconds } from "../settings.js";
 
@@ -89,11 +90,6 @@ export type VaultRouteOptions = {
   allowInsecureLocalSetup?: boolean;
   publicOrigin?: string;
 };
-
-function isLoopback(address: string): boolean {
-  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
-}
-
 
 function idleTimeoutSeconds(db: Database.Database): number {
   return resolveIdleTimeoutSeconds(db);
@@ -318,7 +314,7 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       if (
         requireHttpsSetup &&
         request.protocol !== "https" &&
-        !(allowInsecureLocalSetup && isLoopback(request.ip))
+        !(allowInsecureLocalSetup && isLoopbackAddress(request.ip))
       ) {
         throw new HttpHttpsRequired();
       }

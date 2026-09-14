@@ -130,7 +130,6 @@ export type VaultLoginProofRequest = {
   clientProofB64: string;
 };
 
-export type VaultLoginRequest = VaultLoginProofRequest;
 export type VaultLoginResponse = { keyVersion: number; session: SessionInfo };
 
 export type VaultSessionResponse = {

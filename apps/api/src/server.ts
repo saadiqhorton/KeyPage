@@ -12,6 +12,7 @@ import type { InstanceRecord } from "./data-dir.js";
 import { HttpError, toApiErrorBody } from "./errors.js";
 import type { SetupGate } from "./auth/setup-token.js";
 import { registerRawJsonBodyParser } from "./plugins/raw-json-body.js";
+import { isLoopbackAddress } from "./plugins/loopback.js";
 import { healthRoutes } from "./routes/health.js";
 import { keyEntryRoutes } from "./routes/key-entries.js";
 import { settingsRoutes } from "./routes/settings.js";
@@ -46,10 +47,6 @@ const CLIENT_SECRET_FIELDS = new Set([
   "masterPassword", "masterKey", "masterKeyB64", "derivedKey", "derivedKeyB64",
   "encryptionKey", "encryptionKeyB64", "authKey", "authKeyB64",
 ]);
-
-function isLoopback(address: string): boolean {
-  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
-}
 
 function rejectClientSecrets(value: unknown, field = "body"): void {
   if (!value || typeof value !== "object") return;
@@ -92,7 +89,7 @@ export async function buildServer(options: BuildServerOptions) {
     if (
       request.method === "GET" &&
       request.url === `${API_BASE}/health` &&
-      isLoopback(request.ip)
+      isLoopbackAddress(request.ip)
     ) {
       return;
     }
