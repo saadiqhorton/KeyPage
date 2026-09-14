@@ -21,6 +21,8 @@ jobs:
       - name: Run tests with native Node coverage
         run: bash scripts/run-sonar-coverage.sh
       - name: SonarQube Scan
+        id: sonar-scan
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -37,3 +39,22 @@ jobs:
             -Dsonar.ws.timeout=120
             -Dsonar.qualitygate.wait=true
             -Dsonar.qualitygate.timeout=300
+      - name: Report failed quality-gate conditions
+        if: steps.sonar-scan.outcome == 'failure'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarqube.dezignerdrugz.com
+        run: |
+          task_url=$(sed -n 's/^ceTaskUrl=//p' .scannerwork/report-task.txt)
+          analysis_id=""
+          for _ in $(seq 1 30); do
+            task_json=$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$task_url")
+            analysis_id=$(jq -r '.task.analysisId // empty' <<< "$task_json")
+            [[ -z "$analysis_id" ]] || break
+            sleep 2
+          done
+          [[ -n "$analysis_id" ]]
+          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" \
+            "${SONAR_HOST_URL}/api/qualitygates/project_status?analysisId=${analysis_id}" \
+            | jq '{status: .projectStatus.status, failedConditions: [.projectStatus.conditions[] | select(.status == "ERROR") | {metricKey, comparator, errorThreshold, actualValue}]}'
+          exit 1
