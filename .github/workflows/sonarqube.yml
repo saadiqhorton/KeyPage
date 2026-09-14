@@ -32,7 +32,7 @@ jobs:
             -Dsonar.sources=apps,packages
             -Dsonar.tests=apps,packages
             -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
-            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.next/**,**/coverage/**,**/*.test.ts,**/*.test.tsx,**/*.test.js
             -Dsonar.coverage.exclusions=**/*.test.ts,**/*.test.tsx,**/*.test.js
             -Dsonar.ws.timeout=120
             -Dsonar.qualitygate.wait=true

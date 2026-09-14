@@ -85,6 +85,7 @@ async function startVault(setupToken: string) {
     instance: { firstBootAt: "2026-01-01T00:00:00.000Z", schemaVersion: 1 },
     db,
     setupGate: createSetupGate(setupToken),
+    requireHttpsSetup: false,
   });
   return { app, db };
 }

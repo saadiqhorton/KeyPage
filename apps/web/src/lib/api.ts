@@ -23,7 +23,7 @@ import type {
   VaultPasswordChangeRequest,
   VaultPasswordChangeResponse,
   VaultLoginChallengeResponse,
-  VaultLoginRequest,
+  VaultLoginProofRequest,
   VaultLoginResponse,
   VaultSessionResponse,
   VaultSetupRequest,
@@ -126,7 +126,7 @@ export function postVaultLoginChallenge(): Promise<VaultLoginChallengeResponse> 
 }
 
 export function postVaultLogin(
-  body: VaultLoginRequest,
+  body: VaultLoginProofRequest,
 ): Promise<VaultLoginResponse> {
   return apiFetch<VaultLoginResponse>("/api/vault/login", {
     method: "POST",

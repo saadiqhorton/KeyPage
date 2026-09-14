@@ -59,6 +59,7 @@ export function UnlockScreen() {
   const lockout = locked ? state.lockout : null;
   const lockoutActive = lockout?.locked ?? false;
   const reasonBanner = lockReasonBanner(state);
+  const legacyRecoveryRequired = locked && !state.proofReady;
 
   const handleLockoutExpired = useCallback(() => {
     void actions.refreshStatus();
@@ -87,6 +88,13 @@ export function UnlockScreen() {
           <Callout tone="info">{reasonBanner}</Callout>
         ) : null}
 
+        {legacyRecoveryRequired ? (
+          <Callout tone="info">
+            This vault uses the legacy sign-in format. Migrate it with an unused
+            recovery code. Key material stays in this browser.
+          </Callout>
+        ) : null}
+
         {lockoutActive && lockout ? (
           <LockoutCountdown
             retryAfterSeconds={lockout.retryAfterSeconds}
@@ -94,7 +102,7 @@ export function UnlockScreen() {
           />
         ) : null}
 
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        {!legacyRecoveryRequired ? <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <PasswordField
             label="Master Password"
             autoComplete="current-password"
@@ -122,7 +130,7 @@ export function UnlockScreen() {
           >
             Unlock
           </Button>
-        </form>
+        </form> : null}
 
         <div className="border-t border-hairline pt-4 text-center">
           <Link
@@ -130,7 +138,7 @@ export function UnlockScreen() {
             onClick={() => actions.startRecovery()}
             className="text-sm text-muted underline-offset-4 hover:text-text hover:underline"
           >
-            Use a recovery code
+            {legacyRecoveryRequired ? "Migrate with a recovery code" : "Use a recovery code"}
           </Link>
         </div>
       </div>

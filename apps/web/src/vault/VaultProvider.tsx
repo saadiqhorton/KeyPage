@@ -15,7 +15,7 @@ import {
   unwrapMasterKey,
 } from "@/crypto/recovery.js";
 import { zeroize } from "@/crypto/provider.js";
-import { ApiError, getVaultStatus, postRecoveryCancel, postRecoveryClaim, postVaultLock, postVaultLogin, postVaultLoginWithAuthKey, postVaultSetup } from "@/lib/api.js";
+import { ApiError, getVaultStatus, postRecoveryCancel, postRecoveryClaim, postVaultLock, postVaultLoginWithAuthKey, postVaultSetup } from "@/lib/api.js";
 import { downloadRecoveryCodes } from "@/vault/recovery-download.js";
 import { normalizeRecoveryCode, SETUP_TOKEN_PATTERN } from "@keypage/shared";
 
@@ -228,14 +228,21 @@ export function VaultProvider({ children }: Readonly<VaultProviderProps>) {
       });
     }
 
+    if (!current.proofReady) {
+      setWizard({ kind: "recovery", step: 1 });
+      throw new ApiError({
+        error: "invalid_request",
+        message:
+          "This legacy vault must be migrated with an unused recovery code. Your Master Password key will stay in this browser and will not be sent to the server.",
+      });
+    }
+
     setState({ phase: "working", label: "Deriving your encryption key…" });
     try {
       const derived = await deriveVaultKeys(password, current.kdf);
       zeroize(derived.masterKey);
 
-      const response = current.proofReady
-        ? await postVaultLoginWithAuthKey(derived.authKeyB64)
-        : await postVaultLogin({ authKeyB64: derived.authKeyB64 });
+      const response = await postVaultLoginWithAuthKey(derived.authKeyB64);
       setEncryptionKey(
         derived.encryptionKey,
         response.keyVersion,

@@ -6,7 +6,6 @@ import {
   SESSION_COOKIE_NAME,
   SETUP_TOKEN_PATTERN,
   loginAuthMessage,
-  loginStoredKeyHexFromAuthKey,
   recoveryAuthMessage,
   verifyClientProof,
   type KdfParams,
@@ -46,17 +45,14 @@ import {
   kdfSchema,
   recoveryEnvelopeSchema,
   reencryptedEntrySchema,
-  validateAuthKeyB64,
   validateClientProofB64,
   validateStoredKeyHex,
 } from "../auth/vault-request.js";
-import { verifyAuthKey } from "../auth/verifier.js";
 import {
   cancelRecoveryTicket,
   changeMasterPassword,
   claimRecoveryCode,
   countUnusedRecoveryCodes,
-  enrollLegacyAuthStoredKey,
   getVaultAuth,
   initializeVault,
   isVaultInitialized,
@@ -77,7 +73,8 @@ import {
   HttpSetupRequired,
   HttpVaultAlreadyInitialized,
 } from "../errors.js";
-import { checkOrigin } from "../plugins/check-origin.js";
+import { createCheckOrigin } from "../plugins/check-origin.js";
+import { isLoopbackAddress } from "../plugins/loopback.js";
 import { createRequireSession } from "../plugins/require-session.js";
 import { resolveIdleTimeoutSeconds } from "../settings.js";
 
@@ -90,6 +87,8 @@ export type VaultRouteOptions = {
   db: Database.Database;
   setupGate: SetupGate;
   requireHttpsSetup?: boolean;
+  allowInsecureLocalSetup?: boolean;
+  publicOrigin?: string;
 };
 
 function idleTimeoutSeconds(db: Database.Database): number {
@@ -204,7 +203,7 @@ function requireAuthStoredKey(db: Database.Database): VaultAuthRow {
         {
           field: "auth",
           message:
-            "auth_stored_key is missing; POST /login with authKeyB64 to enroll",
+            "auth_stored_key is missing; migrate with an unused recovery code",
         },
       ],
     );
@@ -253,10 +252,17 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
   app,
   options,
 ) => {
-  const { db, setupGate, requireHttpsSetup = false } = options;
+  const {
+    db,
+    setupGate,
+    requireHttpsSetup = true,
+    allowInsecureLocalSetup = false,
+    publicOrigin,
+  } = options;
   const requireSession = createRequireSession(db, () =>
     idleTimeoutSeconds(db),
   );
+  const checkOrigin = createCheckOrigin(publicOrigin);
 
   // JSON parsing (incl. rawBody for write proofs) comes from the root
   // registerRawJsonBodyParser — do not re-register application/json here.
@@ -305,7 +311,11 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       },
     },
     async (request, reply): Promise<VaultSetupResponse> => {
-      if (requireHttpsSetup && request.protocol !== "https") {
+      if (
+        requireHttpsSetup &&
+        request.protocol !== "https" &&
+        !(allowInsecureLocalSetup && isLoopbackAddress(request.ip))
+      ) {
         throw new HttpHttpsRequired();
       }
 
@@ -379,7 +389,6 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
             challengeId: { type: "string" },
             nonceB64: { type: "string" },
             clientProofB64: { type: "string" },
-            authKeyB64: { type: "string" },
           },
         },
       },
@@ -395,8 +404,13 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         challengeId?: string;
         nonceB64?: string;
         clientProofB64?: string;
-        authKeyB64?: string;
       };
+
+      if ("authKeyB64" in (request.body as Record<string, unknown>)) {
+        throw new HttpInvalidRequest("Client-only secret material is not accepted", [
+          { field: "authKeyB64", message: "must never be sent to the server" },
+        ]);
+      }
 
       const vault = getVaultAuth(db);
       if (!vault) {
@@ -439,17 +453,6 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       };
 
       if (vault.auth_stored_key) {
-        if (body.authKeyB64 !== undefined) {
-          throw new HttpInvalidRequest(
-            "This vault uses challenge proofs; authKeyB64 is not accepted.",
-            [
-              {
-                field: "authKeyB64",
-                message: "must be omitted once the vault is proof-ready",
-              },
-            ],
-          );
-        }
         if (!body.challengeId || !body.nonceB64 || !body.clientProofB64) {
           throw new HttpInvalidRequest("Login proof is required", [
             {
@@ -472,47 +475,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
         return { keyVersion: loginResult.keyVersion, session: loginResult.info };
       }
 
-      if (!body.authKeyB64) {
-        throw new HttpInvalidRequest(
-          "This vault must enroll via Master Password login.",
-          [
-            {
-              field: "authKeyB64",
-              message: "required for one-shot enroll on a legacy vault",
-            },
-          ],
-        );
-      }
-      validateAuthKeyB64(body.authKeyB64);
-      if (!vault.auth_verifier.startsWith("$argon2")) {
-        throw new HttpInvalidRequest(
-          "This vault cannot enroll; recover or re-setup.",
-          [
-            {
-              field: "auth",
-              message: "legacy PHC verifier is missing",
-            },
-          ],
-        );
-      }
-
-      const ok = await verifyAuthKey(body.authKeyB64, vault.auth_verifier);
-      if (!ok) {
-        const attemptsRemaining = recordFailure(db, "login");
-        throw new HttpInvalidCredentials(
-          "Incorrect Master Password",
-          attemptsRemaining,
-        );
-      }
-
-      const authKey = new Uint8Array(Buffer.from(body.authKeyB64, "base64"));
-      const storedKeyHex = loginStoredKeyHexFromAuthKey(authKey);
-      authKey.fill(0);
-      enrollLegacyAuthStoredKey(db, storedKeyHex);
-      resetThrottle(db, "login");
-      const loginResult = finishLogin(storedKeyHex);
-      setSessionCookie(reply, request, loginResult.token);
-      return { keyVersion: loginResult.keyVersion, session: loginResult.info };
+      throw new HttpInvalidRequest(
+        "Legacy vault login cannot cross the zero-knowledge boundary; recover or re-setup.",
+        [{ field: "auth", message: "challenge proof enrollment is required" }],
+      );
     },
   );
 

@@ -23,7 +23,7 @@ export type VaultState =
       lockout: LockoutState;
       recoveryCodesRemaining: number;
       recoveryLockout: LockoutState;
-      /** False on pre-proof vaults; unlock must enroll with authKeyB64. */
+      /** False on pre-proof vaults; migrate through recovery without transmitting client secrets. */
       proofReady: boolean;
     }
   | { phase: "working"; label: string }

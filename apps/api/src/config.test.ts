@@ -19,8 +19,11 @@ const KEYS = [
   "KEYPAGE_DATA_DIR",
   "KEYPAGE_WEB_DIR",
   "LOG_LEVEL",
-  "KEYPAGE_TRUST_PROXY",
+  "KEYPAGE_TRUSTED_PROXIES",
+  "KEYPAGE_PUBLIC_ORIGIN",
   "KEYPAGE_REQUIRE_HTTPS_SETUP",
+  "KEYPAGE_ALLOW_INSECURE_LOCAL_SETUP",
+  "KEYPAGE_SETUP_TOKEN_TTL_MINUTES",
   "KEYPAGE_SESSION_IDLE_MINUTES",
   "KEYPAGE_SESSION_ABSOLUTE_HOURS",
   "KEYPAGE_LOGIN_MAX_ATTEMPTS",
@@ -55,8 +58,11 @@ describe("loadConfig", () => {
     assert.equal(cfg.host, DEFAULT_LISTEN_HOST);
     assert.equal(cfg.dataDir, path.resolve("./data"));
     assert.equal(cfg.logLevel, "info");
-    assert.equal(cfg.trustProxy, false);
-    assert.equal(cfg.requireHttpsSetup, false);
+    assert.deepEqual(cfg.trustedProxies, []);
+    assert.equal(cfg.publicOrigin, undefined);
+    assert.equal(cfg.requireHttpsSetup, true);
+    assert.equal(cfg.allowInsecureLocalSetup, false);
+    assert.equal(cfg.setupTokenTtlMinutes, 15);
     assert.equal(cfg.sessionIdleMinutes, DEFAULT_SESSION_IDLE_MINUTES);
     assert.equal(cfg.sessionAbsoluteHours, SESSION_ABSOLUTE_HOURS);
     assert.equal(cfg.loginMaxAttempts, LOGIN_MAX_ATTEMPTS);
@@ -71,7 +77,8 @@ describe("loadConfig", () => {
     process.env.KEYPAGE_DATA_DIR = "/tmp/keypage-config-data";
     process.env.KEYPAGE_WEB_DIR = "/tmp/keypage-config-web";
     process.env.LOG_LEVEL = "error";
-    process.env.KEYPAGE_TRUST_PROXY = "true";
+    process.env.KEYPAGE_TRUSTED_PROXIES = "127.0.0.1, 10.0.0.0/24";
+    process.env.KEYPAGE_PUBLIC_ORIGIN = "https://keys.example.com";
     process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "true";
     process.env.KEYPAGE_SESSION_IDLE_MINUTES = "25";
     process.env.KEYPAGE_SESSION_ABSOLUTE_HOURS = "6";
@@ -85,7 +92,8 @@ describe("loadConfig", () => {
     assert.equal(cfg.dataDir, path.resolve("/tmp/keypage-config-data"));
     assert.equal(cfg.webDir, path.resolve("/tmp/keypage-config-web"));
     assert.equal(cfg.logLevel, "error");
-    assert.equal(cfg.trustProxy, true);
+    assert.deepEqual(cfg.trustedProxies, ["127.0.0.1", "10.0.0.0/24"]);
+    assert.equal(cfg.publicOrigin, "https://keys.example.com");
     assert.equal(cfg.requireHttpsSetup, true);
     assert.equal(cfg.sessionIdleMinutes, 25);
     assert.equal(cfg.sessionAbsoluteHours, 6);
@@ -93,9 +101,8 @@ describe("loadConfig", () => {
     assert.equal(cfg.loginLockoutMinutes, 10);
   });
 
-  it("treats 1 as true for KEYPAGE_TRUST_PROXY and falls back on invalid ints", () => {
+  it("reads booleans and falls back on invalid ints", () => {
     snapshotEnv();
-    process.env.KEYPAGE_TRUST_PROXY = "1";
     process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "1";
     process.env.KEYPAGE_SESSION_IDLE_MINUTES = "0";
     process.env.KEYPAGE_SESSION_ABSOLUTE_HOURS = "nope";
@@ -104,7 +111,6 @@ describe("loadConfig", () => {
 
     const cfg = loadConfig();
 
-    assert.equal(cfg.trustProxy, true);
     assert.equal(cfg.requireHttpsSetup, true);
     assert.equal(cfg.sessionIdleMinutes, DEFAULT_SESSION_IDLE_MINUTES);
     assert.equal(cfg.sessionAbsoluteHours, SESSION_ABSOLUTE_HOURS);
@@ -112,25 +118,22 @@ describe("loadConfig", () => {
     assert.equal(cfg.loginLockoutMinutes, LOGIN_LOCKOUT_SECONDS / 60);
   });
 
-  it("treats empty and non-true trust proxy values as false", () => {
+  it("treats empty and non-true boolean values as false", () => {
     snapshotEnv();
-    process.env.KEYPAGE_TRUST_PROXY = "";
-    assert.equal(loadConfig().trustProxy, false);
-
-    process.env.KEYPAGE_TRUST_PROXY = "false";
-    assert.equal(loadConfig().trustProxy, false);
-
-    process.env.KEYPAGE_TRUST_PROXY = "yes";
-    assert.equal(loadConfig().trustProxy, false);
-
     process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "";
-    assert.equal(loadConfig().requireHttpsSetup, false);
+    assert.equal(loadConfig().requireHttpsSetup, true);
 
     process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "false";
     assert.equal(loadConfig().requireHttpsSetup, false);
 
     process.env.KEYPAGE_REQUIRE_HTTPS_SETUP = "yes";
     assert.equal(loadConfig().requireHttpsSetup, false);
+  });
+
+  it("rejects a public origin with path or credentials", () => {
+    snapshotEnv();
+    process.env.KEYPAGE_PUBLIC_ORIGIN = "https://user:pass@keys.example.com/path";
+    assert.throws(() => loadConfig(), /only scheme, host/);
   });
 
   it("rounds a fractional positive int env value", () => {

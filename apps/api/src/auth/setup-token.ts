@@ -12,6 +12,7 @@ export type SetupGate = {
   /** Plaintext token while the vault is unclaimed; null once claimed. */
   readonly token: string | null;
   readonly filePath: string;
+  readonly expiresAt: string | null;
   verify(candidate: string): boolean;
   consume(): Promise<void>;
 };
@@ -54,6 +55,7 @@ function claimedGate(filePath: string): SetupGate {
   return {
     token: null,
     filePath,
+    expiresAt: null,
     verify: () => false,
     consume: async () => {},
   };
@@ -90,15 +92,18 @@ async function loadOrMintToken(filePath: string): Promise<string> {
   }
 }
 
-function liveGate(filePath: string, tokenRef: { value: string | null }): SetupGate {
+function liveGate(filePath: string, tokenRef: { value: string | null }, expiresAtMs: number): SetupGate {
   return {
     get token() {
       return tokenRef.value;
     },
     filePath,
+    get expiresAt() {
+      return tokenRef.value === null ? null : new Date(expiresAtMs).toISOString();
+    },
     verify(candidate: string): boolean {
       const current = tokenRef.value;
-      return current !== null && timingSafeEqual(sha256(candidate), sha256(current));
+      return Date.now() < expiresAtMs && current !== null && timingSafeEqual(sha256(candidate), sha256(current));
     },
     async consume(): Promise<void> {
       tokenRef.value = null;
@@ -110,6 +115,7 @@ function liveGate(filePath: string, tokenRef: { value: string | null }): SetupGa
 export async function openSetupGate(options: {
   dataDir: string;
   vaultInitialized: boolean;
+  ttlMinutes?: number;
 }): Promise<SetupGate> {
   const filePath = path.join(options.dataDir, SETUP_TOKEN_FILENAME);
 
@@ -118,8 +124,12 @@ export async function openSetupGate(options: {
     return claimedGate(filePath);
   }
 
-  const tokenRef: { value: string | null } = {
-    value: await loadOrMintToken(filePath),
-  };
-  return liveGate(filePath, tokenRef);
+  let token = await loadOrMintToken(filePath);
+  const ttlMs = (options.ttlMinutes ?? 15) * 60_000;
+  let stat = await fs.stat(filePath);
+  if (Date.now() >= stat.mtimeMs + ttlMs) {
+    token = await mintToken(filePath);
+    stat = await fs.stat(filePath);
+  }
+  return liveGate(filePath, { value: token }, stat.mtimeMs + ttlMs);
 }
