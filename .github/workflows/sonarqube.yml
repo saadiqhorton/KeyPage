@@ -57,4 +57,11 @@ jobs:
           curl --fail --silent --show-error --user "${SONAR_TOKEN}:" \
             "${SONAR_HOST_URL}/api/qualitygates/project_status?analysisId=${analysis_id}" \
             | jq '{status: .projectStatus.status, failedConditions: [.projectStatus.conditions[] | select(.status == "ERROR") | {metricKey, comparator, errorThreshold, actualValue}]}'
+          curl --fail --silent --show-error --get --user "${SONAR_TOKEN}:" \
+            --data-urlencode 'componentKeys=saadiqhorton_KeyPage_4f8f9925-b8a2-4b18-abb3-66e3ba36a503' \
+            --data-urlencode 'inNewCodePeriod=true' \
+            --data-urlencode 'statuses=OPEN,CONFIRMED' \
+            --data-urlencode 'ps=100' \
+            "${SONAR_HOST_URL}/api/issues/search" \
+            | jq '{issues: [.issues[] | {rule, component, line, message, severity, type}]}'
           exit 1
