@@ -174,7 +174,7 @@ Replace both `FROM node:22-alpine@sha256:…` lines (`AS base` and `AS runtime`)
 
 `crypto.subtle` (Web Crypto) is only available in a **secure context**. Use `http://localhost:9090` on the same machine, or HTTPS via a reverse proxy if you expose the app beyond localhost.
 
-Plain HTTP to a LAN IP (e.g. `http://192.168.1.x:9090`) is **not** a secure context. KeyPage automatically falls back to a JavaScript crypto backend (`@noble/*`) so setup and login still work; vaults created in either mode remain compatible.
+Plain HTTP to a LAN IP (e.g. `http://192.168.1.x:9090`) is **not** a secure context. The JavaScript crypto fallback (`@noble/*`) keeps existing-vault login compatible, but first-boot setup is rejected over clear HTTP by default. Use HTTPS for setup. The temporary `KEYPAGE_ALLOW_INSECURE_LOCAL_SETUP=true` recovery override applies only to a client connected directly from loopback, not a LAN or proxied client.
 
 If a reverse proxy rewrites `Host` or terminates TLS, set `KEYPAGE_PUBLIC_ORIGIN` to the exact browser origin and set `KEYPAGE_TRUSTED_PROXIES` to the proxy's narrow IP/CIDR allowlist. KeyPage ignores forwarded protocol and host headers from every other peer. Keep port `9090` unreachable from the public internet and ensure clients cannot bypass the trusted proxy path.
 
