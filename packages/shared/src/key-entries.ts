@@ -106,7 +106,7 @@ export type KeyEntryReorderRequest = {
 };
 
 export type KeyEntryReorderResponse = {
-  entries: KeyEntry[];
+  orderedIds: string[];
 };
 
 export type KeyEntryUseAction = Extract<

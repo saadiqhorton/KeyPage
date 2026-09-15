@@ -220,15 +220,13 @@ describe("vault and settings API wrappers", () => {
         method: String(init?.method ?? "GET"),
         body: typeof init?.body === "string" ? init.body : undefined,
       });
-      return jsonResponse({
-        entries: [{ id: "b" }, { id: "a" }],
-      });
+      return jsonResponse({ orderedIds: ["b", "a"] });
     });
 
     const result = await patchKeyEntryOrder({
       orderedIds: ["b", "a"],
     });
-    assert.deepEqual(result.entries.map((entry) => entry.id), ["b", "a"]);
+    assert.deepEqual(result.orderedIds, ["b", "a"]);
     assert.deepEqual(methods, [
       {
         url: "/api/keys/order",

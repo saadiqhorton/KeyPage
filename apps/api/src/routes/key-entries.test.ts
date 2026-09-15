@@ -16,6 +16,7 @@ import {
 
 import { createLoginChallenge } from "../auth/login-challenges.js";
 import { createSession } from "../auth/sessions.js";
+import { sha256Hex } from "../auth/tokens.js";
 import { initializeVault } from "../auth/vault-repo.js";
 import { runMigrations } from "../db/migrations.js";
 import { HttpError, toApiErrorBody } from "../errors.js";
@@ -843,10 +844,11 @@ describe("key entry reorder", () => {
       payload: { orderedIds: [ENTRY_ID, THIRD_ENTRY_ID, OTHER_ENTRY_ID] },
     });
     assert.equal(reordered.statusCode, 200);
-    assert.deepEqual(
-      reordered.json().entries.map((entry: { id: string }) => entry.id),
-      [ENTRY_ID, THIRD_ENTRY_ID, OTHER_ENTRY_ID],
-    );
+    assert.deepEqual(reordered.json().orderedIds, [
+      ENTRY_ID,
+      THIRD_ENTRY_ID,
+      OTHER_ENTRY_ID,
+    ]);
 
     const after = await app.inject({
       method: "GET",
@@ -906,5 +908,37 @@ describe("key entry reorder", () => {
     assert.equal(duplicate.statusCode, 400);
     assert.equal(duplicate.json().error, "invalid_request");
     assert.match(String(duplicate.json().message), /order/i);
+  });
+
+  it("rejects reorder while vault recovery is in progress", async () => {
+    await createEntries([ENTRY_ID, OTHER_ENTRY_ID]);
+    const codeId = (
+      db.prepare(`SELECT id FROM recovery_codes LIMIT 1`).get() as { id: string }
+    ).id;
+    const now = new Date();
+    db.prepare(
+      `INSERT INTO recovery_tickets (
+         id, token_hash, recovery_code_id, created_at, expires_at, consumed_at,
+         challenge_nonce
+       ) VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    ).run(
+      "open-reorder-ticket",
+      sha256Hex("open-reorder-ticket-token"),
+      codeId,
+      now.toISOString(),
+      new Date(now.getTime() + 600_000).toISOString(),
+      Buffer.from("reorder-challenge").toString("base64"),
+    );
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/keys/order",
+      headers: { cookie },
+      payload: { orderedIds: [ENTRY_ID, OTHER_ENTRY_ID] },
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error, "invalid_request");
+    assert.match(String(response.json().message), /recovery/i);
   });
 });

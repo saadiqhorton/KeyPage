@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useLayoutEffect,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -174,6 +175,8 @@ export function KeyEntrySortable({
       node.style.removeProperty("pointer-events");
       node.style.removeProperty("animation");
       node.classList.remove("is-sortable-active");
+      void node.offsetHeight;
+      node.style.removeProperty("transition");
     }
     document.documentElement.classList.remove(SORTING_CLASS);
   }, []);
@@ -187,7 +190,15 @@ export function KeyEntrySortable({
       detachRef.current?.();
       detachRef.current = null;
       const draggedId = activeIdRef.current;
-      const targetId = overIdRef.current;
+      const targetId = draggedId
+        ? resolveOverId(
+            pointerRef.current.x,
+            pointerRef.current.y,
+            ids,
+            rectsRef.current,
+            overIdRef.current,
+          )
+        : overIdRef.current;
       activeIdRef.current = null;
       overIdRef.current = null;
       document.body.style.removeProperty("cursor");
@@ -198,7 +209,7 @@ export function KeyEntrySortable({
         onDropEntry(draggedId, targetId);
       }
     },
-    [clearShifts, onDropEntry],
+    [clearShifts, ids, onDropEntry],
   );
 
   const flushMove = useCallback(() => {
@@ -279,12 +290,12 @@ export function KeyEntrySortable({
       window.addEventListener("pointermove", onMove, { passive: true });
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
-      window.addEventListener("scroll", onCancel);
+      window.addEventListener("scroll", onCancel, true);
       detachRef.current = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onCancel);
-        window.removeEventListener("scroll", onCancel);
+        window.removeEventListener("scroll", onCancel, true);
       };
 
       function onUp() {
@@ -298,7 +309,7 @@ export function KeyEntrySortable({
     [disabled, finishDrag, flushMove, ids, labels, layout],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!session) {
       return;
     }

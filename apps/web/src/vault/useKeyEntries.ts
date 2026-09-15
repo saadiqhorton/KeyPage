@@ -112,18 +112,25 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
 
   const reorderKeyEntries = useCallback(
     async (orderedIds: string[]): Promise<void> => {
-      const previous = entries;
+      const previousIds = entries.map((entry) => entry.id);
+      const applyOrder = (current: KeyEntry[], ids: readonly string[]) => {
+        const rank = new Map(ids.map((id, index) => [id, index]));
+        return [...current].sort((left, right) => {
+          const leftRank = rank.get(left.id);
+          const rightRank = rank.get(right.id);
+          if (leftRank === undefined) return rightRank === undefined ? 0 : 1;
+          if (rightRank === undefined) return -1;
+          return leftRank - rightRank;
+        });
+      };
       setEntries((current) => {
-        const byId = new Map(current.map((entry) => [entry.id, entry]));
-        return orderedIds
-          .map((id) => byId.get(id))
-          .filter((entry): entry is KeyEntry => entry !== undefined);
+        return applyOrder(current, orderedIds);
       });
       try {
         const response = await patchKeyEntryOrder({ orderedIds });
-        setEntries(response.entries);
+        setEntries((current) => applyOrder(current, response.orderedIds));
       } catch (err) {
-        setEntries(previous);
+        setEntries((current) => applyOrder(current, previousIds));
         throw err;
       }
     },

@@ -350,7 +350,6 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
             orderedIds: {
               type: "array",
               items: { type: "string" },
-              maxItems: KEY_ENTRY_IMPORT_MAX,
             },
           },
         },
@@ -362,9 +361,12 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
         validateKeyEntryId(id);
       }
 
-      return db.transaction(() => ({
-        entries: reorderKeyEntries(db, body.orderedIds),
-      }))();
+      const sessionId = request.vaultSession!.id;
+      return db.transaction(() => {
+        assertKeyEntryMutationsAllowed(db, sessionId);
+        reorderKeyEntries(db, body.orderedIds);
+        return { orderedIds: body.orderedIds };
+      })();
     },
   );
 
