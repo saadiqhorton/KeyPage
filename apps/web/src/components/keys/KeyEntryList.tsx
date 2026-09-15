@@ -50,6 +50,7 @@ function KeyEntryListItem({
 }: Readonly<KeyEntryListItemProps>) {
   const { setRef, style, className: sortableClassName } =
     useKeyEntrySortableItem(entry.id);
+  const displayName = serviceDisplayName(entry);
 
   return (
     <li
@@ -66,10 +67,14 @@ function KeyEntryListItem({
         disabled={reorderBusy}
       />
       <div className="flex min-w-0 flex-1 items-start gap-4">
-        <ServiceIcon serviceId={entry.serviceId} size="sm" />
+        <ServiceIcon
+          serviceId={entry.serviceId}
+          displayName={displayName}
+          size="sm"
+        />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
-            {serviceDisplayName(entry)}
+            {displayName}
           </p>
           <p className="mt-0.5 truncate font-display text-sm font-medium text-text">
             {entry.label}

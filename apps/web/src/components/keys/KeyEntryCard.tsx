@@ -56,7 +56,7 @@ export function KeyEntryCard({
             entryLabel={entry.label}
             disabled={reorderBusy}
           />
-          <ServiceIcon serviceId={entry.serviceId} size="md" />
+          <ServiceIcon serviceId={entry.serviceId} displayName={displayName} size="md" />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
               {displayName}

@@ -50,6 +50,7 @@ function KeyEntryTableRow({
 }: Readonly<KeyEntryTableRowProps>) {
   const { setRef, style, className: sortableClassName } =
     useKeyEntrySortableItem(entry.id);
+  const displayName = serviceDisplayName(entry);
 
   return (
     <tr
@@ -69,8 +70,12 @@ function KeyEntryTableRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <ServiceIcon serviceId={entry.serviceId} size="sm" />
-          <span className="text-text">{serviceDisplayName(entry)}</span>
+          <ServiceIcon
+            serviceId={entry.serviceId}
+            displayName={displayName}
+            size="sm"
+          />
+          <span className="text-text">{displayName}</span>
         </div>
       </td>
       <td className="px-4 py-3">
@@ -178,7 +183,7 @@ export function KeyEntryTable({
               })}
             </tbody>
           </table>
-        </div>
+      </div>
       </div>
     </KeyEntrySortable>
   );
