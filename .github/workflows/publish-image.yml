@@ -6,7 +6,9 @@ on:
     types: [completed]
 
 concurrency:
-  group: publish-image-${{ github.event.workflow_run.head_sha }}
+  # v1/latest are shared mutable pointers. Main publishers must finish in
+  # source order so an older, slower build cannot overwrite a newer release.
+  group: publish-image-main
   cancel-in-progress: false
 
 permissions:

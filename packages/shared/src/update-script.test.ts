@@ -278,6 +278,10 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /ls-files -- "data"/);
     assert.match(src, /ls-tree -r --name-only/);
     assert.match(src, /bind-mount, outside source control/);
+    assert.match(src, /if ! cp -a "\$\{snapshot_dir\}\/data\/\." data\//);
+    assert.match(src, /old image was not started/);
+    assert.match(src, /old_stop_started=1/);
+    assert.match(src, /compose start keypage/);
 
     const gitignore = fs.readFileSync(path.join(repoRoot, ".gitignore"), "utf8");
     assert.match(gitignore, /^data\/$/m);
@@ -301,6 +305,7 @@ describe("scripts/update.sh contract", () => {
     assert.match(workflow, /linux\/amd64,linux\/arm64/);
     assert.match(workflow, /org\.opencontainers\.image\.revision/);
     assert.match(workflow, /type=raw,value=v1/);
+    assert.match(workflow, /group: publish-image-main/);
     assert.match(workflow, /provenance: mode=max/);
     assert.match(workflow, /sbom: true/);
     assert.doesNotMatch(workflow, /uses:\s+[^\n]+@v\d+\s*$/m);
@@ -427,6 +432,39 @@ describe("scripts/update.sh behavior", () => {
     assert.match(calls, /image tag sha256:d{64} keypage-rollback:/);
     assert.match(calls, /compose up -d --no-build --pull never keypage/);
     assert.match(`${result.stdout}\n${result.stderr}`, /previous healthy version and matching data were restored/i);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("never starts the old image when restoring the complete snapshot fails", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: false, existingContainer: true });
+    writeExecutable(
+      path.join(binDir, "cp"),
+      `#!/bin/sh
+count_file="${binDir}/cp-count"
+count=0
+[ ! -f "$count_file" ] || count=$(cat "$count_file")
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+if [ "$count" -eq 1 ]; then exec /bin/cp "$@"; fi
+exit 1
+`,
+    );
+
+    const result = runUpdate({
+      keypageDir: root,
+      binDir,
+      extraEnv: { KEYPAGE_HEALTH_ATTEMPTS: "1", KEYPAGE_HEALTH_SLEEP_SECS: "0" },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.equal(fs.existsSync(path.join(dataDir, "keypage.db")), false);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.equal(calls.match(/compose up -d --no-build --pull never keypage/g)?.length, 1);
+    assert.match(`${result.stdout}\n${result.stderr}`, /old image was not started/i);
+    assert.ok(fs.readdirSync(path.join(root, ".keypage", "snapshots")).length > 0);
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
   });

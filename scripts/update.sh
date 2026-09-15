@@ -335,6 +335,7 @@ if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
 fi
 cutover_started=0
 rollback_ready=0
+old_stop_started=0
 old_image_ref=""
 snapshot_dir=""
 
@@ -349,11 +350,23 @@ restore_previous() {
   compose stop -t 20 keypage >/dev/null 2>&1 || true
   failed_data="${STATE_DIR}/failed-data-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   if [[ -d data ]]; then
-    mv data "${failed_data}"
+    if ! mv data "${failed_data}"; then
+      warn "automatic restore could not preserve the failed data; snapshot remains at ${snapshot_dir}"
+      return 1
+    fi
   fi
-  mkdir -p data
-  cp -a "${snapshot_dir}/data/." data/
-  write_image_override "${old_image_ref}"
+  if ! mkdir -p data; then
+    warn "automatic restore could not create the data directory; snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  if ! cp -a "${snapshot_dir}/data/." data/; then
+    warn "automatic restore could not copy the complete snapshot; the old image was not started and snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  if ! write_image_override "${old_image_ref}"; then
+    warn "automatic restore could not select the previous image; it was not started and snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
   if ! compose up -d --no-build --pull never keypage >/dev/null; then
     warn "automatic restore could not start; preserved failed data at ${failed_data} and snapshot at ${snapshot_dir}"
     return 1
@@ -362,13 +375,17 @@ restore_previous() {
     warn "previous image restarted but did not become healthy; snapshot remains at ${snapshot_dir}"
     return 1
   fi
+  old_stop_started=0
   ok "previous version restored; failed update data kept at ${failed_data}"
   return 0
 }
 
 on_signal() {
-  if [[ "${cutover_started}" == "1" ]]; then
+  if [[ "${rollback_ready}" == "1" ]]; then
     restore_previous "update interrupted" || true
+  elif [[ "${old_stop_started}" == "1" ]]; then
+    warn "update interrupted while stopping the existing container; restarting it"
+    compose start keypage >/dev/null 2>&1 || true
   fi
   cleanup_lock
   exit 130
@@ -416,10 +433,12 @@ else
       mkdir -p "${snapshot_dir}/data"
 
       note "taking a stopped data snapshot"
+      old_stop_started=1
       compose stop -t 20 keypage >/dev/null
       cutover_started=1
       if ! cp -a data/. "${snapshot_dir}/data/"; then
         compose start keypage >/dev/null 2>&1 || true
+        old_stop_started=0
         cutover_started=0
         fail "data snapshot failed; the previous container was restarted"
       fi
