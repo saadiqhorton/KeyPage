@@ -90,7 +90,11 @@ export function DeleteKeyEntryModal({ entry, onConfirm, onClose }: Readonly<Prop
         ) : null}
 
         <div className="flex items-center gap-3 rounded-sm border border-hairline bg-surface/40 px-4 py-3">
-          <ServiceIcon serviceId={displayEntry.serviceId} size="md" />
+          <ServiceIcon
+            serviceId={displayEntry.serviceId}
+            displayName={displayName}
+            size="md"
+          />
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
               {displayName}

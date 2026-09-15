@@ -37,7 +37,7 @@ export function KeyEntryCard({
     <article className={cn("bezel-shell h-full", className)}>
       <div className="bezel-core flex h-full flex-col gap-4 p-5">
         <header className="flex items-start gap-3">
-          <ServiceIcon serviceId={entry.serviceId} size="md" />
+          <ServiceIcon serviceId={entry.serviceId} displayName={displayName} size="md" />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
               {displayName}

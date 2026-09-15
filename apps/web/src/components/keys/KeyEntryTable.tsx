@@ -53,6 +53,7 @@ export function KeyEntryTable({
           <tbody>
             {entries.map((entry) => {
               const revealed = revealedId === entry.id;
+              const displayName = serviceDisplayName(entry);
 
               return (
                 <tr
@@ -61,7 +62,11 @@ export function KeyEntryTable({
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
-                      <ServiceIcon serviceId={entry.serviceId} size="sm" />
+                      <ServiceIcon
+                        serviceId={entry.serviceId}
+                        displayName={displayName}
+                        size="sm"
+                      />
                       <span className="text-text">{serviceDisplayName(entry)}</span>
                     </div>
                   </td>

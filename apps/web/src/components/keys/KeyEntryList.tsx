@@ -29,6 +29,7 @@ export function KeyEntryList({
         <ul className="divide-y divide-hairline">
           {entries.map((entry) => {
             const revealed = revealedId === entry.id;
+            const displayName = serviceDisplayName(entry);
 
             return (
               <li
@@ -36,7 +37,11 @@ export function KeyEntryList({
                 className="flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-start"
               >
                 <div className="flex min-w-0 flex-1 items-start gap-4">
-                  <ServiceIcon serviceId={entry.serviceId} size="sm" />
+                  <ServiceIcon
+                    serviceId={entry.serviceId}
+                    displayName={displayName}
+                    size="sm"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
                       {serviceDisplayName(entry)}
