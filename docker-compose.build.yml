@@ -1,0 +1,4 @@
+services:
+  keypage:
+    image: keypage:local
+    build: .

@@ -93,11 +93,13 @@ describe("Docker slim runtime packaging", () => {
       /pnpm deploy --filter=@keypage\/api --prod \S+/,
       "runtime deps must come from pnpm deploy --prod",
     );
-    assert.match(
-      dockerfile,
-      /COPY --from=deploy \/out\/api \/app/,
-      "runtime must copy only the deploy directory, not the build workspace",
-    );
+    for (const deployedPath of ["node_modules", "package.json", "dist"]) {
+      assert.match(
+        dockerfile,
+        new RegExp(`COPY --from=deploy \/out\/api\/${deployedPath.replace(".", "\\.")} \/app\/${deployedPath.replace(".", "\\.")}`),
+        `runtime must copy deployed ${deployedPath}, not the build workspace`,
+      );
+    }
     assert.doesNotMatch(
       dockerfile,
       /COPY --from=build \/app\/? \/app/,

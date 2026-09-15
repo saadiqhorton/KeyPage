@@ -18,6 +18,7 @@ const UPDATE_SH = path.join(repoRoot, "scripts/update.sh");
 const ROLLBACK_SH = path.join(repoRoot, "scripts/rollback.sh");
 const COMPOSE_YML = path.join(repoRoot, "docker-compose.yml");
 const README = path.join(repoRoot, "README.md");
+const IMAGE_WORKFLOW = path.join(repoRoot, ".github/workflows/publish-image.yml");
 
 const TUNNEL_PRODUCT = /cloudflared|CLOUDFLARE_TUNNEL|TUNNEL_TOKEN|TUNNEL_HOSTNAME/i;
 const DATA_WIPE =
@@ -65,6 +66,9 @@ function makeStubBin(
     healthOk: boolean;
     publishedPort?: number | null;
     stubGit?: boolean;
+    pullOk?: boolean;
+    existingContainer?: boolean;
+    healthFailuresBeforeSuccess?: number;
   },
 ): void {
   if (opts.stubGit !== false) {
@@ -72,6 +76,9 @@ function makeStubBin(
       path.join(binDir, "git"),
       `#!/bin/sh
 echo "git $*" >> "${binDir}/calls.log"
+if printf '%s' "$*" | grep -q 'rev-parse HEAD'; then
+  printf '%s\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+fi
 exit 0
 `,
     );
@@ -90,6 +97,30 @@ fi`;
     `#!/bin/sh
 echo "docker $*" >> "${binDir}/calls.log"
 ${portLine}
+last=""
+for arg in "$@"; do last="$arg"; done
+if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+  if printf '%s' "$*" | grep -q 'RepoDigests'; then
+    repo=$(printf '%s' "$last" | sed 's/:[^:]*$//')
+    printf '%s\n' "$repo@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  elif printf '%s' "$*" | grep -q 'org.opencontainers.image.revision'; then
+    printf '%s\n' "$last" | sed 's/^.*://'
+  elif printf '%s' "$*" | grep -q '{{.Id}}'; then
+    printf '%s\n' 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+  fi
+  exit 0
+fi
+if [ "$1" = "pull" ] && [ "${opts.pullOk === false ? "0" : "1"}" = "0" ]; then
+  exit 1
+fi
+if [ "$1" = "inspect" ] && printf '%s' "$*" | grep -q '{{.Image}}'; then
+  printf '%s\n' 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+  exit 0
+fi
+if [ "$1" = "compose" ] && [ "$2" = "ps" ] && [ "$3" = "-q" ]; then
+  ${opts.existingContainer ? "printf '%s\\n' 'container-old'" : ":"}
+  exit 0
+fi
 if [ "$1" = "info" ] || [ "$1" = "compose" ]; then
   exit 0
 fi
@@ -101,6 +132,14 @@ exit 0
     `#!/bin/sh
 echo "curl $*" >> "${binDir}/calls.log"
 if printf '%s' "$*" | grep -q '/api/health'; then
+  count_file="${binDir}/health-count"
+  count=0
+  [ ! -f "$count_file" ] || count=$(cat "$count_file")
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  if [ "$count" -le "${opts.healthFailuresBeforeSuccess ?? 0}" ]; then
+    exit 22
+  fi
   if [ "${opts.healthOk ? "1" : "0"}" = "1" ]; then
     printf '%s\\n' '{"status":"${HEALTH_STATUS_OK}","app":"KeyPage"}'
     exit 0
@@ -191,7 +230,9 @@ describe("scripts/update.sh contract", () => {
     const src = readUpdateScript();
     assert.match(src, new RegExp(`^DEFAULT_LISTEN_PORT=${DEFAULT_LISTEN_PORT}$`, "m"));
     assert.match(src, /\/api\/health/);
-    assert.match(src, /compose up -d --build/);
+    assert.match(src, /docker pull --quiet/);
+    assert.match(src, /compose up -d --no-build --pull never keypage/);
+    assert.match(src, /KEYPAGE_BUILD_LOCAL/);
     assert.match(src, /rev-parse FETCH_HEAD/);
     assert.match(src, /--source="\$\{wanted\}"/);
     assert.doesNotMatch(src, /--source="\$\{reset_to\}"/);
@@ -244,11 +285,25 @@ describe("scripts/update.sh contract", () => {
 
     const compose = fs.readFileSync(COMPOSE_YML, "utf8");
     assert.match(compose, /^\s+-\s+\.\/data:\/app\/data$/m);
+    assert.match(compose, /ghcr\.io\/saadiqhorton\/keypage:v1/);
+    assert.doesNotMatch(compose, /^\s+build:/m);
     assert.doesNotMatch(compose, TUNNEL_PRODUCT);
     assert.doesNotMatch(compose, /^\s+cloudflared:/m);
 
     const envExample = fs.readFileSync(path.join(repoRoot, ".env.example"), "utf8");
     assert.doesNotMatch(envExample, TUNNEL_PRODUCT);
+  });
+
+  it("publishes tested multi-architecture images with pinned actions", () => {
+    const workflow = fs.readFileSync(IMAGE_WORKFLOW, "utf8");
+    assert.match(workflow, /workflow_run:/);
+    assert.match(workflow, /workflow_run\.conclusion == 'success'/);
+    assert.match(workflow, /linux\/amd64,linux\/arm64/);
+    assert.match(workflow, /org\.opencontainers\.image\.revision/);
+    assert.match(workflow, /type=raw,value=v1/);
+    assert.match(workflow, /provenance: mode=max/);
+    assert.match(workflow, /sbom: true/);
+    assert.doesNotMatch(workflow, /uses:\s+[^\n]+@v\d+\s*$/m);
   });
 });
 
@@ -271,8 +326,8 @@ describe("scripts/rollback.sh safety contract", () => {
     const src = fs.readFileSync(ROLLBACK_SH, "utf8");
     assert.match(src, /forward_recover "rollback target build\/start failed"/);
     assert.match(src, /forward_recover "rollback target failed health validation"/);
-    assert.match(src, /git checkout --detach "\$CANDIDATE"/);
-    assert.match(src, /candidate forward-recovery build\/start also failed/);
+    assert.match(src, /start_revision "\$CANDIDATE" "\$CANDIDATE_IMAGE_REF"/);
+    assert.match(src, /candidate forward-recovery start also failed/);
   });
 });
 
@@ -299,7 +354,7 @@ describe("README update path", () => {
 });
 
 describe("scripts/update.sh behavior", () => {
-  it("rebuilds the container, preserves vault files, and leaves PORT alone", () => {
+  it("pulls a prebuilt image, preserves vault files, and leaves PORT alone", () => {
     const { root, dataDir, envPath } = makeInstallTree();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
     makeStubBin(binDir, { healthOk: true });
@@ -314,10 +369,64 @@ describe("scripts/update.sh behavior", () => {
     assert.equal(fs.readFileSync(envPath, "utf8"), envBefore);
     assert.equal(fs.readFileSync(path.join(root, "docker-compose.yml"), "utf8"), composeBefore);
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
-    assert.match(calls, /compose up -d --build/);
+    assert.match(calls, /pull --quiet ghcr\.io\/saadiqhorton\/keypage:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+    assert.match(calls, /compose up -d --no-build --pull never keypage/);
+    assert.doesNotMatch(calls, /compose up -d --build/);
     assert.match(calls, /\/api\/health/);
     assert.match(result.stdout, /preserved/i);
     assert.match(result.stdout, new RegExp(String(DEFAULT_LISTEN_PORT)));
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("leaves the running service and vault untouched when image download fails", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, pullOk: false, existingContainer: true });
+
+    const result = runUpdate({ keypageDir: root, binDir });
+
+    assert.notEqual(result.status, 0);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /pull --quiet/);
+    assert.doesNotMatch(calls, /compose stop|compose up/);
+    assert.match(`${result.stdout}\n${result.stderr}`, /existing container is still running/i);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("restores the stopped data snapshot and previous image after failed health", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    fs.writeFileSync(path.join(dataDir, "keypage.db-wal"), "wal-bytes");
+    fs.writeFileSync(path.join(dataDir, "keypage.db-shm"), "shm-bytes");
+    makeStubBin(binDir, {
+      healthOk: true,
+      healthFailuresBeforeSuccess: 1,
+      existingContainer: true,
+    });
+
+    const result = runUpdate({
+      keypageDir: root,
+      binDir,
+      extraEnv: { KEYPAGE_HEALTH_ATTEMPTS: "1", KEYPAGE_HEALTH_SLEEP_SECS: "0" },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db-wal"), "utf8"), "wal-bytes");
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db-shm"), "utf8"), "shm-bytes");
+    assert.equal(fs.readFileSync(path.join(dataDir, "setup-token"), "utf8"), "setup-secret");
+    assert.match(
+      fs.readFileSync(path.join(root, "docker-compose.override.yml"), "utf8"),
+      /keypage-rollback:/,
+    );
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.ok(calls.indexOf("pull --quiet") < calls.indexOf("compose stop"));
+    assert.match(calls, /image tag sha256:d{64} keypage-rollback:/);
+    assert.match(calls, /compose up -d --no-build --pull never keypage/);
+    assert.match(`${result.stdout}\n${result.stderr}`, /previous healthy version and matching data were restored/i);
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
   });
@@ -497,7 +606,7 @@ describe("scripts/update.sh behavior", () => {
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 
-  it("auto-resets dirty tracked files, leaves untracked ./data and .env, and rebuilds", () => {
+  it("auto-resets dirty tracked files, leaves untracked ./data and .env, and pulls", () => {
     const { remoteWork, bare, install } = seedRemoteAndShallowClone();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
     makeStubBin(binDir, { healthOk: true, stubGit: false });
@@ -531,7 +640,10 @@ describe("scripts/update.sh behavior", () => {
     assert.equal(fs.readFileSync(path.join(install, "release-marker"), "utf8"), "v-next");
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     assert.match(fs.readFileSync(path.join(install, ".env"), "utf8"), /^PORT=18081$/m);
-    assert.match(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose up -d --build/);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /pull --quiet ghcr\.io\/saadiqhorton\/keypage:[0-9a-f]{40}/);
+    assert.match(calls, /compose up -d --no-build --pull never keypage/);
+    assert.doesNotMatch(calls, /compose up -d --build/);
     fs.rmSync(remoteWork, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });
     fs.rmSync(install, { recursive: true, force: true });

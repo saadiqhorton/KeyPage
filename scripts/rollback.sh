@@ -10,6 +10,7 @@ SNAPSHOT="${KEYPAGE_ROLLBACK_SNAPSHOT:-}"
 ATTEMPTS="${KEYPAGE_HEALTH_ATTEMPTS:-60}"
 SLEEP_SECS="${KEYPAGE_HEALTH_SLEEP_SECS:-2}"
 DATA_DIR="$ROOT/data"
+IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 STAGE_DIR=""
 FAILED_DATA_DIR=""
 
@@ -24,13 +25,46 @@ cleanup() {
 }
 trap cleanup EXIT
 
+write_image_override() {
+  local image_ref="$1" tmp
+  tmp=$(mktemp "$ROOT/.keypage-image.XXXXXX")
+  printf 'services:\n  keypage:\n    image: %s\n' "$image_ref" > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$ROOT/docker-compose.override.yml"
+}
+
+prepare_image() {
+  local revision="$1" tagged digest actual_revision
+  tagged="${IMAGE_REPOSITORY}:${revision}"
+  docker pull --quiet "$tagged" >/dev/null || fail "could not download image for $revision; live data was not changed"
+  digest=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tagged" | grep -m1 '@sha256:' || true)
+  actual_revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$tagged" 2>/dev/null || true)
+  [[ "$digest" =~ @sha256:[0-9a-f]{64}$ ]] || fail "image for $revision has no immutable digest"
+  [[ "$actual_revision" == "$revision" ]] || fail "image for $revision does not match its source revision"
+  printf '%s' "$digest"
+}
+
+start_revision() {
+  local revision="$1" image_ref="$2"
+  git checkout --detach "$revision" || return 1
+  if [[ "${KEYPAGE_BUILD_LOCAL:-}" == "1" ]]; then
+    # The rollback target may predate docker-compose.build.yml. Tag both the
+    # old compose image name and the new explicit local image name so either
+    # revision can start without pulling from the registry.
+    docker build -t keypage:local -t keypage . || return 1
+    KEYPAGE_IMAGE=keypage:local compose up -d --no-build keypage
+  else
+    write_image_override "$image_ref"
+    compose up -d --no-build --pull never keypage
+  fi
+}
+
 forward_recover() {
   local reason="$1"
   printf 'rollback: %s; restoring candidate revision with the validated pre-upgrade snapshot\n' "$reason" >&2
   compose down || true
-  git checkout --detach "$CANDIDATE" || fail "$reason; could not restore candidate revision"
-  if ! compose up -d --build; then
-    fail "$reason; candidate forward-recovery build/start also failed"
+  if ! start_revision "$CANDIDATE" "$CANDIDATE_IMAGE_REF"; then
+    fail "$reason; candidate forward-recovery start also failed"
   fi
   fail "$reason; candidate forward-recovery was started"
 }
@@ -46,6 +80,13 @@ git -C "$ROOT" merge-base --is-ancestor "$TARGET" "$CANDIDATE" || fail "rollback
 command -v docker >/dev/null 2>&1 || fail "docker is not installed"
 docker info >/dev/null 2>&1 || fail "docker daemon is unavailable"
 compose version >/dev/null 2>&1 || fail "docker compose is unavailable"
+
+TARGET_IMAGE_REF=""
+CANDIDATE_IMAGE_REF=""
+if [[ "${KEYPAGE_BUILD_LOCAL:-}" != "1" ]]; then
+  TARGET_IMAGE_REF=$(prepare_image "$TARGET")
+  CANDIDATE_IMAGE_REF=$(prepare_image "$CANDIDATE")
+fi
 
 # Validate every archive member before extraction. Absolute paths, traversal,
 # links, devices, and other non-file entries must never reach the live data dir.
@@ -77,8 +118,7 @@ if [[ -e "$DATA_DIR" ]]; then
 fi
 mv -- "$STAGE_DIR" "$DATA_DIR"
 STAGE_DIR=""
-git checkout --detach "$TARGET"
-if ! compose up -d --build; then
+if ! start_revision "$TARGET" "$TARGET_IMAGE_REF"; then
   forward_recover "rollback target build/start failed"
 fi
 
