@@ -79,19 +79,19 @@ describe("custom service badge in every view", () => {
   const entry = makeEntry();
 
   it("renders the custom initial in the card view", () => {
-    const html = renderToStaticMarkup(<KeyEntryCard entry={entry} revealed={false} revealedValue={null} busy={false} onToggleReveal={() => undefined} onCopy={() => undefined} onEdit={() => undefined} onDelete={() => undefined} />);
+    const html = renderToStaticMarkup(<KeyEntryCard entry={entry} revealed={false} revealedValue={null} busy={false} reorderBusy={false} onDropEntry={() => undefined} onToggleReveal={() => undefined} onCopy={() => undefined} onEdit={() => undefined} onDelete={() => undefined} />);
     assert.match(html, />L</);
     assert.doesNotMatch(html, />C</);
   });
 
   it("renders the custom initial in the list view", () => {
-    const html = renderToStaticMarkup(<KeyEntryList entries={[entry]} revealedId={null} revealedValue={null} busyId={null} onToggleReveal={() => undefined} onCopy={() => undefined} onEdit={() => undefined} onDelete={() => undefined} />);
+    const html = renderToStaticMarkup(<KeyEntryList entries={[entry]} revealedId={null} revealedValue={null} busyId={null} reorderBusy={false} onDropEntry={() => undefined} onToggleReveal={() => undefined} onCopy={() => undefined} onEdit={() => undefined} onDelete={() => undefined} />);
     assert.match(html, />L</);
     assert.doesNotMatch(html, />C</);
   });
 
   it("renders the custom initial in the table view", () => {
-    const html = renderToStaticMarkup(<KeyEntryTable entries={[entry]} revealedId={null} revealedValue={null} busyId={null} onToggleReveal={() => undefined} onCopy={() => undefined} onEdit={() => undefined} onDelete={() => undefined} />);
+    const html = renderToStaticMarkup(<KeyEntryTable entries={[entry]} revealedId={null} revealedValue={null} busyId={null} reorderBusy={false} onDropEntry={() => undefined} onToggleReveal={() => undefined} onCopy={() => undefined} onEdit={() => undefined} onDelete={() => undefined} />);
     assert.match(html, />L</);
     assert.doesNotMatch(html, />C</);
   });
