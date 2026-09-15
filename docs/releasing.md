@@ -32,11 +32,17 @@ It exists for owner recovery from a broken ruleset. Do not use it for normal
 merges or releases. If recovery is unavoidable, record the reason, affected
 commit, actor, and restoration verification in the pull request or incident.
 
+The ruleset was first activated from the head of the pull request that added
+this runbook, after the four required check names were observed passing on that
+head and the admin bypass was confirmed. The activation evidence (API response,
+ruleset ID, and check-run URLs) lives in the project issue thread, not in this
+repository.
+
 ### Apply or update the ruleset
 
-Only a repository owner may perform this step, after the pull request containing
-the workflow and payload has merged and all four check names have been observed
-again on that pull request.
+Only a repository owner may perform this step. For updates to an active
+ruleset, do it after the pull request containing the payload has merged and all
+four check names have been observed again on that pull request.
 
 1. Confirm there is no overlapping branch protection or ruleset with conflicting
    required checks.
