@@ -95,4 +95,8 @@ describe("custom service badge in every view", () => {
     assert.match(html, />L</);
     assert.doesNotMatch(html, />C</);
   });
+
+  // The delete modal view passes displayName through as well, but it renders
+  // via createPortal, which the server renderer does not support; that call
+  // site is covered by source review in the DEZ-37 verification instead.
 });
