@@ -6,6 +6,12 @@ type ServiceIconSize = "sm" | "md";
 
 type ServiceIconProps = {
   serviceId: string;
+  /**
+   * Effective display name of the service (e.g. the custom service name).
+   * Only used for custom services; branded built-ins keep their catalog
+   * monogram.
+   */
+  displayName?: string;
   size?: ServiceIconSize;
   className?: string;
 };
@@ -27,9 +33,22 @@ export function monogram(displayName: string): string {
   return (words[0]?.[0] ?? "?").toUpperCase();
 }
 
-export function ServiceIcon({ serviceId, size = "md", className }: Readonly<ServiceIconProps>) {
+export function customBadge(displayName: string): string {
+  const match = /[a-z0-9]/i.exec(displayName);
+  return match ? match[0].toUpperCase() : "?";
+}
+
+export function ServiceIcon({
+  serviceId,
+  displayName,
+  size = "md",
+  className,
+}: Readonly<ServiceIconProps>) {
   const entry = getService(serviceId);
-  const glyph = monogram(entry.displayName);
+  const glyph =
+    entry.id === "custom" && displayName !== undefined
+      ? customBadge(displayName)
+      : monogram(entry.displayName);
 
   return (
     <span

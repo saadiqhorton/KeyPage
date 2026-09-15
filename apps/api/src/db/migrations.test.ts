@@ -151,3 +151,47 @@ describe("migration v3 activity_events", () => {
     );
   });
 });
+
+describe("migration v6 key_entries.sort_order", () => {
+  let db: Database.Database;
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  it("backfills newest-first order from created_at", () => {
+    db = openDbAtVersion(5);
+    insertVaultAuth(db);
+
+    const older = "11111111-1111-4111-8111-111111111111";
+    const newer = "22222222-2222-4222-8222-222222222222";
+    db.prepare(
+      `INSERT INTO key_entries (
+         id, label, service_id, custom_service_name, description, tags_json,
+         cipher_algorithm, cipher_iv, cipher_text, key_version,
+         created_at, updated_at, last_used_at
+       ) VALUES (?, 'Older', 'openai', NULL, NULL, '[]', 'aes-256-gcm', 'aXY=', 'Y2lwaGVy', 1, ?, ?, NULL)`,
+    ).run(older, "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+    db.prepare(
+      `INSERT INTO key_entries (
+         id, label, service_id, custom_service_name, description, tags_json,
+         cipher_algorithm, cipher_iv, cipher_text, key_version,
+         created_at, updated_at, last_used_at
+       ) VALUES (?, 'Newer', 'openai', NULL, NULL, '[]', 'aes-256-gcm', 'aXY=', 'Y2lwaGVy', 1, ?, ?, NULL)`,
+    ).run(newer, "2026-02-01T00:00:00.000Z", "2026-02-01T00:00:00.000Z");
+
+    const migration = MIGRATIONS.find((entry) => entry.version === 6);
+    assert.ok(migration);
+    migration.up(db);
+    db.pragma("user_version = 6");
+
+    const rows = db
+      .prepare(`SELECT id, sort_order FROM key_entries ORDER BY sort_order ASC`)
+      .all() as Array<{ id: string; sort_order: number }>;
+
+    assert.deepEqual(rows, [
+      { id: newer, sort_order: 0 },
+      { id: older, sort_order: 1 },
+    ]);
+  });
+});

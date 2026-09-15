@@ -12,14 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       - name: Capture immutable revisions
         run: |
-          echo "KEYPAGE_CANDIDATE_SHA=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_ENV"
-          echo "KEYPAGE_ROLLBACK_TARGET=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
-          echo "KEYPAGE_ROLLBACK_SNAPSHOT=$RUNNER_TEMP/keypage-pre-upgrade.tgz" >> "$GITHUB_ENV"
+          {
+            echo "KEYPAGE_CANDIDATE_SHA=${{ github.event.pull_request.head.sha }}"
+            echo "KEYPAGE_ROLLBACK_TARGET=${{ github.event.pull_request.base.sha }}"
+            echo "KEYPAGE_ROLLBACK_SNAPSHOT=$RUNNER_TEMP/keypage-pre-upgrade.tgz"
+          } >> "$GITHUB_ENV"
       - name: Build last-known-good and take stopped snapshot
         run: |
           git checkout --detach "$KEYPAGE_ROLLBACK_TARGET"

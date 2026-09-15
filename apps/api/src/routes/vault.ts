@@ -314,7 +314,10 @@ export const vaultRoutes: FastifyPluginAsync<VaultRouteOptions> = async (
       if (
         requireHttpsSetup &&
         request.protocol !== "https" &&
-        !(allowInsecureLocalSetup && isLoopbackAddress(request.ip))
+        !(
+          allowInsecureLocalSetup &&
+          isLoopbackAddress(request.raw.socket.remoteAddress ?? "")
+        )
       ) {
         throw new HttpHttpsRequired();
       }

@@ -101,6 +101,14 @@ export type KeyEntryListResponse = {
   clipboardClearSeconds: number;
 };
 
+export type KeyEntryReorderRequest = {
+  orderedIds: string[];
+};
+
+export type KeyEntryReorderResponse = {
+  orderedIds: string[];
+};
+
 export type KeyEntryUseAction = Extract<
   ActivityEventAction,
   "revealed" | "copied"

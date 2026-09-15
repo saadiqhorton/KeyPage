@@ -1,0 +1,136 @@
+name: Release artifacts
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact 40-character lowercase commit SHA, already reachable from main, packaged for a dry run
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifacts-${{ github.ref }}-${{ inputs.ref || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: package · SBOM · provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      # Trust boundary, part 1 (trusted): fetch only refs/heads/main with a
+      # pinned, credential-free action. No candidate ref is checked out yet and
+      # no script from the candidate revision has run. The provenance of
+      # refs/heads/main itself is protected by the reviewed main ruleset.
+      - name: Fetch the trusted main branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: main
+          path: trusted-main
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Trust boundary, part 2 (trusted inline logic): prove the candidate
+      # commit is reachable from origin/main BEFORE any untrusted checkout or
+      # code execution. Dispatches must name an exact 40-character lowercase
+      # commit SHA; branch and tag names are rejected. The guard fails closed:
+      # any missing object, unreachable commit, or tool error aborts the job.
+      - name: Validate the candidate release ref before any checkout
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+          REQUESTED_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ ! "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::workflow_dispatch 'ref' must be an exact 40-character lowercase commit SHA; got: $REQUESTED_REF"
+              exit 1
+            fi
+          fi
+          if ! git -C trusted-main cat-file -e "$REQUESTED_REF^{commit}" 2>/dev/null \
+            || ! git -C trusted-main merge-base --is-ancestor "$REQUESTED_REF" HEAD; then
+            echo "::error::candidate $REQUESTED_REF is not reachable from origin/main; refusing to check it out"
+            exit 1
+          fi
+          candidate_sha=$(git -C trusted-main rev-parse "$REQUESTED_REF^{commit}")
+          echo "CANDIDATE_SHA=$candidate_sha" >> "$GITHUB_ENV"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            echo "CANDIDATE_REF_NAME=$REQUESTED_REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "CANDIDATE_REF_NAME=$candidate_sha" >> "$GITHUB_ENV"
+          fi
+
+      # The candidate tree is checked out only after the guard passed, so
+      # everything below runs reviewed code from a main ancestor.
+      - name: Check out the validated revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create deterministic source bundle
+        id: bundle
+        env:
+          REQUESTED_REF: ${{ env.CANDIDATE_REF_NAME }}
+        run: bash scripts/package-release.sh "$REQUESTED_REF"
+
+      - name: Generate SPDX JSON SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: .
+          format: spdx-json
+          output-file: ${{ steps.bundle.outputs.output_dir }}/${{ steps.bundle.outputs.artifact_name }}.spdx.json
+          artifact-name: ${{ steps.bundle.outputs.artifact_name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          syft-version: v1.51.1
+
+      - name: Validate SBOM and write immutable digests
+        env:
+          OUTPUT_DIR: ${{ steps.bundle.outputs.output_dir }}
+          ARTIFACT_NAME: ${{ steps.bundle.outputs.artifact_name }}
+        run: |
+          jq -e '
+            .spdxVersion == "SPDX-2.3" and
+            (.packages | type == "array") and
+            (.packages | length > 0) and
+            (.creationInfo.created | type == "string")
+          ' "$OUTPUT_DIR/$ARTIFACT_NAME.spdx.json" >/dev/null
+          (
+            cd "$OUTPUT_DIR"
+            sha256sum "$ARTIFACT_NAME.tar.gz" "$ARTIFACT_NAME.spdx.json" > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+
+      # Privileged attestation steps stay isolated: they run only pinned,
+      # trusted actions over files produced by the validated tree above.
+      - name: Attest release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.bundle.outputs.output_dir }}/*
+
+      - name: Attest bundle SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.bundle.outputs.output_dir }}/${{ steps.bundle.outputs.artifact_name }}.tar.gz
+          sbom-path: ${{ steps.bundle.outputs.output_dir }}/${{ steps.bundle.outputs.artifact_name }}.spdx.json
+
+      - name: Upload verifiable release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.bundle.outputs.artifact_name }}
+          path: ${{ steps.bundle.outputs.output_dir }}/*
+          if-no-files-found: error
+          retention-days: 30

@@ -9,6 +9,8 @@ import type {
   KeyEntryImportRequest,
   KeyEntryImportResponse,
   KeyEntryListResponse,
+  KeyEntryReorderRequest,
+  KeyEntryReorderResponse,
   KeyEntryUpdateRequest,
   KeyEntryUpdateResponse,
   KeyEntryUseRequest,
@@ -24,6 +26,7 @@ import {
   listKeyEntries,
   listKeyEntryIds,
   markKeyEntryUsed,
+  reorderKeyEntries,
   updateKeyEntry,
 } from "../keys/key-entry-repo.js";
 import {
@@ -318,6 +321,7 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt,
             lastUsedAt: entry.lastUsedAt,
+            place: "end",
           });
           recordActivityEvent(db, {
             keyEntryId: created.id,
@@ -329,6 +333,41 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
         }
 
         return { imported, skippedIds };
+      })();
+    },
+  );
+
+  app.patch(
+    "/order",
+    {
+      bodyLimit: BODY_LIMIT,
+      preHandler: [checkOrigin, requireSession],
+      schema: {
+        body: {
+          type: "object",
+          required: ["orderedIds"],
+          properties: {
+            orderedIds: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    async (request): Promise<KeyEntryReorderResponse> => {
+      const body = request.body as KeyEntryReorderRequest;
+      requireKeyWriteProof(db, request, "/api/keys/order");
+
+      for (const id of body.orderedIds) {
+        validateKeyEntryId(id);
+      }
+
+      const sessionId = request.vaultSession!.id;
+      return db.transaction(() => {
+        assertKeyEntryMutationsAllowed(db, sessionId);
+        reorderKeyEntries(db, body.orderedIds);
+        return { orderedIds: body.orderedIds };
       })();
     },
   );

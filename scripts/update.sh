@@ -10,7 +10,8 @@
 #   bash scripts/update.sh
 #
 # Overrides:
-#   KEYPAGE_DIR               install directory (default: this repo, else ~/keypage)
+#   KEYPAGE_DIR               install directory (default: this repo when
+#                             executed from a checkout; ~/keypage when piped)
 #   KEYPAGE_REPO              git remote URL (used to verify origin)
 #   KEYPAGE_REF               branch or tag to update to (default: main)
 #   KEYPAGE_SKIP_GIT=1        rebuild the current tree only (no fetch)
@@ -19,8 +20,29 @@
 
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
+# Piped `curl | bash` leaves BASH_SOURCE unset (set -u) or pointing at a
+# stdin path such as /dev/fd/63. Never treat those as the checkout.
+_self="${BASH_SOURCE[0]:-}"
+SCRIPT_DIR=""
+REPO_ROOT=""
+case "${_self}" in
+  ""|/dev/fd/*|/dev/stdin|/proc/self/fd/*|-)
+    ;;
+  *)
+    if [[ -f "${_self}" ]]; then
+      SCRIPT_DIR=$(cd "$(dirname "${_self}")" && pwd)
+      case "${SCRIPT_DIR}" in
+        /dev/fd|/dev/fd/*|/proc/self/fd|/proc/self/fd/*)
+          SCRIPT_DIR=""
+          ;;
+        *)
+          REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
+          ;;
+      esac
+    fi
+    ;;
+esac
+
 KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
 KEYPAGE_REF="${KEYPAGE_REF:-main}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
@@ -29,7 +51,7 @@ HEALTH_ATTEMPTS="${KEYPAGE_HEALTH_ATTEMPTS:-60}"
 HEALTH_SLEEP_SECS="${KEYPAGE_HEALTH_SLEEP_SECS:-2}"
 
 if [[ -z "${KEYPAGE_DIR:-}" ]]; then
-  if [[ -f "${REPO_ROOT}/docker-compose.yml" ]]; then
+  if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
     KEYPAGE_DIR="${REPO_ROOT}"
   else
     KEYPAGE_DIR="${HOME}/keypage"
@@ -143,8 +165,9 @@ else
 
   note "fetching ${KEYPAGE_REF}"
   # Depth-1 one-line installs cannot `pull --ff-only`: old HEAD and the new
-  # tip are disconnected shallow boundaries. Fetch the ref explicitly, move
-  # a clean tree to FETCH_HEAD, and refuse to rebuild unless HEAD matches.
+  # tip are disconnected shallow boundaries. Fetch the ref, then advance
+  # tracked *source* files only. Vault paths (data/, *.db, setup-token)
+  # are never in restore/reset pathspecs.
   if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
     fail "fetch of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
@@ -152,12 +175,81 @@ else
   if [[ -z "${wanted}" ]]; then
     fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
+  tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*" "data/**" "*.db" "setup-token")"
+  incoming_data="$(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" -- data "*.db" setup-token)"
+  if [[ -n "${tracked_data}" || -n "${incoming_data}" ]]; then
+    fail "${KEYPAGE_DIR}/data is tracked in git — vault must stay on the ./data bind-mount, outside source control. Not resetting or rebuilding. Vault data was not deleted."
+  fi
+  env_backup=""
+  tracked_paths=""
+  incoming_paths=""
+  cleanup_update_temps() {
+    if [[ -n "${env_backup:-}" && -f "${env_backup}" ]]; then
+      cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
+      rm -f "${env_backup}"
+      env_backup=""
+    fi
+    if [[ -n "${tracked_paths:-}" ]]; then
+      rm -f "${tracked_paths}"
+      tracked_paths=""
+    fi
+    if [[ -n "${incoming_paths:-}" ]]; then
+      rm -f "${incoming_paths}"
+      incoming_paths=""
+    fi
+  }
+  trap cleanup_update_temps EXIT
+  if [[ -f "${KEYPAGE_DIR}/.env" ]]; then
+    env_backup="$(mktemp)"
+    cp -p "${KEYPAGE_DIR}/.env" "${env_backup}"
+  fi
   if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
-    fail "local changes present — cannot advance to ${KEYPAGE_REF}. Vault data was not deleted (${KEYPAGE_DIR}/data). Stash or discard changes, then re-run."
+    note "resetting tracked files to origin/${KEYPAGE_REF}; leaving ./data alone"
   fi
-  if ! git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" FETCH_HEAD; then
-    fail "checkout of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+  # Worktree+index for source files only. Pathspecs never include data/.
+  # Restore from the exact commit resolved by the fetch. A branch and tag may
+  # legally share a name, so origin/${KEYPAGE_REF} is not always FETCH_HEAD.
+  if ! git -C "${KEYPAGE_DIR}" restore \
+      --source="${wanted}" \
+      --staged --worktree \
+      -- \
+      . \
+      ':(exclude)data' \
+      ':(exclude)data/**' \
+      ':(exclude)*.db' \
+      ':(exclude)setup-token'; then
+    fail "restore of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
   fi
+  # restore does not drop paths absent from the tip (deletes or rename
+  # sources). Remove tracked source files that are not in the fetched tree.
+  # Never git-rm vault paths.
+  tracked_paths="$(mktemp)"
+  incoming_paths="$(mktemp)"
+  git -C "${KEYPAGE_DIR}" ls-files | sort > "${tracked_paths}"
+  git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" | sort > "${incoming_paths}"
+  gone_files="$(comm -23 "${tracked_paths}" "${incoming_paths}")"
+  rm -f "${tracked_paths}" "${incoming_paths}"
+  tracked_paths=""
+  incoming_paths=""
+  if [[ -n "${gone_files}" ]]; then
+    while IFS= read -r gone; do
+      [[ -z "${gone}" ]] && continue
+      case "${gone}" in
+        data|data/*|*.db|*/keypage.db|setup-token|*/setup-token) continue ;;
+      esac
+      git -C "${KEYPAGE_DIR}" rm -f --ignore-unmatch -- "${gone}" >/dev/null
+    done <<< "${gone_files}"
+  fi
+  # Point KEYPAGE_REF at the fetched tip and switch HEAD to that ref.
+  # A soft reset of the current branch would rewrite a non-target tip.
+  # update-ref + symbolic-ref do not touch the worktree (so cannot rewrite ./data).
+  if ! git -C "${KEYPAGE_DIR}" update-ref "refs/heads/${KEYPAGE_REF}" "${wanted}"; then
+    fail "could not point ${KEYPAGE_REF} at the fetched tip — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
+  fi
+  if ! git -C "${KEYPAGE_DIR}" symbolic-ref HEAD "refs/heads/${KEYPAGE_REF}"; then
+    fail "could not switch HEAD to ${KEYPAGE_REF} — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
+  fi
+  cleanup_update_temps
   now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   if [[ "${now}" != "${wanted}" ]]; then
     fail "working tree did not reach ${KEYPAGE_REF} (wanted ${wanted}, HEAD is ${now}). Vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
