@@ -837,10 +837,9 @@ describe("key entry reorder", () => {
       [THIRD_ENTRY_ID, OTHER_ENTRY_ID, ENTRY_ID],
     );
 
-    const reordered = await app.inject({
+    const reordered = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: "/api/keys/order",
-      headers: { cookie },
       payload: { orderedIds: [ENTRY_ID, THIRD_ENTRY_ID, OTHER_ENTRY_ID] },
     });
     assert.equal(reordered.statusCode, 200);
@@ -862,6 +861,23 @@ describe("key entry reorder", () => {
     );
   });
 
+  it("rejects reorder with a valid session but no key-possession proof", async () => {
+    await createEntries([ENTRY_ID, OTHER_ENTRY_ID]);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/keys/order",
+      headers: { cookie },
+      payload: { orderedIds: [OTHER_ENTRY_ID, ENTRY_ID] },
+    });
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().error, "unauthenticated");
+    assert.equal(
+      response.json().message,
+      "Invalid or expired key possession proof",
+    );
+  });
+
   it("rejects reorder without a session", async () => {
     await createEntries([ENTRY_ID, OTHER_ENTRY_ID]);
 
@@ -877,10 +893,9 @@ describe("key entry reorder", () => {
   it("rejects reorder ids that are not a permutation of the vault", async () => {
     await createEntries([ENTRY_ID, OTHER_ENTRY_ID]);
 
-    const unknown = await app.inject({
+    const unknown = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: "/api/keys/order",
-      headers: { cookie },
       payload: {
         orderedIds: [ENTRY_ID, OTHER_ENTRY_ID, THIRD_ENTRY_ID],
       },
@@ -889,20 +904,18 @@ describe("key entry reorder", () => {
     assert.equal(unknown.json().error, "invalid_request");
     assert.match(String(unknown.json().message), /order/i);
 
-    const missing = await app.inject({
+    const missing = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: "/api/keys/order",
-      headers: { cookie },
       payload: { orderedIds: [ENTRY_ID] },
     });
     assert.equal(missing.statusCode, 400);
     assert.equal(missing.json().error, "invalid_request");
     assert.match(String(missing.json().message), /order/i);
 
-    const duplicate = await app.inject({
+    const duplicate = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: "/api/keys/order",
-      headers: { cookie },
       payload: { orderedIds: [ENTRY_ID, ENTRY_ID] },
     });
     assert.equal(duplicate.statusCode, 400);
@@ -930,10 +943,9 @@ describe("key entry reorder", () => {
       Buffer.from("reorder-challenge").toString("base64"),
     );
 
-    const response = await app.inject({
+    const response = await injectWithProof(app, cookie, {
       method: "PATCH",
       url: "/api/keys/order",
-      headers: { cookie },
       payload: { orderedIds: [ENTRY_ID, OTHER_ENTRY_ID] },
     });
 

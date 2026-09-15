@@ -22,37 +22,6 @@ export function sortableShift(
   return 0;
 }
 
-export function flowDelta(
-  index: number,
-  steps: number,
-  columns: number,
-): { col: number; row: number } {
-  const dest = index + steps;
-  return {
-    col: (dest % columns) - (index % columns),
-    row: Math.floor(dest / columns) - Math.floor(index / columns),
-  };
-}
-
-export function inferColumnCount(
-  rects: ReadonlyArray<Pick<SortableRect, "top">>,
-): number {
-  if (rects.length < 2) {
-    return 1;
-  }
-  const firstTop = rects[0]?.top ?? 0;
-  let columns = 1;
-  for (let index = 1; index < rects.length; index += 1) {
-    const top = rects[index]?.top ?? firstTop;
-    if (Math.abs(top - firstTop) < 8) {
-      columns += 1;
-    } else {
-      break;
-    }
-  }
-  return columns;
-}
-
 export function hitTestRects(
   x: number,
   y: number,
@@ -81,35 +50,22 @@ export function resolveOverId(
   return hitTestRects(x, y, ids, rects) ?? current;
 }
 
-export function layoutStrides(
-  rects: readonly SortableRect[],
-  columns: number,
-): { strideX: number; strideY: number } {
-  const first = rects[0];
-  const next = rects[1];
-  const nextRow = rects[columns];
-  const strideX =
-    columns > 1 && next && first ? next.left - first.left : 0;
-  const strideY = nextRow && first
-    ? nextRow.top - first.top
-    : next && first && columns === 1
-      ? next.top - first.top
-      : first
-        ? first.bottom - first.top
-        : 0;
-  return { strideX, strideY };
-}
-
 export function itemTranslate(
   from: number,
   to: number,
   index: number,
-  columns: number,
-  strideX: number,
-  strideY: number,
+  rects: readonly SortableRect[],
 ): string {
   const shift = sortableShift(from, to, index);
-  const delta =
-    columns > 1 ? flowDelta(index, shift, columns) : { col: 0, row: shift };
-  return `translate3d(${delta.col * strideX}px, ${delta.row * strideY}px, 0)`;
+  if (shift === 0) {
+    return "translate3d(0px, 0px, 0)";
+  }
+  const self = rects[index];
+  const target = rects[index + shift];
+  if (!self || !target) {
+    return "translate3d(0px, 0px, 0)";
+  }
+  return `translate3d(${target.left - self.left}px, ${
+    target.top - self.top
+  }px, 0)`;
 }

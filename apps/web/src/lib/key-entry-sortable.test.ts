@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  flowDelta,
   hitTestRects,
-  inferColumnCount,
   itemTranslate,
   resolveOverId,
   sortableShift,
@@ -25,29 +23,6 @@ describe("sortableShift", () => {
   it("does not shift when the drop target is the origin", () => {
     assert.equal(sortableShift(2, 2, 0), 0);
     assert.equal(sortableShift(2, 2, 2), 0);
-  });
-});
-
-describe("flowDelta", () => {
-  it("converts a one-step flow shift into grid cell deltas", () => {
-    assert.deepEqual(flowDelta(2, -1, 3), { col: -1, row: 0 });
-    assert.deepEqual(flowDelta(0, 1, 3), { col: 1, row: 0 });
-    assert.deepEqual(flowDelta(2, 1, 3), { col: -2, row: 1 });
-  });
-});
-
-describe("inferColumnCount", () => {
-  it("counts items that share the first row top", () => {
-    assert.equal(
-      inferColumnCount([
-        { top: 10 },
-        { top: 10 },
-        { top: 10 },
-        { top: 80 },
-      ]),
-      3,
-    );
-    assert.equal(inferColumnCount([{ top: 0 }]), 1);
   });
 });
 
@@ -83,11 +58,31 @@ describe("resolveOverId", () => {
 });
 
 describe("itemTranslate", () => {
-  it("slides a later item backward one vertical slot", () => {
-    assert.equal(itemTranslate(0, 2, 1, 1, 0, 40), "translate3d(0px, -40px, 0)");
+  const rows = [
+    { left: 0, right: 40, top: 0, bottom: 20 },
+    { left: 0, right: 40, top: 20, bottom: 50 },
+    { left: 0, right: 40, top: 50, bottom: 90 },
+  ];
+
+  it("returns zero for the dragged item and untouched items", () => {
+    assert.equal(itemTranslate(0, 2, 0, rows), "translate3d(0px, 0px, 0)");
   });
 
-  it("slides a later item left one grid cell", () => {
-    assert.equal(itemTranslate(0, 2, 1, 3, 120, 80), "translate3d(-120px, 0px, 0)");
+  it("slides a later item up by its own measured slot distance", () => {
+    assert.equal(itemTranslate(0, 2, 1, rows), "translate3d(0px, -20px, 0)");
+  });
+
+  it("uses each row's measured height instead of one fixed stride", () => {
+    assert.equal(itemTranslate(0, 2, 2, rows), "translate3d(0px, -30px, 0)");
+  });
+
+  it("wraps across grid columns using measured rects", () => {
+    const grid = [
+      { left: 0, right: 40, top: 0, bottom: 20 },
+      { left: 40, right: 80, top: 0, bottom: 20 },
+      { left: 0, right: 40, top: 30, bottom: 50 },
+    ];
+    assert.equal(itemTranslate(0, 2, 1, grid), "translate3d(-40px, 0px, 0)");
+    assert.equal(itemTranslate(0, 2, 2, grid), "translate3d(40px, -30px, 0)");
   });
 });

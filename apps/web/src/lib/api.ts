@@ -197,10 +197,11 @@ export function getKeyEntries(): Promise<KeyEntryListResponse> {
 export function patchKeyEntryOrder(
   body: KeyEntryReorderRequest,
 ): Promise<KeyEntryReorderResponse> {
-  return apiFetch<KeyEntryReorderResponse>("/api/keys/order", {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
+  return keyEntryWrite<KeyEntryReorderResponse>(
+    "/api/keys/order",
+    "PATCH",
+    body,
+  );
 }
 
 async function keyEntryWrite<T>(

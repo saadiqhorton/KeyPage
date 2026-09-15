@@ -35,7 +35,6 @@ export function KeyEntryCardGrid({
     <KeyEntrySortable
       ids={entries.map((entry) => entry.id)}
       labels={sortableLabels(entries)}
-      layout="grid"
       disabled={reorderBusy}
       onDropEntry={onDropEntry}
     >

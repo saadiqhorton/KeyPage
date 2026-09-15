@@ -357,6 +357,8 @@ export const keyEntryRoutes: FastifyPluginAsync<KeyEntryRouteOptions> = async (
     },
     async (request): Promise<KeyEntryReorderResponse> => {
       const body = request.body as KeyEntryReorderRequest;
+      requireKeyWriteProof(db, request, "/api/keys/order");
+
       for (const id of body.orderedIds) {
         validateKeyEntryId(id);
       }

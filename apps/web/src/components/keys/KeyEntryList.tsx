@@ -123,7 +123,6 @@ export function KeyEntryList({
     <KeyEntrySortable
       ids={entries.map((entry) => entry.id)}
       labels={sortableLabels(entries)}
-      layout="vertical"
       disabled={reorderBusy}
       onDropEntry={onDropEntry}
     >

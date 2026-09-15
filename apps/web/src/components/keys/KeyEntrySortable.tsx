@@ -13,9 +13,7 @@ import {
 import { createPortal } from "react-dom";
 
 import {
-  inferColumnCount,
   itemTranslate,
-  layoutStrides,
   resolveOverId,
   type SortableRect,
 } from "@/lib/key-entry-sortable";
@@ -52,7 +50,6 @@ const SortableContext = createContext<SortableContextValue>({
 type KeyEntrySortableProps = {
   ids: readonly string[];
   labels: Readonly<Record<string, string>>;
-  layout: "vertical" | "grid";
   disabled: boolean;
   onDropEntry(draggedId: string, targetId: string): void;
   children: ReactNode;
@@ -86,7 +83,6 @@ function placePlaceholder(
 export function KeyEntrySortable({
   ids,
   labels,
-  layout,
   disabled,
   onDropEntry,
   children,
@@ -102,7 +98,6 @@ export function KeyEntrySortable({
   const overIdRef = useRef<string | null>(null);
   const detachRef = useRef<(() => void) | null>(null);
   const rafRef = useRef<number | null>(null);
-  const stridesRef = useRef({ strideX: 0, strideY: 0, columns: 1 });
 
   const [session, setSession] = useState<{
     id: string;
@@ -137,7 +132,6 @@ export function KeyEntrySortable({
     (activeId: string, overId: string) => {
       const from = ids.indexOf(activeId);
       const to = ids.indexOf(overId);
-      const { columns, strideX, strideY } = stridesRef.current;
       for (const [index, id] of ids.entries()) {
         const node = nodesRef.current.get(id);
         if (!node) {
@@ -152,14 +146,7 @@ export function KeyEntrySortable({
           node.style.transform = "none";
           continue;
         }
-        node.style.transform = itemTranslate(
-          from,
-          to,
-          index,
-          columns,
-          strideX,
-          strideY,
-        );
+        node.style.transform = itemTranslate(from, to, index, rectsRef.current);
       }
       placePlaceholder(placeholderRef.current, rectsRef.current[to]);
     },
@@ -252,9 +239,6 @@ export function KeyEntrySortable({
 
       const rects = measureRects(ids, nodesRef.current);
       rectsRef.current = rects;
-      const columns = layout === "grid" ? inferColumnCount(rects) : 1;
-      const { strideX, strideY } = layoutStrides(rects, columns);
-      stridesRef.current = { columns, strideX, strideY };
 
       const origin = node.getBoundingClientRect();
       grabOffsetRef.current = {
@@ -306,7 +290,7 @@ export function KeyEntrySortable({
         finishDrag(false);
       }
     },
-    [disabled, finishDrag, flushMove, ids, labels, layout],
+    [disabled, finishDrag, flushMove, ids, labels],
   );
 
   useLayoutEffect(() => {
