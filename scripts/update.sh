@@ -181,17 +181,27 @@ else
     fail "${KEYPAGE_DIR}/data is tracked in git — vault must stay on the ./data bind-mount, outside source control. Not resetting or rebuilding. Vault data was not deleted."
   fi
   env_backup=""
-  restore_env_backup() {
+  tracked_paths=""
+  incoming_paths=""
+  cleanup_update_temps() {
     if [[ -n "${env_backup:-}" && -f "${env_backup}" ]]; then
       cp -p "${env_backup}" "${KEYPAGE_DIR}/.env"
       rm -f "${env_backup}"
       env_backup=""
     fi
+    if [[ -n "${tracked_paths:-}" ]]; then
+      rm -f "${tracked_paths}"
+      tracked_paths=""
+    fi
+    if [[ -n "${incoming_paths:-}" ]]; then
+      rm -f "${incoming_paths}"
+      incoming_paths=""
+    fi
   }
+  trap cleanup_update_temps EXIT
   if [[ -f "${KEYPAGE_DIR}/.env" ]]; then
     env_backup="$(mktemp)"
     cp -p "${KEYPAGE_DIR}/.env" "${env_backup}"
-    trap restore_env_backup EXIT
   fi
   if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
     note "resetting tracked files to origin/${KEYPAGE_REF}; leaving ./data alone"
@@ -215,9 +225,14 @@ else
   # restore does not drop paths absent from the tip (deletes or rename
   # sources). Remove tracked source files that are not in the fetched tree.
   # Never git-rm vault paths.
-  gone_files="$(comm -23 \
-    <(git -C "${KEYPAGE_DIR}" ls-files | sort) \
-    <(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" | sort))"
+  tracked_paths="$(mktemp)"
+  incoming_paths="$(mktemp)"
+  git -C "${KEYPAGE_DIR}" ls-files | sort > "${tracked_paths}"
+  git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" | sort > "${incoming_paths}"
+  gone_files="$(comm -23 "${tracked_paths}" "${incoming_paths}")"
+  rm -f "${tracked_paths}" "${incoming_paths}"
+  tracked_paths=""
+  incoming_paths=""
   if [[ -n "${gone_files}" ]]; then
     while IFS= read -r gone; do
       [[ -z "${gone}" ]] && continue
@@ -236,7 +251,7 @@ else
   if ! git -C "${KEYPAGE_DIR}" symbolic-ref HEAD "refs/heads/${KEYPAGE_REF}"; then
     fail "could not switch HEAD to ${KEYPAGE_REF} — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
   fi
-  restore_env_backup
+  cleanup_update_temps
   now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   if [[ "${now}" != "${wanted}" ]]; then
     fail "working tree did not reach ${KEYPAGE_REF} (wanted ${wanted}, HEAD is ${now}). Vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."

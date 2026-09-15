@@ -207,7 +207,13 @@ describe("scripts/update.sh contract", () => {
       src,
       /sed 's\|\^KEYPAGE_WEB_DIR=\/app\/web\$\|KEYPAGE_WEB_DIR=\/app\/apps\/web\/dist\|'/,
     );
-    assert.match(src, /trap restore_env_backup EXIT/);
+    // The EXIT trap restores .env unconditionally (it is installed before the
+    // .env backup decision) and also removes the ls-files/ls-tree temp files,
+    // so a mid-update failure never leaves a stale backup or temp files behind.
+    assert.match(src, /trap cleanup_update_temps EXIT/);
+    assert.match(src, /cleanup_update_temps\(\) \{/);
+    assert.match(src, /cp -p "\$\{env_backup\}" "\$\{KEYPAGE_DIR\}\/\.env"/);
+    assert.match(src, /rm -f "\$\{tracked_paths\}" "\$\{incoming_paths\}"/);
   });
 
   it("resolves a piped self path safely and never treats stdin as the install dir", () => {
