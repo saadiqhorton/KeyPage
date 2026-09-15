@@ -35,19 +35,32 @@ export function KeyEntryReorderControls({
   entryLabel,
   disabled,
 }: Readonly<KeyEntryReorderControlsProps>) {
-  const { startDrag, disabled: sortableDisabled } = useKeyEntrySortableHandle();
+  const {
+    startDrag,
+    moveWithKeyboard,
+    disabled: sortableDisabled,
+  } = useKeyEntrySortableHandle();
 
   return (
     <button
       type="button"
       disabled={disabled || sortableDisabled}
-      aria-label={`Drag to reorder ${entryLabel}`}
+      aria-label={`Drag to reorder ${entryLabel}. Use arrow keys to move it.`}
       className={cn(
         controlButtonClass,
         "cursor-grab touch-none active:cursor-grabbing",
       )}
       onPointerDown={(event) => {
         startDrag(entryId, event);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowLeft" &&
+            event.key !== "ArrowDown" && event.key !== "ArrowRight") {
+          return;
+        }
+        event.preventDefault();
+        const delta = event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1;
+        moveWithKeyboard(entryId, delta);
       }}
     >
       <GripIcon className="size-3.5" />

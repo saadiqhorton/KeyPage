@@ -9,7 +9,8 @@ export function applyVisibleReorder(
 
   const visibleSet = new Set(visibleIds);
   if (
-    visibleIds.some((id) => !visibleSet.has(id)) ||
+    visibleSet.size !== visibleIds.length ||
+    visibleIds.some((id) => !allIds.includes(id)) ||
     nextVisibleIds.some((id) => !visibleSet.has(id))
   ) {
     return [...allIds];

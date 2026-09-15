@@ -38,12 +38,14 @@ type SortableContextValue = {
   disabled: boolean;
   registerItem(id: string, node: HTMLElement | null): void;
   startDrag(id: string, event: ReactPointerEvent<HTMLElement>): void;
+  moveWithKeyboard(id: string, delta: number): void;
 };
 
 const SortableContext = createContext<SortableContextValue>({
   disabled: false,
   registerItem() {},
   startDrag() {},
+  moveWithKeyboard() {},
 });
 
 type KeyEntrySortableProps = {
@@ -115,6 +117,20 @@ export function KeyEntrySortable({
       nodesRef.current.delete(id);
     }
   }, []);
+
+  const moveWithKeyboard = useCallback(
+    (id: string, delta: number) => {
+      if (disabled) {
+        return;
+      }
+      const index = ids.indexOf(id);
+      const targetId = ids[index + delta];
+      if (index >= 0 && targetId) {
+        onDropEntry(id, targetId);
+      }
+    },
+    [disabled, ids, onDropEntry],
+  );
 
   const applyShifts = useCallback(
     (activeId: string, overId: string) => {
@@ -317,8 +333,9 @@ export function KeyEntrySortable({
       disabled,
       registerItem,
       startDrag,
+      moveWithKeyboard,
     }),
-    [disabled, registerItem, startDrag],
+    [disabled, moveWithKeyboard, registerItem, startDrag],
   );
 
   const canPortal = typeof document !== "undefined";
@@ -375,6 +392,6 @@ export function useKeyEntrySortableItem(id: string) {
 }
 
 export function useKeyEntrySortableHandle() {
-  const { startDrag, disabled } = useContext(SortableContext);
-  return { startDrag, disabled };
+  const { startDrag, moveWithKeyboard, disabled } = useContext(SortableContext);
+  return { startDrag, moveWithKeyboard, disabled };
 }

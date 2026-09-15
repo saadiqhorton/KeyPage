@@ -47,6 +47,22 @@ describe("applyVisibleReorder", () => {
       ["c", "a", "b"],
     );
   });
+
+  it("rejects invalid visible permutations", () => {
+    const allIds = ["a", "b", "c"];
+    assert.deepEqual(
+      applyVisibleReorder(allIds, ["a", "a"], ["a", "a"]),
+      allIds,
+    );
+    assert.deepEqual(
+      applyVisibleReorder(allIds, ["a", "missing"], ["missing", "a"]),
+      allIds,
+    );
+    assert.deepEqual(
+      applyVisibleReorder(allIds, ["a", "b"], ["a", "c"]),
+      allIds,
+    );
+  });
 });
 
 describe("moveVisibleEntry", () => {
