@@ -24,7 +24,11 @@ RUN pnpm deploy --filter=@keypage/api --prod /out/api
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 RUN apk add --no-cache su-exec
 WORKDIR /app
-COPY --from=deploy /out/api /app
+# Keep the large production dependency tree in its own layer so routine code
+# releases only download the much smaller application/UI layers.
+COPY --from=deploy /out/api/node_modules /app/node_modules
+COPY --from=deploy /out/api/package.json /app/package.json
+COPY --from=deploy /out/api/dist /app/dist
 COPY --from=build /app/apps/web/dist /app/apps/web/dist
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/data && chown node:node /app/data

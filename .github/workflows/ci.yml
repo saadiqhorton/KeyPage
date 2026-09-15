@@ -47,14 +47,14 @@ jobs:
           DOCKER_BUILDKIT: "0"
           COMPOSE_DOCKER_CLI_BUILD: "0"
           COMPOSE_BAKE: "false"
-        run: docker compose up -d --build
+        run: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
       - name: Assert health and setup UI
         run: bash scripts/ci-docker-smoke.sh
       - name: Compose status on failure
         if: failure()
         run: |
           # Do not dump `docker compose logs` on failure (avoid shipping runtime secrets).
-          docker compose ps
+          docker compose -f docker-compose.yml -f docker-compose.build.yml ps
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: docker compose -f docker-compose.yml -f docker-compose.build.yml down

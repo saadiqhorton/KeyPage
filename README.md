@@ -48,7 +48,7 @@ Do **not** publish port `:9090` to the open internet. KeyPage does not terminate
 
 ## Quick start (Docker)
 
-One-shot install (clones into `~/keypage`, builds, and starts):
+One-shot install (clones the small deployment files into `~/keypage`, downloads the prebuilt image, and starts):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/install.sh | bash
@@ -59,9 +59,11 @@ Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. T
 Already have the repo checked out?
 
 ```bash
-docker compose up -d --build
+bash scripts/install.sh
 cat ./data/setup-token
 ```
+
+Normal installs never compile KeyPage on your machine. Contributors can opt into a local source build with `KEYPAGE_BUILD_LOCAL=1 bash scripts/install.sh`.
 
 Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN-IP>:9090` from another device on your network. The default listen port is **9090** (`DEFAULT_LISTEN_PORT` in `packages/shared`; override with `PORT`). Installer default directory: `~/keypage` (override with `KEYPAGE_DIR`).
 
@@ -69,7 +71,7 @@ Open [http://localhost:9090](http://localhost:9090) on the host, or `http://<LAN
 
 | Piece | Detail |
 |-------|--------|
-| Image | Builds the `keypage` image from the repo `Dockerfile` (pinned `node:22-alpine` digest, API + built web UI) |
+| Image | Pulls the tested public `ghcr.io/saadiqhorton/keypage` image and pins the running install to its immutable digest |
 | Port | Maps host `9090` → container `9090` (same as `DEFAULT_LISTEN_PORT`) |
 | Data | Bind-mounts `./data` → `/app/data` (SQLite and runtime state) |
 | Restart | `unless-stopped` |
@@ -144,7 +146,9 @@ From an existing Docker / one-line install (`~/keypage` by default), including c
 curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/update.sh | bash
 ```
 
-That one command fetches the updater from `main`, advances the checkout (default branch `main`), rebuilds the image, and recreates the container. Tracked local edits are reset onto `origin/main` using pathspecs that exclude `data/`. The vault stays on the `./data` bind-mount (gitignored) and is not part of any reset or checkout. Your `.env` listen port stays in place.
+That one command fetches the updater from `main`, advances the small checkout, downloads the already-built image, snapshots the stopped data directory, and restarts the container. It does **not** install pnpm packages, compile TypeScript, build the web UI, or build a Docker image on your machine. Unchanged layers are reused, so a routine update is normally the image download plus a few seconds of restart time.
+
+The image is selected by the exact 40-character source commit, verified against its OCI revision label, resolved to an immutable registry digest, and saved in `docker-compose.override.yml`. That generated file is gitignored, so later source updates cannot overwrite the pinned image. The new image is downloaded before the running container is stopped. If startup or health validation fails, the updater restores both the previous image and the stopped pre-upgrade data snapshot automatically. The entire `./data` bind-mount is preserved, including SQLite WAL and SHM files.
 
 Once the checkout has the script:
 
@@ -152,15 +156,21 @@ Once the checkout has the script:
 cd ~/keypage && bash scripts/update.sh
 ```
 
-The updater fetches `KEYPAGE_REF` (default `main`) and resets tracked source files to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. `./data` is never in those pathspecs. If origin is not the KeyPage repo, fetch fails, or vault files are tracked in git, it exits before rebuild and says so. Vault files are not deleted.
+The updater fetches `KEYPAGE_REF` (default `main`) and resets tracked deployment files to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. `./data` is never in those pathspecs. If origin is not the KeyPage repo, fetch fails, the tested image is unavailable, its source label does not match, or vault files are tracked in git, it exits before stopping the existing container. Vault files are not deleted.
 
 For a failed upgrade, use the bounded, snapshot-based [rollback runbook](docs/rollback.md). It restores pre-upgrade data before starting an older revision because database migrations are forward-only.
 
-If `/api/health` does not come back, the script exits non-zero and prints how to read `docker compose logs`. Vault files are not deleted.
+If `/api/health` does not come back, the script exits non-zero after restoring the previous image and its matching data snapshot. It keeps the failed candidate data separately for diagnosis.
 
 If you terminate TLS elsewhere (reverse proxy or a personal Tunnel), update the container this way; keep targeting the same host port. Expect brief downtime while the container restarts.
 
-Compose-only equivalent: `docker compose up -d --build` also keeps the `./data` bind mount. Your vault survives image and container updates as long as you do not delete `./data`.
+Local source builds are a developer-only escape hatch:
+
+```bash
+KEYPAGE_BUILD_LOCAL=1 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+Normal installs and updates never use this path.
 
 The `Dockerfile` pins `node:22-alpine` by digest (`node:22-alpine@sha256:…`) so rebuilds stay on the same Node/Alpine. To take a newer official image on purpose:
 
@@ -168,7 +178,7 @@ The `Dockerfile` pins `node:22-alpine` by digest (`node:22-alpine@sha256:…`) s
 docker buildx imagetools inspect node:22-alpine --format '{{json .Manifest.Digest}}'
 ```
 
-Replace both `FROM node:22-alpine@sha256:…` lines (`AS base` and `AS runtime`) with that digest. Keep the slim runtime (`pnpm deploy` + a fresh alpine stage) — do not switch runtime back to `FROM build`.
+Replace both `FROM node:22-alpine@sha256:…` lines (`AS base` and `AS runtime`) with that digest. Keep the slim runtime (`pnpm deploy` + a fresh alpine stage) — do not switch runtime back to `FROM build`. GitHub Actions builds and publishes this image once for users.
 
 ## Secure context (Web Crypto vs fallback)
 

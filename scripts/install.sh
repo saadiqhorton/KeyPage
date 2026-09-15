@@ -9,12 +9,15 @@
 #   KEYPAGE_DIR     install directory (default: ~/keypage)
 #   KEYPAGE_REPO    git remote URL
 #   KEYPAGE_REF     branch or tag to clone/checkout (default: main)
+#   KEYPAGE_IMAGE   exact container image override
+#   KEYPAGE_BUILD_LOCAL=1  explicitly build locally instead of pulling
 
 set -euo pipefail
 
 KEYPAGE_DIR="${KEYPAGE_DIR:-$HOME/keypage}"
 KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
 KEYPAGE_REF="${KEYPAGE_REF:-main}"
+KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
 APP_URL="http://127.0.0.1:${DEFAULT_LISTEN_PORT}"
@@ -63,6 +66,30 @@ compose() {
   fi
 }
 
+write_image_override() {
+  local image_ref="$1" tmp
+  tmp="$(mktemp "${KEYPAGE_DIR}/.keypage-image.XXXXXX")"
+  printf 'services:\n  keypage:\n    image: %s\n' "${image_ref}" > "${tmp}"
+  chmod 600 "${tmp}"
+  mv -f "${tmp}" "${KEYPAGE_DIR}/docker-compose.override.yml"
+}
+
+resolve_health_url() {
+  local container_port="${DEFAULT_LISTEN_PORT}" published derived env_port
+  if [[ -f .env ]]; then
+    env_port="$(grep -m1 '^PORT=' .env | cut -d= -f2- | tr -d ' \t\r' || true)"
+    [[ "${env_port}" =~ ^[0-9]+$ ]] && container_port="${env_port}"
+  fi
+  published="$(compose port keypage "${container_port}" 2>/dev/null || true)"
+  if [[ -z "${published}" && "${container_port}" != "${DEFAULT_LISTEN_PORT}" ]]; then
+    published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
+  fi
+  derived="${published##*:}"
+  [[ "${derived}" =~ ^[0-9]+$ ]] || derived="${container_port}"
+  APP_URL="http://127.0.0.1:${derived}"
+  HEALTH_URL="${APP_URL}/api/health"
+}
+
 # Normalize a git remote URL to host/owner/repo (lowercase, no .git).
 # Treats HTTPS, ssh://, and SCP-style (git@host:owner/repo) as equivalent.
 normalize_repo_url() {
@@ -90,7 +117,7 @@ normalize_repo_url() {
 
 printf '\n%s%s  KeyPage installer%s\n' "$BOLD" "$BLUE" "$RESET"
 note "${TOTAL_STAGES} stages · install dir ${KEYPAGE_DIR}"
-note "Needs Git + Docker. No Node/pnpm on the host."
+note "Downloads a ready-to-run image. No Node/pnpm or application build on the host."
 printf '\n'
 
 # ── 1. Dependencies ───────────────────────────────────────────────────────
@@ -116,8 +143,10 @@ ok "docker compose"
 stage "Clone repository → ${KEYPAGE_DIR}"
 
 EXPECTED_REPO="$(normalize_repo_url "${KEYPAGE_REPO}")"
+EXISTING_INSTALL=0
 
 if [[ -d "${KEYPAGE_DIR}/.git" ]]; then
+  EXISTING_INSTALL=1
   note "existing checkout found — verifying it is KeyPage"
   ORIGIN_URL="$(git -C "${KEYPAGE_DIR}" remote get-url origin 2>/dev/null || true)"
   if [[ -z "${ORIGIN_URL}" ]]; then
@@ -184,27 +213,51 @@ fi
 mkdir -p data
 ok "./data ready (SQLite bind mount)"
 
-# ── 4. Build & start ──────────────────────────────────────────────────────
-stage "Build and start container"
+# ── 4. Pull & start ───────────────────────────────────────────────────────
+stage "Download and start container"
 
-compose up -d --build
+if [[ "${KEYPAGE_BUILD_LOCAL:-}" == "1" ]]; then
+  note "KEYPAGE_BUILD_LOCAL=1 — building from this checkout"
+  compose -f docker-compose.yml -f docker-compose.build.yml up -d --build keypage
+elif [[ "${EXISTING_INSTALL}" == "1" ]]; then
+  KEYPAGE_SKIP_GIT=1 KEYPAGE_DIR="${KEYPAGE_DIR}" bash scripts/update.sh
+else
+  checkout_sha="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
+  KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${checkout_sha}}"
+  note "downloading the tested image"
+  if ! docker pull --quiet "${KEYPAGE_IMAGE}" >/dev/null; then
+    fail "could not download ${KEYPAGE_IMAGE}. Nothing was installed and ./data was not changed."
+  fi
+  image_digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${KEYPAGE_IMAGE}" | grep -m1 '@sha256:' || true)"
+  image_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${KEYPAGE_IMAGE}" 2>/dev/null || true)"
+  if [[ ! "${image_digest}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+    fail "downloaded image has no immutable registry digest; nothing was started"
+  fi
+  if [[ "${image_revision}" != "${checkout_sha}" ]]; then
+    fail "downloaded image revision does not match ${checkout_sha}; nothing was started"
+  fi
+  write_image_override "${image_digest}"
+  compose up -d --no-build --pull never keypage
+fi
 ok "container started"
 
+resolve_health_url
 note "waiting for health at ${HEALTH_URL}"
 healthy=0
 for _ in $(seq 1 60); do
-  if curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; then
+  health_body="$(curl -fsS "${HEALTH_URL}" 2>/dev/null || true)"
+  if printf '%s' "${health_body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
     healthy=1
     break
   fi
   sleep 2
 done
 
-if [[ "${healthy}" -eq 1 ]]; then
-  ok "healthy"
-else
-  warn "health check timed out — check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+if [[ "${healthy}" -ne 1 ]]; then
+  compose stop -t 20 keypage >/dev/null 2>&1 || true
+  fail "health check timed out; KeyPage was stopped and is not being reported as ready. Check: cd ${KEYPAGE_DIR} && docker compose logs keypage"
 fi
+ok "healthy"
 
 if [[ -r data/setup-token ]]; then
   say "Setup token file: ${KEYPAGE_DIR}/data/setup-token (mode 0600)"

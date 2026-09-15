@@ -4,6 +4,8 @@ coverage/
 # Vault / runtime state — compose bind-mounts ./data; never source-controlled
 data/
 *.db
+docker-compose.override.yml
+.keypage/
 .env
 .env.*
 !.env.example

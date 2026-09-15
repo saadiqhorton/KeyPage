@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# KeyPage updater — pull/rebuild an existing Docker install without wiping
-# vault data or changing the published listen port.
+# KeyPage updater — pull a prebuilt image without wiping vault data or
+# changing the published listen port.
 #
 # Usage (works for installs that predate this script):
 #   curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/update.sh | bash
@@ -14,7 +14,10 @@
 #                             executed from a checkout; ~/keypage when piped)
 #   KEYPAGE_REPO              git remote URL (used to verify origin)
 #   KEYPAGE_REF               branch or tag to update to (default: main)
-#   KEYPAGE_SKIP_GIT=1        rebuild the current tree only (no fetch)
+#   KEYPAGE_IMAGE             exact container image override
+#   KEYPAGE_IMAGE_REPOSITORY  image repository override
+#   KEYPAGE_BUILD_LOCAL=1     explicitly build locally instead of pulling
+#   KEYPAGE_SKIP_GIT=1        use the current checkout (no fetch)
 #   KEYPAGE_HEALTH_ATTEMPTS   /api/health polls (default: 60)
 #   KEYPAGE_HEALTH_SLEEP_SECS seconds between polls (default: 2)
 
@@ -45,6 +48,7 @@ esac
 
 KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
 KEYPAGE_REF="${KEYPAGE_REF:-main}"
+KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
 HEALTH_ATTEMPTS="${KEYPAGE_HEALTH_ATTEMPTS:-60}"
@@ -90,6 +94,53 @@ compose() {
   fi
 }
 
+write_image_override() {
+  local image_ref="$1" tmp
+  tmp="$(mktemp "${KEYPAGE_DIR}/.keypage-image.XXXXXX")"
+  printf 'services:\n  keypage:\n    image: %s\n' "${image_ref}" > "${tmp}"
+  chmod 600 "${tmp}"
+  mv -f "${tmp}" "${KEYPAGE_DIR}/docker-compose.override.yml"
+}
+
+resolve_health_url() {
+  CONTAINER_LISTEN_PORT="${DEFAULT_LISTEN_PORT}"
+  if [[ -f .env ]]; then
+    env_port="$(grep -m1 '^PORT=' .env | cut -d= -f2- | tr -d ' \t\r' || true)"
+    if [[ "${env_port}" =~ ^[0-9]+$ ]]; then
+      CONTAINER_LISTEN_PORT="${env_port}"
+    fi
+  fi
+  PUBLISHED_HOST_PORT="${CONTAINER_LISTEN_PORT}"
+  published="$(compose port keypage "${CONTAINER_LISTEN_PORT}" 2>/dev/null || true)"
+  if [[ -z "${published}" && "${CONTAINER_LISTEN_PORT}" != "${DEFAULT_LISTEN_PORT}" ]]; then
+    published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
+  fi
+  if [[ "${published}" == *:* ]]; then
+    derived="${published##*:}"
+    derived="${derived//$'\r'/}"
+    if [[ "${derived}" =~ ^[0-9]+$ ]]; then
+      PUBLISHED_HOST_PORT="${derived}"
+    fi
+  fi
+  APP_URL="http://127.0.0.1:${PUBLISHED_HOST_PORT}"
+  HEALTH_URL="${APP_URL}/api/health"
+}
+
+wait_for_health() {
+  local healthy=0 health_body=""
+  resolve_health_url
+  for _ in $(seq 1 "${HEALTH_ATTEMPTS}"); do
+    if health_body="$(curl -fsS "${HEALTH_URL}" 2>/dev/null)"; then
+      if printf '%s' "${health_body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+        healthy=1
+        break
+      fi
+    fi
+    sleep "${HEALTH_SLEEP_SECS}"
+  done
+  [[ "${healthy}" -eq 1 ]]
+}
+
 # Normalize a git remote URL to host/owner/repo (lowercase, no .git).
 # Treats HTTPS, ssh://, and SCP-style (git@host:owner/repo) as equivalent.
 normalize_repo_url() {
@@ -115,16 +166,14 @@ normalize_repo_url() {
 
 printf '\n%s%s  KeyPage updater%s\n' "$BOLD" "$BLUE" "$RESET"
 note "${TOTAL_STAGES} stages · install dir ${KEYPAGE_DIR}"
-note "Rebuilds the container. Leaves ./data and the published listen port in place."
+note "Downloads the ready-to-run image. Leaves ./data and the published listen port in place."
 printf '\n'
 
 # ── 1. Dependencies ───────────────────────────────────────────────────────
 stage "Check dependencies"
 
-if [[ "${KEYPAGE_SKIP_GIT:-}" != "1" ]]; then
-  command -v git >/dev/null 2>&1 || fail "git not found — install Git, then re-run"
-  ok "git"
-fi
+command -v git >/dev/null 2>&1 || fail "git not found — install Git, then re-run"
+ok "git"
 
 if ! command -v docker >/dev/null 2>&1; then
   fail "docker not found — install Docker Desktop or the Docker Engine, then re-run"
@@ -148,6 +197,7 @@ stage "Update checkout → ${KEYPAGE_DIR}"
 
 if [[ "${KEYPAGE_SKIP_GIT:-}" == "1" ]]; then
   note "KEYPAGE_SKIP_GIT=1 — using current tree"
+  wanted="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD 2>/dev/null || true)"
   ok "skipped fetch"
 else
   if [[ ! -d "${KEYPAGE_DIR}/.git" ]]; then
@@ -169,16 +219,16 @@ else
   # tracked *source* files only. Vault paths (data/, *.db, setup-token)
   # are never in restore/reset pathspecs.
   if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
-    fail "fetch of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+    fail "fetch of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
   wanted="$(git -C "${KEYPAGE_DIR}" rev-parse FETCH_HEAD 2>/dev/null || true)"
   if [[ -z "${wanted}" ]]; then
-    fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+    fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
   tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*" "data/**" "*.db" "setup-token")"
   incoming_data="$(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" -- data "*.db" setup-token)"
   if [[ -n "${tracked_data}" || -n "${incoming_data}" ]]; then
-    fail "${KEYPAGE_DIR}/data is tracked in git — vault must stay on the ./data bind-mount, outside source control. Not resetting or rebuilding. Vault data was not deleted."
+    fail "${KEYPAGE_DIR}/data is tracked in git — vault must stay on the ./data bind-mount, outside source control. Source was not reset and the running version was not replaced."
   fi
   env_backup=""
   tracked_paths=""
@@ -218,7 +268,7 @@ else
       ':(exclude)data/**' \
       ':(exclude)*.db' \
       ':(exclude)setup-token'; then
-    fail "restore of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding an old tree."
+    fail "restore of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
   # restore does not drop paths absent from the tip (deletes or rename
   # sources). Remove tracked source files that are not in the fetched tree.
@@ -244,15 +294,15 @@ else
   # A soft reset of the current branch would rewrite a non-target tip.
   # update-ref + symbolic-ref do not touch the worktree (so cannot rewrite ./data).
   if ! git -C "${KEYPAGE_DIR}" update-ref "refs/heads/${KEYPAGE_REF}" "${wanted}"; then
-    fail "could not point ${KEYPAGE_REF} at the fetched tip — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
+    fail "could not point ${KEYPAGE_REF} at the fetched tip — vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
   if ! git -C "${KEYPAGE_DIR}" symbolic-ref HEAD "refs/heads/${KEYPAGE_REF}"; then
-    fail "could not switch HEAD to ${KEYPAGE_REF} — vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
+    fail "could not switch HEAD to ${KEYPAGE_REF} — vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
   cleanup_update_temps
   now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   if [[ "${now}" != "${wanted}" ]]; then
-    fail "working tree did not reach ${KEYPAGE_REF} (wanted ${wanted}, HEAD is ${now}). Vault data was not deleted (${KEYPAGE_DIR}/data). Not rebuilding."
+    fail "working tree did not reach ${KEYPAGE_REF} (wanted ${wanted}, HEAD is ${now}). Vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
   ok "updated ${KEYPAGE_DIR} to ${wanted:0:12}"
 fi
@@ -271,59 +321,177 @@ fi
 mkdir -p data
 ok "./data ready (preserved)"
 
-# ── 3. Rebuild ────────────────────────────────────────────────────────────
-stage "Rebuild and recreate container"
+# ── 3. Pull and restart ───────────────────────────────────────────────────
+stage "Download and restart container"
 
-compose up -d --build
-ok "container recreated"
+update_started="$(date +%s)"
+STATE_DIR="${KEYPAGE_DIR}/.keypage"
+SNAPSHOT_ROOT="${STATE_DIR}/snapshots"
+LOCK_DIR="${STATE_DIR}/update.lock"
+mkdir -p "${SNAPSHOT_ROOT}"
+chmod 700 "${STATE_DIR}" "${SNAPSHOT_ROOT}"
+if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+  fail "another KeyPage update is already running (${LOCK_DIR})"
+fi
+cutover_started=0
+rollback_ready=0
+old_stop_started=0
+old_image_ref=""
+snapshot_dir=""
 
-CONTAINER_LISTEN_PORT="${DEFAULT_LISTEN_PORT}"
-if [[ -f .env ]]; then
-  env_port="$(grep -m1 '^PORT=' .env | cut -d= -f2- | tr -d ' \t\r' || true)"
-  if [[ "${env_port}" =~ ^[0-9]+$ ]]; then
-    CONTAINER_LISTEN_PORT="${env_port}"
+cleanup_lock() {
+  rmdir "${LOCK_DIR}" 2>/dev/null || true
+}
+
+restore_previous() {
+  local reason="$1" failed_data
+  [[ "${rollback_ready}" == "1" ]] || return 1
+  warn "${reason}; restoring the previous KeyPage image and data"
+  compose stop -t 20 keypage >/dev/null 2>&1 || true
+  failed_data="${STATE_DIR}/failed-data-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  if [[ -d data ]]; then
+    if ! mv data "${failed_data}"; then
+      warn "automatic restore could not preserve the failed data; snapshot remains at ${snapshot_dir}"
+      return 1
+    fi
+  fi
+  if ! mkdir -p data; then
+    warn "automatic restore could not create the data directory; snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  if ! cp -a "${snapshot_dir}/data/." data/; then
+    warn "automatic restore could not copy the complete snapshot; the old image was not started and snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  if ! write_image_override "${old_image_ref}"; then
+    warn "automatic restore could not select the previous image; it was not started and snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  if ! compose up -d --no-build --pull never keypage >/dev/null; then
+    warn "automatic restore could not start; preserved failed data at ${failed_data} and snapshot at ${snapshot_dir}"
+    return 1
+  fi
+  if ! wait_for_health; then
+    warn "previous image restarted but did not become healthy; snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  old_stop_started=0
+  ok "previous version restored; failed update data kept at ${failed_data}"
+  return 0
+}
+
+on_signal() {
+  if [[ "${rollback_ready}" == "1" ]]; then
+    restore_previous "update interrupted" || true
+  elif [[ "${old_stop_started}" == "1" ]]; then
+    warn "update interrupted while stopping the existing container; restarting it"
+    compose start keypage >/dev/null 2>&1 || true
+  fi
+  cleanup_lock
+  exit 130
+}
+trap cleanup_lock EXIT
+trap on_signal INT TERM
+
+if [[ "${KEYPAGE_BUILD_LOCAL:-}" == "1" ]]; then
+  note "KEYPAGE_BUILD_LOCAL=1 — building from this checkout"
+  compose -f docker-compose.yml -f docker-compose.build.yml up -d --build keypage
+else
+  if [[ ! "${wanted:-}" =~ ^[0-9a-f]{40}$ ]]; then
+    fail "cannot select an exact published image because the checkout commit is unavailable"
+  fi
+  image_tag="${wanted}"
+  KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${image_tag}}"
+  note "downloading the tested image"
+  if ! docker pull --quiet "${KEYPAGE_IMAGE}" >/dev/null; then
+    fail "could not download ${KEYPAGE_IMAGE}. The existing container is still running and vault data was not deleted (${KEYPAGE_DIR}/data)."
+  fi
+  candidate_digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${KEYPAGE_IMAGE}" | grep -m1 '@sha256:' || true)"
+  candidate_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${KEYPAGE_IMAGE}" 2>/dev/null || true)"
+  candidate_image_id="$(docker image inspect --format '{{.Id}}' "${KEYPAGE_IMAGE}" 2>/dev/null || true)"
+  if [[ ! "${candidate_digest}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+    fail "downloaded image has no immutable registry digest; existing KeyPage was not stopped"
+  fi
+  if [[ "${candidate_revision}" != "${wanted}" ]]; then
+    fail "downloaded image revision does not match ${wanted}; existing KeyPage was not stopped"
+  fi
+
+  old_container_id="$(compose ps -q keypage 2>/dev/null || true)"
+  old_image_id=""
+  if [[ -n "${old_container_id}" ]]; then
+    old_image_id="$(docker inspect --format '{{.Image}}' "${old_container_id}" 2>/dev/null || true)"
+  fi
+  if [[ -n "${old_image_id}" && "${old_image_id}" == "${candidate_image_id}" ]]; then
+    write_image_override "${candidate_digest}"
+    ok "already on the current image"
+  else
+    if [[ -n "${old_image_id}" ]]; then
+      rollback_tag="keypage-rollback:$(date -u +%Y%m%dT%H%M%SZ)-$$"
+      docker image tag "${old_image_id}" "${rollback_tag}"
+      old_image_ref="${rollback_tag}"
+      snapshot_dir="${SNAPSHOT_ROOT}/$(date -u +%Y%m%dT%H%M%SZ)-${wanted:0:12}"
+      mkdir -p "${snapshot_dir}/data"
+
+      note "taking a stopped data snapshot"
+      old_stop_started=1
+      compose stop -t 20 keypage >/dev/null
+      cutover_started=1
+      if ! cp -a data/. "${snapshot_dir}/data/"; then
+        compose start keypage >/dev/null 2>&1 || true
+        old_stop_started=0
+        cutover_started=0
+        fail "data snapshot failed; the previous container was restarted"
+      fi
+      rollback_ready=1
+    fi
+
+    write_image_override "${candidate_digest}"
+    if ! compose up -d --no-build --pull never keypage >/dev/null; then
+      if restore_previous "new container failed to start"; then
+        cutover_started=0
+        fail "update failed; the previous healthy version was restored"
+      fi
+      fail "update failed and automatic restore needs attention; snapshot is ${snapshot_dir}"
+    fi
   fi
 fi
-PUBLISHED_HOST_PORT="${CONTAINER_LISTEN_PORT}"
-published="$(compose port keypage "${CONTAINER_LISTEN_PORT}" 2>/dev/null || true)"
-if [[ -z "${published}" && "${CONTAINER_LISTEN_PORT}" != "${DEFAULT_LISTEN_PORT}" ]]; then
-  published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
-fi
-if [[ "${published}" == *:* ]]; then
-  derived="${published##*:}"
-  derived="${derived//$'\r'/}"
-  if [[ "${derived}" =~ ^[0-9]+$ ]]; then
-    PUBLISHED_HOST_PORT="${derived}"
-  fi
-fi
-APP_URL="http://127.0.0.1:${PUBLISHED_HOST_PORT}"
-HEALTH_URL="${APP_URL}/api/health"
+ok "container restarted"
+resolve_health_url
 
 # ── 4. Health ─────────────────────────────────────────────────────────────
 stage "Check health at ${HEALTH_URL}"
 
-note "waiting for health at ${HEALTH_URL}"
-healthy=0
-for _ in $(seq 1 "${HEALTH_ATTEMPTS}"); do
-  if health_body=$(curl -fsS "${HEALTH_URL}" 2>/dev/null); then
-    if printf '%s' "${health_body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
-      healthy=1
-      break
-    fi
+note "waiting for health"
+if ! wait_for_health; then
+  if [[ "${cutover_started}" == "1" ]] && restore_previous "new version failed its health check"; then
+    cutover_started=0
+    fail "update failed; the previous healthy version and matching data were restored"
   fi
-  sleep "${HEALTH_SLEEP_SECS}"
-done
-
-if [[ "${healthy}" -ne 1 ]]; then
-  fail "health check failed at ${HEALTH_URL}. Vault data was not deleted (${KEYPAGE_DIR}/data). Published listen port is still ${PUBLISHED_HOST_PORT}. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+  if [[ "${cutover_started}" != "1" ]]; then
+    compose stop -t 20 keypage >/dev/null 2>&1 || true
+  fi
+  fail "health check failed at ${HEALTH_URL}. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 fi
+cutover_started=0
 ok "healthy"
+
+state_tmp="$(mktemp "${STATE_DIR}/state.XXXXXX")"
+{
+  printf 'current_image=%s\n' "${candidate_digest:-local-build}"
+  printf 'current_revision=%s\n' "${wanted:-unknown}"
+  printf 'previous_image=%s\n' "${old_image_ref:-}"
+  printf 'snapshot=%s\n' "${snapshot_dir:-}"
+  printf 'updated_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "${state_tmp}"
+chmod 600 "${state_tmp}"
+mv -f "${state_tmp}" "${STATE_DIR}/state"
 
 printf '\n%s%s  ✓ KeyPage update complete%s\n\n' "$BOLD" "$GREEN" "$RESET"
 say "App:      ${APP_URL}"
 say "Install:  ${KEYPAGE_DIR}"
 say "Data:     ${KEYPAGE_DIR}/data (preserved)"
 say "Port:     ${PUBLISHED_HOST_PORT} (unchanged)"
+say "Time:     $(( $(date +%s) - update_started ))s"
 printf '\n'
 note "If you reverse-proxy or Tunnel to KeyPage yourself, keep pointing at the same host port. Expect brief downtime while the container restarts."
 note "Later: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"

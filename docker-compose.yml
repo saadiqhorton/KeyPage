@@ -2,8 +2,7 @@ name: keypage
 
 services:
   keypage:
-    image: keypage
-    build: .
+    image: ${KEYPAGE_IMAGE:-ghcr.io/saadiqhorton/keypage:v1}
     container_name: keypage
     ports:
       # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
