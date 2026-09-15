@@ -34,7 +34,7 @@ export function monogram(displayName: string): string {
 }
 
 export function customBadge(displayName: string): string {
-  const match = displayName.match(/[a-z0-9]/i);
+  const match = /[a-z0-9]/i.exec(displayName);
   return match ? match[0].toUpperCase() : "?";
 }
 
