@@ -206,13 +206,11 @@ else
   if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
     note "resetting tracked files to origin/${KEYPAGE_REF}; leaving ./data alone"
   fi
-  reset_to="FETCH_HEAD"
-  if git -C "${KEYPAGE_DIR}" rev-parse --verify --quiet "origin/${KEYPAGE_REF}^{commit}" >/dev/null; then
-    reset_to="origin/${KEYPAGE_REF}"
-  fi
   # Worktree+index for source files only. Pathspecs never include data/.
+  # Restore from the exact commit resolved by the fetch. A branch and tag may
+  # legally share a name, so origin/${KEYPAGE_REF} is not always FETCH_HEAD.
   if ! git -C "${KEYPAGE_DIR}" restore \
-      --source="${reset_to}" \
+      --source="${wanted}" \
       --staged --worktree \
       -- \
       . \

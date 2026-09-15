@@ -193,6 +193,8 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /\/api\/health/);
     assert.match(src, /compose up -d --build/);
     assert.match(src, /rev-parse FETCH_HEAD/);
+    assert.match(src, /--source="\$\{wanted\}"/);
+    assert.doesNotMatch(src, /--source="\$\{reset_to\}"/);
     assert.doesNotMatch(src, /reset --hard/);
     assert.doesNotMatch(src, /reset --soft /);
     assert.doesNotMatch(src, /checkout -q -B/);
