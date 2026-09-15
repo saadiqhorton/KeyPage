@@ -2,11 +2,14 @@ import type { KeyEntry } from "@keypage/shared";
 
 import { KeyEntryTags } from "@/components/keys/KeyEntryTags";
 import { KeyEntryRowActions } from "@/components/keys/KeyEntryRowActions";
+import { KeyEntryReorderControls } from "@/components/keys/KeyEntryReorderControls";
+import { useKeyEntrySortableItem } from "@/components/keys/KeyEntrySortable";
 import { KeyValueField } from "@/components/keys/KeyValueField";
 import { ServiceIcon } from "@/components/ui/ServiceIcon";
 import { formatEntryDate } from "@/lib/format";
 import { serviceDisplayName } from "@/lib/key-entry-filter";
 import { cn } from "@/lib/cn";
+import type { KeyEntryReorderProps } from "@/components/keys/key-entry-view-props";
 
 type KeyEntryCardProps = {
   entry: KeyEntry;
@@ -18,7 +21,7 @@ type KeyEntryCardProps = {
   onCopy(): void;
   onEdit(entry: KeyEntry): void;
   onDelete(entry: KeyEntry): void;
-};
+} & KeyEntryReorderProps;
 
 export function KeyEntryCard({
   entry,
@@ -30,13 +33,29 @@ export function KeyEntryCard({
   onCopy,
   onEdit,
   onDelete,
+  reorderBusy,
 }: Readonly<KeyEntryCardProps>) {
   const displayName = serviceDisplayName(entry);
+  const { setRef, style, className: sortableClassName } =
+    useKeyEntrySortableItem(entry.id);
 
   return (
-    <article className={cn("bezel-shell h-full", className)}>
+    <article
+      ref={setRef}
+      style={style}
+      className={cn(
+        "bezel-shell key-entry-sortable-item h-full",
+        sortableClassName,
+        className,
+      )}
+    >
       <div className="bezel-core flex h-full flex-col gap-4 p-5">
         <header className="flex items-start gap-3">
+          <KeyEntryReorderControls
+            entryId={entry.id}
+            entryLabel={entry.label}
+            disabled={reorderBusy}
+          />
           <ServiceIcon serviceId={entry.serviceId} size="md" />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">

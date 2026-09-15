@@ -14,6 +14,7 @@ import {
   getAppSettings,
   getKeyEntries,
   getVaultSession,
+  patchKeyEntryOrder,
   getVaultStatus,
   patchAppSettings,
   patchKeyEntry,
@@ -209,6 +210,52 @@ describe("vault and settings API wrappers", () => {
       clipboardClearSeconds: 30,
     });
     assert.deepEqual(calls, ["/api/vault/status", "/api/keys"]);
+  });
+
+  it("answers the reorder challenge with a proof bound to the order body", async () => {
+    const authKey = new Uint8Array(32).fill(7);
+    setEncryptionKey(
+      { kind: "fallback", bytes: new Uint8Array(32).fill(3) },
+      1,
+      Buffer.from(authKey).toString("base64"),
+    );
+    const body = { orderedIds: ["b", "a"] };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (String(url) === "/api/keys/challenge") {
+        return new Response(
+          JSON.stringify({ challengeId: "chal-1", nonceB64: "bm9uY2U=" }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ orderedIds: ["b", "a"] }), {
+        status: 200,
+      });
+    };
+
+    const result = await patchKeyEntryOrder(body);
+
+    assert.deepEqual(result.orderedIds, ["b", "a"]);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1]!.init?.method, "PATCH");
+    assert.equal(calls[1]!.init?.body, JSON.stringify(body));
+    const headers = new Headers(calls[1]!.init?.headers);
+    const message = keyEntryWriteAuthMessage({
+      challengeId: "chal-1",
+      nonceB64: "bm9uY2U=",
+      method: "PATCH",
+      path: "/api/keys/order",
+      bodyJson: JSON.stringify(body),
+    });
+    assert.equal(
+      verifyClientProof(
+        loginStoredKeyHexFromAuthKey(authKey),
+        message,
+        base64Decode(headers.get("x-keypage-write-proof")!),
+      ),
+      true,
+    );
   });
 
   it("POSTs setup, login challenge, login, and session touch", async () => {

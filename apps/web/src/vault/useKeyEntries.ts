@@ -1,7 +1,7 @@
 import type { KeyEntry } from "@keypage/shared";
 import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, getKeyEntries } from "@/lib/api.js";
+import { ApiError, getKeyEntries, patchKeyEntryOrder } from "@/lib/api.js";
 import { resolveClipboardClearMs } from "@/lib/clipboard-timeout.js";
 import { onKeyCleared } from "@/vault/session-keys.js";
 import type {
@@ -21,6 +21,7 @@ export type UseKeyEntriesResult = {
   createKeyEntry(input: NewKeyEntryInput): Promise<KeyEntry>;
   updateKeyEntry(id: string, input: EditKeyEntryInput): Promise<KeyEntry>;
   deleteKeyEntry(id: string): Promise<void>;
+  reorderKeyEntries(orderedIds: string[]): Promise<void>;
   noteLastUsed(id: string, lastUsedAt: string | null): void;
 };
 
@@ -109,6 +110,33 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     [ops],
   );
 
+  const reorderKeyEntries = useCallback(
+    async (orderedIds: string[]): Promise<void> => {
+      const previousIds = entries.map((entry) => entry.id);
+      const applyOrder = (current: KeyEntry[], ids: readonly string[]) => {
+        const rank = new Map(ids.map((id, index) => [id, index]));
+        return [...current].sort((left, right) => {
+          const leftRank = rank.get(left.id);
+          const rightRank = rank.get(right.id);
+          if (leftRank === undefined) return rightRank === undefined ? 0 : 1;
+          if (rightRank === undefined) return -1;
+          return leftRank - rightRank;
+        });
+      };
+      setEntries((current) => {
+        return applyOrder(current, orderedIds);
+      });
+      try {
+        const response = await patchKeyEntryOrder({ orderedIds });
+        setEntries((current) => applyOrder(current, response.orderedIds));
+      } catch (err) {
+        setEntries((current) => applyOrder(current, previousIds));
+        throw err;
+      }
+    },
+    [entries],
+  );
+
   const noteLastUsed = useCallback(
     (id: string, lastUsedAt: string | null): void => {
       setEntries((previous) =>
@@ -129,6 +157,7 @@ export function useKeyEntries(enabled: boolean): UseKeyEntriesResult {
     createKeyEntry,
     updateKeyEntry,
     deleteKeyEntry,
+    reorderKeyEntries,
     noteLastUsed,
   };
 }
