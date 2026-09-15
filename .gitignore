@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+# Vault / runtime state — compose bind-mounts ./data; never source-controlled
 data/
 *.db
 .env

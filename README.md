@@ -121,7 +121,7 @@ SQLite and all runtime state live under **`./data`** at the repository root. Doc
 | `keypage.db-wal`, `keypage.db-shm` | SQLite WAL sidecar files (present while the DB is open) |
 | `setup-token` | First-boot setup token (mode `0600`); deleted once the vault is claimed |
 
-The `data/` directory is listed in `.gitignore` - never commit your vault.
+The `data/` directory is listed in `.gitignore` and is bind-mounted (`./data` → `/app/data`). The vault lives on that volume, outside source-control reach — never commit it, and the updater will not check it out or reset it.
 
 ### Permissions (UID 1000)
 
@@ -144,7 +144,7 @@ From an existing Docker / one-line install (`~/keypage` by default), including c
 curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/update.sh | bash
 ```
 
-That fetches the updater from `main`, pulls the checkout (default branch `main`), rebuilds the image, and recreates the container. `./data` (vault / SQLite / setup-token) is left in place. The published listen port is not rewritten.
+That one command fetches the updater from `main`, advances the checkout (default branch `main`), rebuilds the image, and recreates the container. Tracked local edits are reset onto `origin/main` using pathspecs that exclude `data/`. The vault stays on the `./data` bind-mount (gitignored) and is not part of any reset or checkout. Your `.env` listen port stays in place.
 
 Once the checkout has the script:
 
@@ -152,7 +152,7 @@ Once the checkout has the script:
 cd ~/keypage && bash scripts/update.sh
 ```
 
-The updater fetches `KEYPAGE_REF` (default `main`) and moves a clean tree to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. If HEAD does not reach that ref (fetch failure or local edits), it exits before rebuild. Vault files are not deleted.
+The updater fetches `KEYPAGE_REF` (default `main`) and resets tracked source files to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. `./data` is never in those pathspecs. If origin is not the KeyPage repo, fetch fails, or vault files are tracked in git, it exits before rebuild and says so. Vault files are not deleted.
 
 For a failed upgrade, use the bounded, snapshot-based [rollback runbook](docs/rollback.md). It restores pre-upgrade data before starting an older revision because database migrations are forward-only.
 
