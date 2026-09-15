@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Commit, branch, or tag to package for a dry run
+        description: Exact 40-character lowercase commit SHA, already reachable from main, packaged for a dry run
         required: true
-        default: main
 
 permissions:
   contents: read
@@ -29,22 +28,62 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
-      - name: Check out the requested revision
+      # Trust boundary, part 1 (trusted): fetch only refs/heads/main with a
+      # pinned, credential-free action. No candidate ref is checked out yet and
+      # no script from the candidate revision has run. The provenance of
+      # refs/heads/main itself is protected by the reviewed main ruleset.
+      - name: Fetch the trusted main branch
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          ref: main
+          path: trusted-main
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Require release tags to point into main
-        if: github.event_name == 'push'
+      # Trust boundary, part 2 (trusted inline logic): prove the candidate
+      # commit is reachable from origin/main BEFORE any untrusted checkout or
+      # code execution. Dispatches must name an exact 40-character lowercase
+      # commit SHA; branch and tag names are rejected. The guard fails closed:
+      # any missing object, unreachable commit, or tool error aborts the job.
+      - name: Validate the candidate release ref before any checkout
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+          REQUESTED_REF_NAME: ${{ github.ref_name }}
         run: |
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor HEAD origin/main
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ ! "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::workflow_dispatch 'ref' must be an exact 40-character lowercase commit SHA; got: $REQUESTED_REF"
+              exit 1
+            fi
+          fi
+          if ! git -C trusted-main cat-file -e "$REQUESTED_REF^{commit}" 2>/dev/null \
+            || ! git -C trusted-main merge-base --is-ancestor "$REQUESTED_REF" HEAD; then
+            echo "::error::candidate $REQUESTED_REF is not reachable from origin/main; refusing to check it out"
+            exit 1
+          fi
+          candidate_sha=$(git -C trusted-main rev-parse "$REQUESTED_REF^{commit}")
+          echo "CANDIDATE_SHA=$candidate_sha" >> "$GITHUB_ENV"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            echo "CANDIDATE_REF_NAME=$REQUESTED_REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "CANDIDATE_REF_NAME=$candidate_sha" >> "$GITHUB_ENV"
+          fi
+
+      # The candidate tree is checked out only after the guard passed, so
+      # everything below runs reviewed code from a main ancestor.
+      - name: Check out the validated revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Create deterministic source bundle
         id: bundle
         env:
-          REQUESTED_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+          REQUESTED_REF: ${{ env.CANDIDATE_REF_NAME }}
         run: bash scripts/package-release.sh "$REQUESTED_REF"
 
       - name: Generate SPDX JSON SBOM
@@ -75,6 +114,8 @@ jobs:
             sha256sum --check SHA256SUMS
           )
 
+      # Privileged attestation steps stay isolated: they run only pinned,
+      # trusted actions over files produced by the validated tree above.
       - name: Attest release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
