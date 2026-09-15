@@ -80,7 +80,11 @@ function createSetupGate(token: string): { gate: SetupGate; consumed: () => bool
 async function buildTestApp(
   db: Database.Database,
   setupGate: SetupGate,
-  options: { requireHttpsSetup?: boolean; trustProxy?: boolean } = {},
+  options: {
+    requireHttpsSetup?: boolean;
+    allowInsecureLocalSetup?: boolean;
+    trustProxy?: boolean;
+  } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: false,
@@ -108,6 +112,7 @@ async function buildTestApp(
     db,
     setupGate,
     requireHttpsSetup: options.requireHttpsSetup ?? false,
+    allowInsecureLocalSetup: options.allowInsecureLocalSetup ?? false,
   });
   await app.ready();
   return app;
@@ -196,6 +201,7 @@ describe("vault setup HTTPS guard (SAA-223)", () => {
 
   async function start(options: {
     requireHttpsSetup?: boolean;
+    allowInsecureLocalSetup?: boolean;
     trustProxy?: boolean;
   }) {
     db = new Database(":memory:");
@@ -286,6 +292,61 @@ describe("vault setup HTTPS guard (SAA-223)", () => {
       method: "POST",
       url: "/api/vault/setup",
       headers: { "x-forwarded-proto": "http" },
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, "https_required");
+    assert.equal(isVaultInitialized(db), false);
+    assert.equal(gateBundle.consumed(), false);
+  });
+
+  it("allows the explicit cleartext recovery override for a direct loopback peer", async () => {
+    await start({ requireHttpsSetup: true, allowInsecureLocalSetup: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      remoteAddress: "127.0.0.1",
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(isVaultInitialized(db), true);
+    assert.equal(gateBundle.consumed(), true);
+  });
+
+  it("rejects the recovery override for a non-loopback peer", async () => {
+    await start({ requireHttpsSetup: true, allowInsecureLocalSetup: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      remoteAddress: "192.0.2.10",
+      payload: setupBody(SETUP_TOKEN),
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, "https_required");
+    assert.equal(isVaultInitialized(db), false);
+    assert.equal(gateBundle.consumed(), false);
+  });
+
+  it("does not let proxy-derived loopback identity enable cleartext recovery", async () => {
+    await start({
+      requireHttpsSetup: true,
+      allowInsecureLocalSetup: true,
+      trustProxy: true,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/vault/setup",
+      remoteAddress: "192.0.2.10",
+      headers: {
+        "x-forwarded-for": "127.0.0.1",
+        "x-forwarded-proto": "http",
+      },
       payload: setupBody(SETUP_TOKEN),
     });
 
