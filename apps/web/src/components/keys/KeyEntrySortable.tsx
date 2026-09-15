@@ -268,16 +268,40 @@ export function KeyEntrySortable({
         rafRef.current ??= requestAnimationFrame(flushMove);
       };
 
+      const onScroll = () => {
+        const activeId = activeIdRef.current;
+        const activeIndex = activeId ? ids.indexOf(activeId) : -1;
+        const activeNode = activeId ? nodesRef.current.get(activeId) : undefined;
+        const previousRect = rectsRef.current[activeIndex];
+        const currentRect = activeNode?.getBoundingClientRect();
+        if (!activeId || !currentRect || !previousRect) {
+          return;
+        }
+        const deltaX = currentRect.left - previousRect.left;
+        const deltaY = currentRect.top - previousRect.top;
+        rectsRef.current = rectsRef.current.map((rect) => ({
+          left: rect.left + deltaX,
+          right: rect.right + deltaX,
+          top: rect.top + deltaY,
+          bottom: rect.bottom + deltaY,
+        }));
+        const overId = overIdRef.current;
+        if (overId) {
+          applyShifts(activeId, overId);
+        }
+        rafRef.current ??= requestAnimationFrame(flushMove);
+      };
+
       detachRef.current?.();
       window.addEventListener("pointermove", onMove, { passive: true });
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
-      window.addEventListener("scroll", onCancel, true);
+      window.addEventListener("scroll", onScroll, true);
       detachRef.current = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onCancel);
-        window.removeEventListener("scroll", onCancel, true);
+        window.removeEventListener("scroll", onScroll, true);
       };
 
       function onUp() {
@@ -288,7 +312,7 @@ export function KeyEntrySortable({
         finishDrag(false);
       }
     },
-    [disabled, finishDrag, flushMove, ids, labels],
+    [applyShifts, disabled, finishDrag, flushMove, ids, labels],
   );
 
   useLayoutEffect(() => {
