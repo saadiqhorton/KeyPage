@@ -162,7 +162,7 @@ export function KeyEntrySortable({
       node.style.removeProperty("pointer-events");
       node.style.removeProperty("animation");
       node.classList.remove("is-sortable-active");
-      void node.offsetHeight;
+      node.getBoundingClientRect();
       node.style.removeProperty("transition");
     }
     document.documentElement.classList.remove(SORTING_CLASS);
@@ -265,9 +265,7 @@ export function KeyEntrySortable({
           y: moveEvent.clientY - grabOffsetRef.current.y,
         };
         pointerRef.current = { x: moveEvent.clientX, y: moveEvent.clientY };
-        if (rafRef.current === null) {
-          rafRef.current = requestAnimationFrame(flushMove);
-        }
+        rafRef.current ??= requestAnimationFrame(flushMove);
       };
 
       detachRef.current?.();
