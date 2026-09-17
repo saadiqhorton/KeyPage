@@ -104,11 +104,17 @@ write_image_override() {
 
 resolve_health_url() {
   CONTAINER_LISTEN_PORT="${DEFAULT_LISTEN_PORT}"
+  public_origin=""
   if [[ -f .env ]]; then
     env_port="$(grep -m1 '^PORT=' .env | cut -d= -f2- | tr -d ' \t\r' || true)"
     if [[ "${env_port}" =~ ^[0-9]+$ ]]; then
       CONTAINER_LISTEN_PORT="${env_port}"
     fi
+    public_origin="$(grep -m1 '^KEYPAGE_PUBLIC_ORIGIN=' .env | cut -d= -f2- | tr -d '\r' || true)"
+    public_origin="${public_origin#\"}"
+    public_origin="${public_origin%\"}"
+    public_origin="${public_origin#\'}"
+    public_origin="${public_origin%\'}"
   fi
   PUBLISHED_HOST_PORT="${CONTAINER_LISTEN_PORT}"
   published="$(compose port keypage "${CONTAINER_LISTEN_PORT}" 2>/dev/null || true)"
@@ -123,7 +129,10 @@ resolve_health_url() {
     fi
   fi
   APP_URL="http://127.0.0.1:${PUBLISHED_HOST_PORT}"
-  HEALTH_URL="${APP_URL}/api/health"
+  case "${public_origin}" in
+    http://*|https://*) HEALTH_URL="${public_origin%/}/api/health" ;;
+    *) HEALTH_URL="${APP_URL}/api/health" ;;
+  esac
 }
 
 wait_for_health() {
