@@ -504,6 +504,29 @@ exit 1
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 
+  it("polls the configured public origin when canonical-origin checks reject localhost", () => {
+    const { root, envPath } = makeInstallTree();
+    fs.appendFileSync(
+      envPath,
+      "KEYPAGE_PUBLIC_ORIGIN=https://keypage.example.com\nKEYPAGE_TRUSTED_PROXIES=192.0.2.10\n",
+    );
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, publishedPort: 18080 });
+
+    const result = runUpdate({ keypageDir: root, binDir });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(
+      calls,
+      /curl -fsS https:\/\/keypage\.example\.com\/api\/health/,
+    );
+    assert.doesNotMatch(calls, /curl -fsS http:\/\/127\.0\.0\.1:18080\/api\/health/);
+    assert.match(result.stdout, /Check health at https:\/\/keypage\.example\.com\/api\/health/);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
   it("moves a clean shallow clone to origin/KEYPAGE_REF when the remote advances", () => {
     const { remoteWork, bare, install } = seedRemoteAndShallowClone();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
