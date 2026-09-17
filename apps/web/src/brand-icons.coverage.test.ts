@@ -54,7 +54,8 @@ describe("branded KeyPage icons", () => {
 
   it("keeps the SVG mark on the KeyPage palette", () => {
     const svg = fs.readFileSync(path.join(publicDir, "favicon.svg"), "utf8");
-    assert.match(svg, /#0e1014/);
+    assert.match(svg, /#07080a/);
+    assert.match(svg, /#e8eaed/);
     assert.match(svg, /#c8a24a/);
     assert.match(svg, /aria-label="KeyPage"/);
   });
