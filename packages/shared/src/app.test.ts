@@ -30,6 +30,21 @@ describe("app constants", () => {
     assert.equal(HEALTH_STATUS_OK, "ok");
   });
 
+  it("keeps one shared health resolver across the shell scripts", () => {
+    const scripts = ["install.sh", "update.sh", "rollback.sh"].map((name) =>
+      fs.readFileSync(path.join(repoRoot, "scripts", name), "utf8"),
+    );
+    const privateResolvers = scripts.flatMap((source) =>
+      source.match(/^(?:resolve_health_url|wait_for_health)\(\)\s*\{/gm) ?? [],
+    );
+    const sharedResolvers = fs
+      .readFileSync(path.join(repoRoot, "scripts/lib/health-probe.sh"), "utf8")
+      .match(/^keypage_resolve_health_urls\(\)\s*\{/gm) ?? [];
+
+    assert.deepEqual(privateResolvers, []);
+    assert.equal(sharedResolvers.length, 1);
+  });
+
   it("keeps packaging listen-port defaults aligned with DEFAULT_LISTEN_PORT", () => {
     const envExample = fs.readFileSync(path.join(repoRoot, ".env.example"), "utf8");
     assert.match(envExample, new RegExp(`^PORT=${DEFAULT_LISTEN_PORT}$`, "m"));

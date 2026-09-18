@@ -69,8 +69,10 @@ Restore active enforcement immediately after the repair and record the event.
 
 `.github/workflows/release-artifacts.yml` runs for `v[0-9]*` tag pushes and by
 manual dispatch for a dry run. It has read-only repository access plus only the
-OIDC and attestation permissions needed for GitHub artifact provenance. It does
-not create a GitHub Release, push a tag, publish a package, or deploy.
+package-publish, OIDC, and attestation permissions needed for the artifact and
+image provenance. It does
+not create a GitHub Release, push a tag, or publish a package. A tag push also
+publishes the deployable container image; manual dry runs do not publish it.
 
 Every trigger first runs a trusted guard before any checkout: a pinned,
 credential-free fetch of `refs/heads/main` only, then trusted inline logic that
@@ -85,6 +87,15 @@ privileged attestation steps stay isolated: they run only pinned trusted
 actions over files produced by that validated tree. Fail-closed behavior is
 covered by `scripts/test-release-ref-guard.sh`, which extracts the guard block
 from the workflow itself and runs it against sandbox repositories.
+
+The annotated SemVer tag is the release version source. The tag workflow now
+publishes both the immutable commit image and the same SemVer image tag, and
+passes that tag into the image as `KEYPAGE_VERSION`. The `/api/health` version,
+the OCI `org.opencontainers.image.version` label, and the GitHub release tag
+must therefore agree. Main-branch development images use a `main-<commit>`
+version and must not be mistaken for a SemVer release. The release version is
+baked into the image, so an operator `.env` value cannot change the reported
+release identity.
 
 It emits one workflow artifact containing:
 
@@ -108,6 +119,9 @@ resolved commit SHA.
       four required contexts with a current approval.
 - [ ] Review user-visible, security, configuration, data migration, backup, and
       rollback changes since the previous release.
+- [ ] Create an off-box vault backup with [`docs/backups.md`](backups.md),
+      verify its SHA-256 sidecar on the backup destination, and complete a
+      disposable restore drill before upgrading a live instance.
 - [ ] Run a manual `Release artifacts` dry run for the exact candidate SHA.
 - [ ] Download the workflow artifact and verify it locally:
 

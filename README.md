@@ -56,6 +56,10 @@ curl -fsSL https://raw.githubusercontent.com/saadiqhorton/KeyPage/main/scripts/i
 
 Requires **Git** and **Docker** (Compose v2) on the host — not Node or pnpm. To update an existing install, use [Updates](#updates). Setup token after the one-line installer: `cat ~/keypage/data/setup-token` (or `cat ${KEYPAGE_DIR}/data/setup-token` if you overrode `KEYPAGE_DIR`).
 
+Before an upgrade, create and verify an off-box vault backup with the
+[`backup procedure`](docs/backups.md). The updater also keeps a local rollback
+snapshot, but that is not an off-box backup.
+
 Already have the repo checked out?
 
 ```bash
