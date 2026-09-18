@@ -78,5 +78,18 @@ describe("app constants", () => {
       update,
       new RegExp(`^DEFAULT_LISTEN_PORT=${DEFAULT_LISTEN_PORT}$`, "m"),
     );
+
+    // The shared health probe carries the same port as a fallback literal:
+    // update.sh runs under `curl | bash`, and rollback.sh may source it before
+    // the checkout declares one. Pin it here so the "one source of truth"
+    // claim cannot quietly become a fifth copy that drifts.
+    const healthProbe = fs.readFileSync(
+      path.join(repoRoot, "scripts/lib/health-probe.sh"),
+      "utf8",
+    );
+    assert.match(
+      healthProbe,
+      new RegExp(`\\bDEFAULT_LISTEN_PORT:-${DEFAULT_LISTEN_PORT}\\b`),
+    );
   });
 });

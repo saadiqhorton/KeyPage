@@ -20,6 +20,13 @@
 #   KEYPAGE_SKIP_GIT=1        use the current checkout (no fetch)
 #   KEYPAGE_HEALTH_ATTEMPTS   /api/health polls (default: 60)
 #   KEYPAGE_HEALTH_SLEEP_SECS seconds between polls (default: 2)
+#   KEYPAGE_HEALTH_CONNECT_TIMEOUT
+#   KEYPAGE_HEALTH_MAX_TIME   curl bounds per probe (default: 3s / 5s); keep
+#                             them finite so a blackholed public origin cannot
+#                             hold the update lock forever
+#   KEYPAGE_DEFAULT_LISTEN_PORT
+#                             last-resort probe port when neither the checkout
+#                             nor .env declares one (default: 9090)
 
 set -euo pipefail
 
@@ -277,7 +284,7 @@ cd "${KEYPAGE_DIR}"
 # an updater that cannot tell whether the service came back must not start.
 HEALTH_PROBE_LIB="${KEYPAGE_DIR}/scripts/lib/health-probe.sh"
 if [[ ! -f "${HEALTH_PROBE_LIB}" ]]; then
-  fail "updater is incomplete: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced."
+  fail "updater is incomplete: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. This checkout predates the shared probe — a stale or dirty tree (install.sh keeps the current tree when its fetch or checkout fails). Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced. Refresh the checkout, then re-run: the installer re-fetches ${KEYPAGE_REF} and checks it out without touching the ignored data/."
 fi
 # shellcheck source=lib/health-probe.sh
 . "${HEALTH_PROBE_LIB}"
@@ -474,10 +481,15 @@ if ! keypage_wait_for_health; then
   # was restarted, so the container being probed is the pre-existing healthy
   # one: stopping it would turn a probe failure into an outage, and
   # `restart: unless-stopped` does not revive a manually stopped container.
-  if [[ "${container_started}" == "1" ]] && compose stop -t 20 keypage >/dev/null 2>&1; then
-    fail "health check failed at $(keypage_health_urls_summary). The container this update started has been stopped and will not restart on its own — bring it back with: cd ${KEYPAGE_DIR} && docker compose start keypage. Logs: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+  # Branch on container_started first: whether the stop *succeeded* decides
+  # what to tell the operator, not whether the container was ours to stop.
+  if [[ "${container_started}" == "1" ]]; then
+    if compose stop -t 20 keypage >/dev/null 2>&1; then
+      fail "health check failed at $(keypage_health_urls_summary). The container this update started has been stopped and will not restart on its own — bring it back with: cd ${KEYPAGE_DIR} && docker compose start keypage. Logs: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+    fi
+    fail "health check failed at $(keypage_health_urls_summary). This update started that container and could not stop it, so it may still be running — check with: cd ${KEYPAGE_DIR} && docker compose ps. Logs: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
   fi
-  fail "health check failed at $(keypage_health_urls_summary). The running container was left untouched, because this update did not restart it. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+  fail "health check failed at $(keypage_health_urls_summary). The container reached by this probe was already running before this update, which restarted nothing, so it was left untouched. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 fi
 cutover_started=0
 ok "healthy"

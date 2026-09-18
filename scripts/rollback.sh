@@ -25,12 +25,11 @@ trap cleanup EXIT
 
 # Shared with scripts/update.sh so the rollback path cannot judge health
 # differently from the update that authorised it. This script previously
-# polled loopback only, which the API answers with 421 whenever a public
-# origin is configured and the request arrives masqueraded through the Docker
-# bridge — so a perfectly healthy target failed validation, spent every
-# attempt, and forward_recover reinstated the very candidate being rolled away
-# from. Loaded before start_revision's `git checkout`, so the functions stay
-# in memory even if the target revision has an older copy of this file.
+# polled loopback only, so a perfectly healthy target failed validation, spent
+# every attempt, and forward_recover reinstated the very candidate being rolled
+# away from (the 421 mechanics are documented in the library). Loaded before
+# start_revision's `git checkout`, so the functions stay in memory even if the
+# target revision has an older copy of this file.
 HEALTH_PROBE_LIB="$ROOT/scripts/lib/health-probe.sh"
 [[ -f "$HEALTH_PROBE_LIB" ]] || fail "missing $HEALTH_PROBE_LIB; cannot validate the rollback target"
 # shellcheck source=lib/health-probe.sh

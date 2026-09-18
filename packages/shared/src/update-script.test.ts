@@ -81,6 +81,7 @@ function makeStubBin(
     existingContainer?: boolean;
     healthFailuresBeforeSuccess?: number;
     candidateIsRunning?: boolean;
+    stopFails?: boolean;
   },
 ): void {
   if (opts.stubGit !== false) {
@@ -132,6 +133,9 @@ fi
 if [ "$1" = "compose" ] && [ "$2" = "ps" ] && [ "$3" = "-q" ]; then
   ${opts.existingContainer ? "printf '%s\\n' 'container-old'" : ":"}
   exit 0
+fi
+if [ "$1" = "compose" ] && [ "$2" = "stop" ] && [ "${opts.stopFails ? "1" : "0"}" = "1" ]; then
+  exit 1
 fi
 if [ "$1" = "info" ] || [ "$1" = "compose" ]; then
   exit 0
@@ -622,8 +626,42 @@ exit 1
     assert.doesNotMatch(calls, /compose stop/);
     assert.doesNotMatch(calls, /compose up/);
     assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
-    assert.match(`${result.stdout}\n${result.stderr}`, /did not restart it/i);
+    assert.match(`${result.stdout}\n${result.stderr}`, /restarted nothing/i);
+    assert.match(`${result.stdout}\n${result.stderr}`, /left untouched/i);
     assert.doesNotMatch(result.stdout, /container restarted/);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("says the container may still be running when a stop it attempted fails", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    // Local-build path: this run started the container and there is no cutover,
+    // so failing health reaches the "stop what we started" branch. `compose
+    // stop` then fails, which used to fall through to the already-current
+    // branch's copy — telling the operator the running container "was left
+    // untouched, because this update did not restart it" when the run had in
+    // fact restarted it and failed to stop it.
+    makeStubBin(binDir, { healthOk: false, stopFails: true });
+
+    const result = runUpdate({
+      keypageDir: root,
+      binDir,
+      extraEnv: {
+        KEYPAGE_BUILD_LOCAL: "1",
+        KEYPAGE_HEALTH_ATTEMPTS: "1",
+        KEYPAGE_HEALTH_SLEEP_SECS: "0",
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    const output = `${result.stdout}\n${result.stderr}`;
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /compose stop/, "the branch under test must attempt a stop");
+    assert.match(output, /could not stop it/i);
+    assert.doesNotMatch(output, /left untouched/i);
+    assert.doesNotMatch(output, /did not restart it/i);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
   });
