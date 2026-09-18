@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { DEFAULT_LISTEN_PORT } from "./app.js";
@@ -16,6 +16,8 @@ const repoRoot = path.resolve(
 
 const UPDATE_SH = path.join(repoRoot, "scripts/update.sh");
 const ROLLBACK_SH = path.join(repoRoot, "scripts/rollback.sh");
+const INSTALL_SH = path.join(repoRoot, "scripts/install.sh");
+const BACKUP_SH = path.join(repoRoot, "scripts/backup.sh");
 const COMPOSE_YML = path.join(repoRoot, "docker-compose.yml");
 const README = path.join(repoRoot, "README.md");
 const IMAGE_WORKFLOW = path.join(repoRoot, ".github/workflows/publish-image.yml");
@@ -24,9 +26,25 @@ const HEALTH_PROBE_LIB = path.join(repoRoot, "scripts/lib/health-probe.sh");
 const TUNNEL_PRODUCT = /cloudflared|CLOUDFLARE_TUNNEL|TUNNEL_TOKEN|TUNNEL_HOSTNAME/i;
 const DATA_WIPE =
   /rm\s+(-[a-zA-Z]*\s+)*(\.\/)?data\b|rm\s+[^\n]*data\/(keypage\.db|setup-token)|compose\s+down\s+[^\n]*-v/;
+const TEST_TEMP_DIRS = new Set<string>();
+
+afterEach(() => {
+  for (const dir of TEST_TEMP_DIRS) fs.rmSync(dir, { recursive: true, force: true });
+  TEST_TEMP_DIRS.clear();
+});
+
+function makeTrackedTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  TEST_TEMP_DIRS.add(dir);
+  return dir;
+}
 
 function readUpdateScript(): string {
   return fs.readFileSync(UPDATE_SH, "utf8");
+}
+
+function readInstallScript(): string {
+  return fs.readFileSync(INSTALL_SH, "utf8");
 }
 
 function readmeUpdatesSection(): string {
@@ -233,6 +251,115 @@ function seedRemoteAndShallowClone(opts?: { trackData?: boolean }): {
   return { remoteWork, bare, install };
 }
 
+// install.sh reaches git itself (origin verification plus a best-effort
+// refresh) before it hands off to update.sh, so its git stub must answer
+// `remote get-url` and must be able to fail the fetch. Everything else reuses
+// the update.sh stubs.
+function makeInstallStubBin(
+  binDir: string,
+  opts: { healthOk: boolean; publishedPort?: number | null; gitFetchOk?: boolean },
+): void {
+  makeStubBin(binDir, {
+    healthOk: opts.healthOk,
+    publishedPort: opts.publishedPort === undefined ? DEFAULT_LISTEN_PORT : opts.publishedPort,
+    stubGit: false,
+  });
+  writeExecutable(
+    path.join(binDir, "git"),
+    `#!/bin/sh
+echo "git $*" >> "${binDir}/calls.log"
+if printf '%s' "$*" | grep -q 'remote get-url'; then
+  printf '%s\\n' 'https://github.com/saadiqhorton/KeyPage.git'
+  exit 0
+fi
+if printf '%s' "$*" | grep -q 'fetch'; then
+  exit ${opts.gitFetchOk === false ? "1" : "0"}
+fi
+if printf '%s' "$*" | grep -q 'rev-parse'; then
+  printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+fi
+exit 0
+`,
+  );
+  // open_url would otherwise launch a real browser on the test machine.
+  for (const opener of ["xdg-open", "open", "wslview", "explorer.exe"]) {
+    writeExecutable(
+      path.join(binDir, opener),
+      `#!/bin/sh\necho "open $*" >> "${binDir}/calls.log"\nexit 0\n`,
+    );
+  }
+}
+
+// A checkout shape install.sh accepts: git metadata, the compose file, the
+// .env it reads the probe URL from, a live ./data, and the two files it shells
+// out to — update.sh and the shared probe it sources.
+function makeInstallScriptTree(opts?: { envExtra?: string }): { root: string; dataDir: string } {
+  const root = makeTrackedTempDir("keypage-install-");
+  const dataDir = path.join(root, "data");
+  fs.mkdirSync(dataDir);
+  fs.writeFileSync(path.join(dataDir, "keypage.db"), "vault-bytes");
+  fs.writeFileSync(path.join(dataDir, "setup-token"), "setup-secret", { mode: 0o600 });
+  fs.mkdirSync(path.join(root, ".git"));
+  fs.writeFileSync(
+    path.join(root, ".env"),
+    `PORT=${DEFAULT_LISTEN_PORT}\nKEYPAGE_WEB_DIR=/app/apps/web/dist\n${opts?.envExtra ?? ""}`,
+  );
+  fs.copyFileSync(COMPOSE_YML, path.join(root, "docker-compose.yml"));
+  copyHealthProbeLib(root);
+  fs.copyFileSync(UPDATE_SH, path.join(root, "scripts/update.sh"));
+  return { root, dataDir };
+}
+
+function runInstall(opts: {
+  keypageDir: string;
+  binDir: string;
+  extraEnv?: NodeJS.ProcessEnv;
+}): { status: number | null; stdout: string; stderr: string } {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `${opts.binDir}:${process.env.PATH ?? "/usr/bin"}`,
+    KEYPAGE_DIR: opts.keypageDir,
+    TERM: "dumb",
+    ...opts.extraEnv,
+  };
+  const result = spawnSync("bash", [INSTALL_SH], {
+    encoding: "utf8",
+    cwd: os.tmpdir(),
+    env,
+  });
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+}
+
+function runPiped(
+  script: string,
+  opts: { binDir: string; extraEnv?: NodeJS.ProcessEnv },
+): { status: number | null; stdout: string; stderr: string } {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  // Callers that mean to hand a directory over set it in extraEnv; the default
+  // has to stay unset, because "no directory to derive" is itself under test.
+  delete env.KEYPAGE_DIR;
+  const result = spawnSync("bash", [], {
+    encoding: "utf8",
+    input: fs.readFileSync(script, "utf8"),
+    cwd: os.tmpdir(),
+    env: {
+      ...env,
+      PATH: `${opts.binDir}:${process.env.PATH ?? "/usr/bin"}`,
+      TERM: "dumb",
+      ...opts.extraEnv,
+    },
+  });
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+}
+
 describe("scripts/update.sh contract", () => {
   it("exists as an executable bash script", () => {
     const stat = fs.statSync(UPDATE_SH);
@@ -335,6 +462,73 @@ describe("scripts/update.sh contract", () => {
     assert.match(workflow, /sbom: true/);
     assert.doesNotMatch(workflow, /uses:\s+[^\n]+@v\d+\s*$/m);
   });
+
+  it("publishes a semver-tagged image with matching runtime version metadata", () => {
+    const workflow = fs.readFileSync(
+      path.join(repoRoot, ".github/workflows/release-artifacts.yml"),
+      "utf8",
+    );
+    const dockerfile = fs.readFileSync(path.join(repoRoot, "Dockerfile"), "utf8");
+
+    assert.match(workflow, /publish-image:/);
+    assert.match(workflow, /type=raw,value=\$\{\{ github\.ref_name \}\}/);
+    assert.match(workflow, /org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}/);
+    assert.match(workflow, /org\.opencontainers\.image\.version=\$\{\{ github\.ref_name \}\}/);
+    assert.match(workflow, /KEYPAGE_VERSION=\$\{\{ github\.ref_name \}\}/);
+    assert.match(dockerfile, /ARG KEYPAGE_VERSION=dev/);
+    assert.match(dockerfile, /KEYPAGE_VERSION=\$\{KEYPAGE_VERSION\}/);
+  });
+
+  it("provides a quiesced, checksummed off-box backup path", () => {
+    const src = fs.readFileSync(BACKUP_SH, "utf8");
+    const docs = fs.readFileSync(path.join(repoRoot, "docs/backups.md"), "utf8");
+
+    assert.equal(fs.statSync(BACKUP_SH).mode & 0o111, 0o111);
+    assert.match(src, /compose .*stop keypage/);
+    assert.match(src, /compose .*start keypage/);
+    assert.match(src, /tar -C "\$\{DATA_DIR\}" -czf/);
+    assert.match(src, /sha256sum "\$\{ARCHIVE\}"/);
+    assert.match(src, /chmod 600 "\$\{ARCHIVE\}"/);
+    assert.match(docs, /off-box/i);
+    assert.match(docs, /sha256sum --check/);
+    assert.doesNotMatch(src, /compose down[^\n]*-v/);
+  });
+
+  it("writes a restorable archive and verifies its checksum", () => {
+    const root = makeTrackedTempDir("keypage-backup-root-");
+    const destination = makeTrackedTempDir("keypage-backup-destination-");
+    const binDir = makeTrackedTempDir("keypage-backup-bin-");
+    fs.mkdirSync(path.join(root, "data"));
+    fs.writeFileSync(path.join(root, "docker-compose.yml"), "services:\n  keypage:\n");
+    fs.writeFileSync(path.join(root, "data", "keypage.db"), "encrypted-vault");
+    writeExecutable(
+      path.join(binDir, "docker"),
+      "#!/bin/sh\nif [ \"$1\" = compose ]; then exit 0; fi\nexit 0\n",
+    );
+
+    const result = spawnSync("bash", [BACKUP_SH, destination], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        KEYPAGE_DIR: root,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin"}`,
+      },
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+    const archive = fs
+      .readdirSync(destination)
+      .find((name) => name.endsWith(".tar.gz"));
+    assert.ok(archive, "backup archive must be written");
+    const archivePath = path.join(destination, archive);
+    const checksum = `${archivePath}.sha256`;
+    assert.equal(spawnSync("sha256sum", ["--check", checksum], { encoding: "utf8" }).status, 0);
+    const listing = spawnSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+    assert.equal(listing.status, 0, listing.stderr);
+    assert.match(listing.stdout, /keypage\.db/);
+    assert.equal(fs.readFileSync(path.join(root, "data", "keypage.db"), "utf8"), "encrypted-vault");
+  });
 });
 
 describe("scripts/rollback.sh safety contract", () => {
@@ -360,8 +554,30 @@ describe("scripts/rollback.sh safety contract", () => {
     assert.match(src, /candidate forward-recovery start also failed/);
   });
 
+  it("reports a precondition when piped instead of dying on an unbound BASH_SOURCE", () => {
+    const binDir = makeTrackedTempDir("keypage-rollback-bin-");
+    makeStubBin(binDir, { healthOk: true });
+
+    // `curl | bash` leaves BASH_SOURCE unset (set -u) or pointing at /dev/fd/63,
+    // where dirname/.. resolves to /dev. Either way the script must name the
+    // real precondition, and must never guess at the install dir.
+    const noDir = runPiped(ROLLBACK_SH, { binDir });
+    assert.notEqual(noDir.status, 0);
+    assert.doesNotMatch(noDir.stderr, /unbound variable/);
+    assert.match(noDir.stderr, /is not a git checkout/);
+
+    // With a dir given, it gets past the dir and the shared probe, and stops on
+    // the next real precondition — no vault data touched either way.
+    const tree = makeInstallScriptTree();
+    const withDir = runPiped(ROLLBACK_SH, { binDir, extraEnv: { KEYPAGE_DIR: tree.root } });
+    assert.notEqual(withDir.status, 0);
+    assert.doesNotMatch(withDir.stderr, /unbound variable/);
+    assert.match(withDir.stderr, /KEYPAGE_ROLLBACK_TARGET must be a full 40-character commit SHA/);
+    assert.equal(fs.readFileSync(path.join(tree.dataDir, "keypage.db"), "utf8"), "vault-bytes");
+  });
+
   it("probes health through the same shared library as the updater", () => {
-    for (const file of [UPDATE_SH, ROLLBACK_SH]) {
+    for (const file of [UPDATE_SH, ROLLBACK_SH, INSTALL_SH]) {
       const name = path.basename(file);
       const src = fs.readFileSync(file, "utf8");
       assert.match(src, /scripts\/lib\/health-probe\.sh/, `${name} must load the shared probe`);
@@ -1070,5 +1286,114 @@ exit 1
     assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
+  });
+});
+
+describe("scripts/install.sh behavior", () => {
+  it("sources the shared probe and keeps no private health resolver", () => {
+    const src = readInstallScript();
+    assert.match(src, /scripts\/lib\/health-probe\.sh/);
+    assert.match(src, /\. "\$\{HEALTH_PROBE_LIB\}"/);
+    assert.match(src, /keypage_resolve_health_urls/);
+    assert.match(src, /keypage_wait_for_health/);
+    assert.match(src, new RegExp(`^DEFAULT_LISTEN_PORT=${DEFAULT_LISTEN_PORT}$`, "m"));
+    // install.sh used to carry a third, loopback-only resolver and its own poll
+    // loop, so a healthy install behind a public origin was stopped and
+    // reported as a failed update. It must not know the health path at all.
+    assert.doesNotMatch(src, /\/api\/health/);
+    assert.doesNotMatch(src, /^resolve_health_url\(\) \{/m);
+    // The only `curl` left is the usage line at the top; the probe itself lives
+    // in the shared library.
+    assert.equal((src.match(/curl/g) ?? []).length, 1);
+    assert.doesNotMatch(src, /reset --hard/);
+    assert.doesNotMatch(src, /git clean/);
+  });
+
+  it("probes the public origin before loopback and does not stop what it started healthy", () => {
+    const binDir = makeTrackedTempDir("keypage-install-bin-");
+    makeInstallStubBin(binDir, { healthOk: true });
+    const tree = makeInstallScriptTree({
+      envExtra: "KEYPAGE_PUBLIC_ORIGIN=https://keys.example\n",
+    });
+
+    const run = runInstall({
+      keypageDir: tree.root,
+      binDir,
+      extraEnv: { KEYPAGE_BUILD_LOCAL: "1" },
+    });
+
+    assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    const probes = calls.split("\n").filter((line) => line.includes("/api/health"));
+    assert.ok(probes.length > 0, `expected a health probe in:\n${calls}`);
+    assert.match(probes[0], /https:\/\/keys\.example\/api\/health/);
+    assert.doesNotMatch(calls, /compose stop/);
+    assert.match(run.stdout, /KeyPage is ready/);
+    assert.equal(fs.readFileSync(path.join(tree.dataDir, "keypage.db"), "utf8"), "vault-bytes");
+  });
+
+  it("stops the container it started when nothing answers", () => {
+    const binDir = makeTrackedTempDir("keypage-install-bin-");
+    makeInstallStubBin(binDir, { healthOk: false });
+    const tree = makeInstallScriptTree();
+
+    const run = runInstall({
+      keypageDir: tree.root,
+      binDir,
+      extraEnv: { KEYPAGE_BUILD_LOCAL: "1", KEYPAGE_HEALTH_ATTEMPTS: "2", KEYPAGE_HEALTH_SLEEP_SECS: "0" },
+    });
+
+    assert.notEqual(run.status, 0);
+    assert.match(run.stdout, /no healthy response from/);
+    assert.match(fs.readFileSync(path.join(binDir, "calls.log"), "utf8"), /compose stop -t 20 keypage/);
+    assert.doesNotMatch(run.stdout, /KeyPage is ready/);
+    assert.equal(fs.readFileSync(path.join(tree.dataDir, "keypage.db"), "utf8"), "vault-bytes");
+  });
+
+  it("skips the updater's git step only after it refreshed the checkout itself", () => {
+    const binDir = makeTrackedTempDir("keypage-install-bin-");
+    makeInstallStubBin(binDir, { healthOk: true });
+    const tree = makeInstallScriptTree();
+
+    const run = runInstall({ keypageDir: tree.root, binDir });
+
+    assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
+    assert.match(run.stdout, /KEYPAGE_SKIP_GIT=1 — using current tree/);
+    // The updater reported the only health result on this path; the installer
+    // must not re-probe with the authority to stop a verified-healthy vault.
+    assert.match(run.stdout, /health already verified by the updater/);
+    assert.equal(fs.readFileSync(path.join(tree.dataDir, "keypage.db"), "utf8"), "vault-bytes");
+  });
+
+  it("fails with tracked-source-only recovery when it cannot refresh", () => {
+    const binDir = makeTrackedTempDir("keypage-install-bin-");
+    makeInstallStubBin(binDir, { healthOk: true, gitFetchOk: false });
+    const tree = makeInstallScriptTree();
+
+    const run = runInstall({ keypageDir: tree.root, binDir });
+
+    assert.notEqual(run.status, 0);
+    assert.match(run.stdout, /checkout was not handed to the updater/);
+    assert.match(run.stdout, /Recovery commands: cd .*git status --short; git fetch .*git restore .*\(exclude\)data/);
+    assert.doesNotMatch(run.stdout, /KEYPAGE_SKIP_GIT=1 — using current tree/);
+    assert.doesNotMatch(run.stdout, /reset --hard/);
+    assert.equal(fs.readFileSync(path.join(tree.dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    assert.equal(fs.readFileSync(path.join(tree.dataDir, "setup-token"), "utf8"), "setup-secret");
+  });
+
+  it("refuses a checkout older than the shared probe before touching .env or ./data", () => {
+    const binDir = makeTrackedTempDir("keypage-install-bin-");
+    makeInstallStubBin(binDir, { healthOk: true, gitFetchOk: true });
+    const tree = makeInstallScriptTree();
+    fs.rmSync(path.join(tree.root, "scripts/lib"), { recursive: true, force: true });
+    const envBefore = fs.readFileSync(path.join(tree.root, ".env"), "utf8");
+
+    const run = runInstall({ keypageDir: tree.root, binDir });
+
+    assert.notEqual(run.status, 0);
+    assert.match(run.stdout, /installer cannot verify this checkout/);
+    assert.match(run.stdout, /health-probe\.sh is missing/);
+    assert.equal(fs.readFileSync(path.join(tree.root, ".env"), "utf8"), envBefore);
+    assert.equal(fs.readFileSync(path.join(tree.dataDir, "keypage.db"), "utf8"), "vault-bytes");
   });
 });

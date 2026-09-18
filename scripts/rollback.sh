@@ -3,7 +3,21 @@
 # starting the older application revision.
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# Piped `curl | bash` leaves BASH_SOURCE unset (set -u) or pointing at a stdin
+# path such as /dev/fd/63, where `dirname` / `..` resolves to /dev. Same guard
+# as scripts/update.sh: this script used to die with "BASH_SOURCE[0]: unbound
+# variable", which reads as a corrupt file rather than a wrong invocation.
+_self="${BASH_SOURCE[0]:-}"
+case "${_self}" in
+  ""|/dev/fd/*|/dev/stdin|/proc/self/fd/*|-)
+    # No checkout to derive the install dir from. Match update.sh's bootstrap
+    # convention, while still validating the fallback before touching data.
+    ROOT="${KEYPAGE_DIR:-$HOME/keypage}"
+    ;;
+  *)
+    ROOT=$(cd "$(dirname "${_self}")/.." && pwd)
+    ;;
+esac
 TARGET="${KEYPAGE_ROLLBACK_TARGET:-}"
 CANDIDATE="${KEYPAGE_CANDIDATE_SHA:-}"
 SNAPSHOT="${KEYPAGE_ROLLBACK_SNAPSHOT:-}"
@@ -22,6 +36,8 @@ cleanup() {
   [[ -z "$STAGE_DIR" || ! -d "$STAGE_DIR" ]] || rm -rf -- "$STAGE_DIR"
 }
 trap cleanup EXIT
+
+[[ -d "$ROOT/.git" ]] || fail "$ROOT is not a git checkout: run this from the checkout (bash scripts/rollback.sh) or set KEYPAGE_DIR. Live data was not touched."
 
 # Shared with scripts/update.sh so the rollback path cannot judge health
 # differently from the update that authorised it. This script previously
