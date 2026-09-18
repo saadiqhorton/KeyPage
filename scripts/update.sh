@@ -20,6 +20,13 @@
 #   KEYPAGE_SKIP_GIT=1        use the current checkout (no fetch)
 #   KEYPAGE_HEALTH_ATTEMPTS   /api/health polls (default: 60)
 #   KEYPAGE_HEALTH_SLEEP_SECS seconds between polls (default: 2)
+#   KEYPAGE_HEALTH_CONNECT_TIMEOUT
+#   KEYPAGE_HEALTH_MAX_TIME   curl bounds per probe (default: 3s / 5s); keep
+#                             them finite so a blackholed public origin cannot
+#                             hold the update lock forever
+#   KEYPAGE_DEFAULT_LISTEN_PORT
+#                             last-resort probe port when neither the checkout
+#                             nor .env declares one (default: 9090)
 
 set -euo pipefail
 
@@ -51,8 +58,6 @@ KEYPAGE_REF="${KEYPAGE_REF:-main}"
 KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
-HEALTH_ATTEMPTS="${KEYPAGE_HEALTH_ATTEMPTS:-60}"
-HEALTH_SLEEP_SECS="${KEYPAGE_HEALTH_SLEEP_SECS:-2}"
 
 if [[ -z "${KEYPAGE_DIR:-}" ]]; then
   if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
@@ -102,53 +107,9 @@ write_image_override() {
   mv -f "${tmp}" "${KEYPAGE_DIR}/docker-compose.override.yml"
 }
 
-resolve_health_url() {
-  CONTAINER_LISTEN_PORT="${DEFAULT_LISTEN_PORT}"
-  public_origin=""
-  if [[ -f .env ]]; then
-    env_port="$(grep -m1 '^PORT=' .env | cut -d= -f2- | tr -d ' \t\r' || true)"
-    if [[ "${env_port}" =~ ^[0-9]+$ ]]; then
-      CONTAINER_LISTEN_PORT="${env_port}"
-    fi
-    public_origin="$(grep -m1 '^KEYPAGE_PUBLIC_ORIGIN=' .env | cut -d= -f2- | tr -d '\r' || true)"
-    public_origin="${public_origin#\"}"
-    public_origin="${public_origin%\"}"
-    public_origin="${public_origin#\'}"
-    public_origin="${public_origin%\'}"
-  fi
-  PUBLISHED_HOST_PORT="${CONTAINER_LISTEN_PORT}"
-  published="$(compose port keypage "${CONTAINER_LISTEN_PORT}" 2>/dev/null || true)"
-  if [[ -z "${published}" && "${CONTAINER_LISTEN_PORT}" != "${DEFAULT_LISTEN_PORT}" ]]; then
-    published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
-  fi
-  if [[ "${published}" == *:* ]]; then
-    derived="${published##*:}"
-    derived="${derived//$'\r'/}"
-    if [[ "${derived}" =~ ^[0-9]+$ ]]; then
-      PUBLISHED_HOST_PORT="${derived}"
-    fi
-  fi
-  APP_URL="http://127.0.0.1:${PUBLISHED_HOST_PORT}"
-  case "${public_origin}" in
-    http://*|https://*) HEALTH_URL="${public_origin%/}/api/health" ;;
-    *) HEALTH_URL="${APP_URL}/api/health" ;;
-  esac
-}
-
-wait_for_health() {
-  local healthy=0 health_body=""
-  resolve_health_url
-  for _ in $(seq 1 "${HEALTH_ATTEMPTS}"); do
-    if health_body="$(curl -fsS "${HEALTH_URL}" 2>/dev/null)"; then
-      if printf '%s' "${health_body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
-        healthy=1
-        break
-      fi
-    fi
-    sleep "${HEALTH_SLEEP_SECS}"
-  done
-  [[ "${healthy}" -eq 1 ]]
-}
+# Health probing lives in scripts/lib/health-probe.sh, shared with
+# scripts/rollback.sh so the updater and the rollback path cannot disagree
+# about what "healthy" means. Sourced below, once the checkout is present.
 
 # Normalize a git remote URL to host/owner/repo (lowercase, no .git).
 # Treats HTTPS, ssh://, and SCP-style (git@host:owner/repo) as equivalent.
@@ -318,6 +279,20 @@ fi
 
 cd "${KEYPAGE_DIR}"
 
+# The probe is sourced from the checkout rather than defined here so that
+# rollback.sh cannot drift from it. Fail before any cutover if it is missing:
+# an updater that cannot tell whether the service came back must not start.
+HEALTH_PROBE_LIB="${KEYPAGE_DIR}/scripts/lib/health-probe.sh"
+if [[ ! -f "${HEALTH_PROBE_LIB}" ]]; then
+  fail "updater is incomplete: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. This checkout predates the shared probe — a stale or dirty tree (install.sh keeps the current tree when its fetch or checkout fails). Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced. Refresh the checkout, then re-run: the installer re-fetches ${KEYPAGE_REF} and checks it out without touching the ignored data/."
+fi
+# shellcheck source=lib/health-probe.sh
+. "${HEALTH_PROBE_LIB}"
+# Resolved here as well as before the health stage: restore_previous() can run
+# from a trap or from a failed `compose up` long before that stage, and it must
+# never poll an empty URL list (which would look like a dead service).
+keypage_resolve_health_urls "${KEYPAGE_DIR}"
+
 # Heal only the dead KEYPAGE_WEB_DIR=/app/web sentinel (same as install.sh).
 # Do not rewrite listen-port settings in an existing .env.
 if [[ -f .env ]] && grep -qx 'KEYPAGE_WEB_DIR=/app/web' .env; then
@@ -345,6 +320,10 @@ fi
 cutover_started=0
 rollback_ready=0
 old_stop_started=0
+# Whether this run started a container. Distinguishes "we brought something up
+# and it is unhealthy" (stop it, nothing else is serving) from "we changed
+# nothing and inherited a running container" (leave it alone).
+container_started=0
 old_image_ref=""
 snapshot_dir=""
 
@@ -353,23 +332,34 @@ cleanup_lock() {
 }
 
 restore_previous() {
-  local reason="$1" failed_data
+  local reason="$1" failed_data stage_data
   [[ "${rollback_ready}" == "1" ]] || return 1
   warn "${reason}; restoring the previous KeyPage image and data"
   compose stop -t 20 keypage >/dev/null 2>&1 || true
   failed_data="${STATE_DIR}/failed-data-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  if [[ -d data ]]; then
-    if ! mv data "${failed_data}"; then
-      warn "automatic restore could not preserve the failed data; snapshot remains at ${snapshot_dir}"
-      return 1
-    fi
-  fi
-  if ! mkdir -p data; then
-    warn "automatic restore could not create the data directory; snapshot remains at ${snapshot_dir}"
+  # Stage the snapshot copy *before* moving the live data aside. Copying
+  # straight into ./data after `mv data` left an empty but perfectly bootable
+  # data directory whenever the copy failed — a full disk is the realistic
+  # case — and the documented remedy, re-running the updater, would then boot
+  # a blank vault over the operator's data. A failed restore must leave the
+  # live data where it is.
+  stage_data="${STATE_DIR}/restore-data-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  if ! mkdir -p "${stage_data}"; then
+    warn "automatic restore could not stage the snapshot; live data was left untouched and the snapshot remains at ${snapshot_dir}"
     return 1
   fi
-  if ! cp -a "${snapshot_dir}/data/." data/; then
-    warn "automatic restore could not copy the complete snapshot; the old image was not started and snapshot remains at ${snapshot_dir}"
+  if ! cp -a "${snapshot_dir}/data/." "${stage_data}/"; then
+    rm -rf -- "${stage_data}"
+    warn "automatic restore could not copy the complete snapshot; live data was left untouched, the old image was not started, and the snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  if [[ -d data ]] && ! mv data "${failed_data}"; then
+    rm -rf -- "${stage_data}"
+    warn "automatic restore could not preserve the failed data; live data was left untouched and the snapshot remains at ${snapshot_dir}"
+    return 1
+  fi
+  if ! mv "${stage_data}" data; then
+    warn "automatic restore could not install the staged snapshot; failed update data is at ${failed_data} and the snapshot remains at ${snapshot_dir}"
     return 1
   fi
   if ! write_image_override "${old_image_ref}"; then
@@ -380,8 +370,9 @@ restore_previous() {
     warn "automatic restore could not start; preserved failed data at ${failed_data} and snapshot at ${snapshot_dir}"
     return 1
   fi
-  if ! wait_for_health; then
-    warn "previous image restarted but did not become healthy; snapshot remains at ${snapshot_dir}"
+  container_started=1
+  if ! keypage_wait_for_health; then
+    warn "previous image restarted but did not become healthy at $(keypage_health_urls_summary); snapshot remains at ${snapshot_dir}"
     return 1
   fi
   old_stop_started=0
@@ -405,6 +396,7 @@ trap on_signal INT TERM
 if [[ "${KEYPAGE_BUILD_LOCAL:-}" == "1" ]]; then
   note "KEYPAGE_BUILD_LOCAL=1 — building from this checkout"
   compose -f docker-compose.yml -f docker-compose.build.yml up -d --build keypage
+  container_started=1
 else
   if [[ ! "${wanted:-}" =~ ^[0-9a-f]{40}$ ]]; then
     fail "cannot select an exact published image because the checkout commit is unavailable"
@@ -462,24 +454,42 @@ else
       fi
       fail "update failed and automatic restore needs attention; snapshot is ${snapshot_dir}"
     fi
+    container_started=1
   fi
 fi
-ok "container restarted"
-resolve_health_url
+if [[ "${container_started}" == "1" ]]; then
+  ok "container restarted"
+fi
+keypage_resolve_health_urls "${KEYPAGE_DIR}"
 
 # ── 4. Health ─────────────────────────────────────────────────────────────
 stage "Check health at ${HEALTH_URL}"
 
 note "waiting for health"
-if ! wait_for_health; then
-  if [[ "${cutover_started}" == "1" ]] && restore_previous "new version failed its health check"; then
-    cutover_started=0
-    fail "update failed; the previous healthy version and matching data were restored"
+if ! keypage_wait_for_health; then
+  if [[ "${cutover_started}" == "1" ]]; then
+    if restore_previous "new version failed its health check"; then
+      cutover_started=0
+      fail "update failed; the previous healthy version and matching data were restored"
+    fi
+    # The old container was stopped for the snapshot and the restore did not
+    # finish, so the service is down. Say so: an operator reading "health check
+    # failed" will go looking at the new version, not at a stopped container.
+    fail "health check failed at $(keypage_health_urls_summary) and the automatic restore did not complete, so KeyPage is probably stopped. Vault data was not deleted; the pre-upgrade snapshot is at ${snapshot_dir}. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
   fi
-  if [[ "${cutover_started}" != "1" ]]; then
-    compose stop -t 20 keypage >/dev/null 2>&1 || true
+  # Only stop what this run started. On the already-current-image path nothing
+  # was restarted, so the container being probed is the pre-existing healthy
+  # one: stopping it would turn a probe failure into an outage, and
+  # `restart: unless-stopped` does not revive a manually stopped container.
+  # Branch on container_started first: whether the stop *succeeded* decides
+  # what to tell the operator, not whether the container was ours to stop.
+  if [[ "${container_started}" == "1" ]]; then
+    if compose stop -t 20 keypage >/dev/null 2>&1; then
+      fail "health check failed at $(keypage_health_urls_summary). The container this update started has been stopped and will not restart on its own — bring it back with: cd ${KEYPAGE_DIR} && docker compose start keypage. Logs: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+    fi
+    fail "health check failed at $(keypage_health_urls_summary). This update started that container and could not stop it, so it may still be running — check with: cd ${KEYPAGE_DIR} && docker compose ps. Logs: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
   fi
-  fail "health check failed at ${HEALTH_URL}. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
+  fail "health check failed at $(keypage_health_urls_summary). The container reached by this probe was already running before this update, which restarted nothing, so it was left untouched. Check: cd ${KEYPAGE_DIR} && docker compose logs -f keypage"
 fi
 cutover_started=0
 ok "healthy"

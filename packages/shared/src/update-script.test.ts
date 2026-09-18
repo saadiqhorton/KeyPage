@@ -19,6 +19,7 @@ const ROLLBACK_SH = path.join(repoRoot, "scripts/rollback.sh");
 const COMPOSE_YML = path.join(repoRoot, "docker-compose.yml");
 const README = path.join(repoRoot, "README.md");
 const IMAGE_WORKFLOW = path.join(repoRoot, ".github/workflows/publish-image.yml");
+const HEALTH_PROBE_LIB = path.join(repoRoot, "scripts/lib/health-probe.sh");
 
 const TUNNEL_PRODUCT = /cloudflared|CLOUDFLARE_TUNNEL|TUNNEL_TOKEN|TUNNEL_HOSTNAME/i;
 const DATA_WIPE =
@@ -40,6 +41,15 @@ function writeExecutable(filePath: string, body: string): void {
   fs.writeFileSync(filePath, body, { mode: 0o755 });
 }
 
+// update.sh sources its health probe from the install tree, because a real
+// install is a clone of this repo. An install fixture without scripts/ is not
+// a shape that can exist, so every fixture here carries the library.
+function copyHealthProbeLib(destRoot: string): void {
+  const dest = path.join(destRoot, "scripts/lib/health-probe.sh");
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(HEALTH_PROBE_LIB, dest);
+}
+
 function makeInstallTree(): { root: string; dataDir: string; envPath: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-"));
   const dataDir = path.join(root, "data");
@@ -49,6 +59,7 @@ function makeInstallTree(): { root: string; dataDir: string; envPath: string } {
   const envPath = path.join(root, ".env");
   fs.writeFileSync(envPath, `PORT=${DEFAULT_LISTEN_PORT}\nKEYPAGE_WEB_DIR=/app/apps/web/dist\n`);
   fs.copyFileSync(COMPOSE_YML, path.join(root, "docker-compose.yml"));
+  copyHealthProbeLib(root);
   return { root, dataDir, envPath };
 }
 
@@ -69,6 +80,8 @@ function makeStubBin(
     pullOk?: boolean;
     existingContainer?: boolean;
     healthFailuresBeforeSuccess?: number;
+    candidateIsRunning?: boolean;
+    stopFails?: boolean;
   },
 ): void {
   if (opts.stubGit !== false) {
@@ -114,12 +127,15 @@ if [ "$1" = "pull" ] && [ "${opts.pullOk === false ? "0" : "1"}" = "0" ]; then
   exit 1
 fi
 if [ "$1" = "inspect" ] && printf '%s' "$*" | grep -q '{{.Image}}'; then
-  printf '%s\n' 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+  printf '%s\n' '${opts.candidateIsRunning ? "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}'
   exit 0
 fi
 if [ "$1" = "compose" ] && [ "$2" = "ps" ] && [ "$3" = "-q" ]; then
   ${opts.existingContainer ? "printf '%s\\n' 'container-old'" : ":"}
   exit 0
+fi
+if [ "$1" = "compose" ] && [ "$2" = "stop" ] && [ "${opts.stopFails ? "1" : "0"}" = "1" ]; then
+  exit 1
 fi
 if [ "$1" = "info" ] || [ "$1" = "compose" ]; then
   exit 0
@@ -202,11 +218,12 @@ function seedRemoteAndShallowClone(opts?: { trackData?: boolean }): {
   fs.writeFileSync(path.join(remoteWork, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
   fs.mkdirSync(path.join(remoteWork, "data"));
   fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "vault-bytes");
+  copyHealthProbeLib(remoteWork);
   if (opts?.trackData) {
-    git(remoteWork, ["add", "docker-compose.yml", ".env", "data/keypage.db"]);
+    git(remoteWork, ["add", "docker-compose.yml", ".env", "data/keypage.db", "scripts"]);
   } else {
     fs.writeFileSync(path.join(remoteWork, ".gitignore"), "data/\n.env\n");
-    git(remoteWork, ["add", "docker-compose.yml", ".gitignore"]);
+    git(remoteWork, ["add", "docker-compose.yml", ".gitignore", "scripts"]);
   }
   git(remoteWork, ["commit", "-m", "initial"]);
   git(remoteWork, ["clone", "--bare", remoteWork, bare]);
@@ -278,7 +295,15 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /ls-files -- "data"/);
     assert.match(src, /ls-tree -r --name-only/);
     assert.match(src, /bind-mount, outside source control/);
-    assert.match(src, /if ! cp -a "\$\{snapshot_dir\}\/data\/\." data\//);
+    // Restore stages the snapshot copy before it moves live data aside. Moving
+    // first is what left a bootable-but-empty ./data after a copy failure, and
+    // the documented remedy (re-run the updater) would then boot a blank vault
+    // over the operator's data.
+    assert.match(src, /if ! cp -a "\$\{snapshot_dir\}\/data\/\." "\$\{stage_data\}\/"/);
+    const stagedCopy = src.indexOf('if ! cp -a "${snapshot_dir}/data/." "${stage_data}/"');
+    const liveMove = src.indexOf('if [[ -d data ]] && ! mv data "${failed_data}"');
+    assert.ok(stagedCopy >= 0, "restore must copy the snapshot into a staging dir");
+    assert.ok(liveMove > stagedCopy, "live data must move aside only after the copy succeeds");
     assert.match(src, /old image was not started/);
     assert.match(src, /old_stop_started=1/);
     assert.match(src, /compose start keypage/);
@@ -330,9 +355,24 @@ describe("scripts/rollback.sh safety contract", () => {
   it("uses candidate forward recovery for target build and health failures", () => {
     const src = fs.readFileSync(ROLLBACK_SH, "utf8");
     assert.match(src, /forward_recover "rollback target build\/start failed"/);
-    assert.match(src, /forward_recover "rollback target failed health validation"/);
+    assert.match(src, /forward_recover "rollback target failed health validation/);
     assert.match(src, /start_revision "\$CANDIDATE" "\$CANDIDATE_IMAGE_REF"/);
     assert.match(src, /candidate forward-recovery start also failed/);
+  });
+
+  it("probes health through the same shared library as the updater", () => {
+    for (const file of [UPDATE_SH, ROLLBACK_SH]) {
+      const name = path.basename(file);
+      const src = fs.readFileSync(file, "utf8");
+      assert.match(src, /scripts\/lib\/health-probe\.sh/, `${name} must load the shared probe`);
+      assert.match(src, /keypage_resolve_health_urls/, `${name} must resolve probe URLs`);
+      assert.match(src, /keypage_wait_for_health/, `${name} must poll through the shared probe`);
+      // A local reimplementation is how the two scripts drifted apart: the
+      // rollback path polled loopback only, so a healthy target failed
+      // validation and forward_recover reinstated the candidate being rolled
+      // away from.
+      assert.doesNotMatch(src, /^wait_for_health\(\)/m, `${name} must not define its own probe`);
+    }
   });
 });
 
@@ -428,7 +468,11 @@ describe("scripts/update.sh behavior", () => {
       /keypage-rollback:/,
     );
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
-    assert.ok(calls.indexOf("pull --quiet") < calls.indexOf("compose stop"));
+    const pullAt = calls.indexOf("pull --quiet");
+    const stopAt = calls.indexOf("compose stop");
+    assert.notEqual(pullAt, -1, "expected a registry pull");
+    assert.notEqual(stopAt, -1, "expected a container stop");
+    assert.ok(pullAt < stopAt);
     assert.match(calls, /image tag sha256:d{64} keypage-rollback:/);
     assert.match(calls, /compose up -d --no-build --pull never keypage/);
     assert.match(`${result.stdout}\n${result.stderr}`, /previous healthy version and matching data were restored/i);
@@ -460,10 +504,21 @@ exit 1
     });
 
     assert.notEqual(result.status, 0);
-    assert.equal(fs.existsSync(path.join(dataDir, "keypage.db")), false);
+    // The failed restore must leave the live vault where it is. Live data used
+    // to be moved aside before the copy was attempted, so a copy failure left
+    // an empty but perfectly bootable ./data — and the documented remedy,
+    // re-running the updater, would then boot a blank vault over real data.
+    assert.equal(fs.existsSync(path.join(dataDir, "keypage.db")), true);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    assert.equal(fs.readFileSync(path.join(dataDir, "setup-token"), "utf8"), "setup-secret");
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
     assert.equal(calls.match(/compose up -d --no-build --pull never keypage/g)?.length, 1);
     assert.match(`${result.stdout}\n${result.stderr}`, /old image was not started/i);
+    assert.match(`${result.stdout}\n${result.stderr}`, /live data was left untouched/i);
+    assert.match(
+      fs.readFileSync(path.join(root, "docker-compose.override.yml"), "utf8"),
+      /@sha256:bbbb/,
+    );
     assert.ok(fs.readdirSync(path.join(root, ".keypage", "snapshots")).length > 0);
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
@@ -499,19 +554,30 @@ exit 1
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
     assert.match(calls, /compose port keypage /);
-    assert.match(calls, /curl -fsS http:\/\/127\.0\.0\.1:18080\/api\/health/);
+    assert.match(
+      calls,
+      /curl -fsS --connect-timeout 3 --max-time 5 http:\/\/127\.0\.0\.1:18080\/api\/health/,
+    );
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 
-  it("polls the configured public origin when canonical-origin checks reject localhost", () => {
+  it("probes the public origin first and falls back to loopback", () => {
     const { root, envPath } = makeInstallTree();
     fs.appendFileSync(
       envPath,
       "KEYPAGE_PUBLIC_ORIGIN=https://keypage.example.com\nKEYPAGE_TRUSTED_PROXIES=192.0.2.10\n",
     );
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
-    makeStubBin(binDir, { healthOk: true, publishedPort: 18080 });
+    // The public origin fails its first probe. A hostname that resolves but is
+    // not reachable from the box is the shape that made the old single-URL
+    // probe declare a healthy vault dead — and a rollback reinstates the
+    // candidate, so that recovery never converged.
+    makeStubBin(binDir, {
+      healthOk: true,
+      publishedPort: 18080,
+      healthFailuresBeforeSuccess: 1,
+    });
 
     const result = runUpdate({ keypageDir: root, binDir });
 
@@ -519,10 +585,102 @@ exit 1
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
     assert.match(
       calls,
-      /curl -fsS https:\/\/keypage\.example\.com\/api\/health/,
+      /curl -fsS --connect-timeout 3 --max-time 5 https:\/\/keypage\.example\.com\/api\/health/,
     );
-    assert.doesNotMatch(calls, /curl -fsS http:\/\/127\.0\.0\.1:18080\/api\/health/);
+    assert.match(
+      calls,
+      /curl -fsS --connect-timeout 3 --max-time 5 http:\/\/127\.0\.0\.1:18080\/api\/health/,
+    );
+    assert.ok(
+      calls.indexOf("https://keypage.example.com/api/health") <
+        calls.indexOf("http://127.0.0.1:18080/api/health"),
+      "the public origin must be probed before the loopback fallback",
+    );
     assert.match(result.stdout, /Check health at https:\/\/keypage\.example\.com\/api\/health/);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("does not stop a container it did not restart when the running image is already current", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    // Already on the candidate image: the updater writes the override and
+    // restarts nothing, so the container it probes is the pre-existing healthy
+    // one. Failing the probe must not take the vault offline.
+    makeStubBin(binDir, {
+      healthOk: false,
+      existingContainer: true,
+      candidateIsRunning: true,
+    });
+
+    const result = runUpdate({
+      keypageDir: root,
+      binDir,
+      extraEnv: { KEYPAGE_HEALTH_ATTEMPTS: "1", KEYPAGE_HEALTH_SLEEP_SECS: "0" },
+    });
+
+    assert.notEqual(result.status, 0);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    // `restart: unless-stopped` does not revive a container stopped by hand,
+    // and the message this path used to print never said it had stopped one.
+    assert.doesNotMatch(calls, /compose stop/);
+    assert.doesNotMatch(calls, /compose up/);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    assert.match(`${result.stdout}\n${result.stderr}`, /restarted nothing/i);
+    assert.match(`${result.stdout}\n${result.stderr}`, /left untouched/i);
+    assert.doesNotMatch(result.stdout, /container restarted/);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("says the container may still be running when a stop it attempted fails", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    // Local-build path: this run started the container and there is no cutover,
+    // so failing health reaches the "stop what we started" branch. `compose
+    // stop` then fails, which used to fall through to the already-current
+    // branch's copy — telling the operator the running container "was left
+    // untouched, because this update did not restart it" when the run had in
+    // fact restarted it and failed to stop it.
+    makeStubBin(binDir, { healthOk: false, stopFails: true });
+
+    const result = runUpdate({
+      keypageDir: root,
+      binDir,
+      extraEnv: {
+        KEYPAGE_BUILD_LOCAL: "1",
+        KEYPAGE_HEALTH_ATTEMPTS: "1",
+        KEYPAGE_HEALTH_SLEEP_SECS: "0",
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    const output = `${result.stdout}\n${result.stderr}`;
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /compose stop/, "the branch under test must attempt a stop");
+    assert.match(output, /could not stop it/i);
+    assert.doesNotMatch(output, /left untouched/i);
+    assert.doesNotMatch(output, /did not restart it/i);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("fails closed before any cutover when the shared probe is missing", () => {
+    const { root, dataDir } = makeInstallTree();
+    fs.rmSync(path.join(root, "scripts"), { recursive: true, force: true });
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, existingContainer: true });
+
+    const result = runUpdate({ keypageDir: root, binDir });
+
+    assert.notEqual(result.status, 0);
+    const calls = fs.existsSync(path.join(binDir, "calls.log"))
+      ? fs.readFileSync(path.join(binDir, "calls.log"), "utf8")
+      : "";
+    assert.doesNotMatch(calls, /compose stop|compose up|pull --quiet/);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    assert.match(`${result.stdout}\n${result.stderr}`, /health check cannot run/i);
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });
   });
@@ -741,6 +899,7 @@ exit 1
     fs.writeFileSync(path.join(dataDir, "keypage.db"), "vault-bytes");
     fs.writeFileSync(path.join(install, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
     fs.copyFileSync(COMPOSE_YML, path.join(install, "docker-compose.yml"));
+    copyHealthProbeLib(install);
 
     const fakeRepo = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-fake-"));
     fs.copyFileSync(COMPOSE_YML, path.join(fakeRepo, "docker-compose.yml"));
@@ -904,7 +1063,10 @@ exit 1
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
-    assert.match(calls, /curl -fsS http:\/\/127\.0\.0\.1:18081\/api\/health/);
+    assert.match(
+      calls,
+      /curl -fsS --connect-timeout 3 --max-time 5 http:\/\/127\.0\.0\.1:18081\/api\/health/,
+    );
     assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(binDir, { recursive: true, force: true });

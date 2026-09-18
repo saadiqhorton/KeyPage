@@ -7,8 +7,6 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TARGET="${KEYPAGE_ROLLBACK_TARGET:-}"
 CANDIDATE="${KEYPAGE_CANDIDATE_SHA:-}"
 SNAPSHOT="${KEYPAGE_ROLLBACK_SNAPSHOT:-}"
-ATTEMPTS="${KEYPAGE_HEALTH_ATTEMPTS:-60}"
-SLEEP_SECS="${KEYPAGE_HEALTH_SLEEP_SECS:-2}"
 DATA_DIR="$ROOT/data"
 IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 STAGE_DIR=""
@@ -24,6 +22,18 @@ cleanup() {
   [[ -z "$STAGE_DIR" || ! -d "$STAGE_DIR" ]] || rm -rf -- "$STAGE_DIR"
 }
 trap cleanup EXIT
+
+# Shared with scripts/update.sh so the rollback path cannot judge health
+# differently from the update that authorised it. This script previously
+# polled loopback only, so a perfectly healthy target failed validation, spent
+# every attempt, and forward_recover reinstated the very candidate being rolled
+# away from (the 421 mechanics are documented in the library). Loaded before
+# start_revision's `git checkout`, so the functions stay in memory even if the
+# target revision has an older copy of this file.
+HEALTH_PROBE_LIB="$ROOT/scripts/lib/health-probe.sh"
+[[ -f "$HEALTH_PROBE_LIB" ]] || fail "missing $HEALTH_PROBE_LIB; cannot validate the rollback target"
+# shellcheck source=lib/health-probe.sh
+. "$HEALTH_PROBE_LIB"
 
 write_image_override() {
   local image_ref="$1" tmp
@@ -122,16 +132,11 @@ if ! start_revision "$TARGET" "$TARGET_IMAGE_REF"; then
   forward_recover "rollback target build/start failed"
 fi
 
-port=$(compose port keypage 9090 2>/dev/null || true)
-port="${port##*:}"
-[[ "$port" =~ ^[0-9]+$ ]] || port=9090
-for _ in $(seq 1 "$ATTEMPTS"); do
-  body=$(curl -fsS "http://127.0.0.1:${port}/api/health" 2>/dev/null || true)
-  if printf '%s' "$body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
-    printf 'rollback: healthy target=%s snapshot=%s port=%s\n' "$TARGET" "$SNAPSHOT" "$port"
-    exit 0
-  fi
-  sleep "$SLEEP_SECS"
-done
+keypage_resolve_health_urls "$ROOT"
+if keypage_wait_for_health; then
+  printf 'rollback: healthy target=%s snapshot=%s via=%s port=%s\n' \
+    "$TARGET" "$SNAPSHOT" "${HEALTH_URL_USED}" "$PUBLISHED_HOST_PORT"
+  exit 0
+fi
 
-forward_recover "rollback target failed health validation"
+forward_recover "rollback target failed health validation at $(keypage_health_urls_summary)"

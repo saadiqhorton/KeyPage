@@ -22,7 +22,7 @@ export KEYPAGE_ROLLBACK_SNAPSHOT=/absolute/path/keypage-pre-upgrade.tgz
 bash scripts/rollback.sh
 ```
 
-The script refuses a dirty tree, abbreviated SHAs, a non-ancestor target, or a missing snapshot. Before stopping Compose, it rejects unsafe archive paths, links, special files, empty or unrecognized archives, and extracts the snapshot into a staging directory. It then moves the current `./data` directory aside instead of deleting it, installs the validated staged directory, checks out the target in detached mode, rebuilds, and polls `/api/health` on the published port.
+The script refuses a dirty tree, abbreviated SHAs, a non-ancestor target, or a missing snapshot. Before stopping Compose, it rejects unsafe archive paths, links, special files, empty or unrecognized archives, and extracts the snapshot into a staging directory. It then moves the current `./data` directory aside instead of deleting it, installs the validated staged directory, checks out the target in detached mode, rebuilds, and polls `/api/health` — `KEYPAGE_PUBLIC_ORIGIN` first when one is configured, then the published loopback port. That probe is shared with `update.sh` (`scripts/lib/health-probe.sh`), so the rollback path cannot judge health differently from the update that authorised it.
 
 ## Validate
 
