@@ -191,7 +191,12 @@ else
   if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
     fail "fetch of ${KEYPAGE_REF} failed — vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
-  wanted="$(git -C "${KEYPAGE_DIR}" rev-parse FETCH_HEAD 2>/dev/null || true)"
+  # Peel to the commit: a fetched annotated tag leaves a tag *object* in
+  # FETCH_HEAD, and rev-parse returns that object — which update-ref then
+  # refuses to write to a branch ("trying to write non-commit object").
+  # FETCH_HEAD^{commit} yields the tagged commit for branches and both tag
+  # kinds alike.
+  wanted="$(git -C "${KEYPAGE_DIR}" rev-parse "FETCH_HEAD^{commit}" 2>/dev/null || true)"
   if [[ -z "${wanted}" ]]; then
     fail "FETCH_HEAD missing after fetch — vault data was not deleted (${KEYPAGE_DIR}/data). The running version was not replaced."
   fi
@@ -410,11 +415,12 @@ else
   if [[ ! "${wanted:-}" =~ ^[0-9a-f]{40}$ ]]; then
     fail "cannot select an exact published image because the checkout commit is unavailable"
   fi
-  # A single-branch fetch does not reliably bring release tags along, and the
-  # bare-SHA image tag is shared with main-branch builds (last push wins), so
-  # sync tags best-effort and prefer the attested release image when one
-  # points at exactly this commit (see scripts/lib/release-image.sh).
-  git -C "${KEYPAGE_DIR}" fetch --quiet --force origin 'refs/tags/v[0-9]*:refs/tags/v[0-9]*' >/dev/null 2>&1 || true
+  # A single-branch fetch does not bring release tags along, and the bare-SHA
+  # image tag is shared with main-branch builds (last push wins), so sync tags
+  # best-effort and prefer the attested release image when one points at
+  # exactly this commit (see scripts/lib/release-image.sh). Refspecs allow a
+  # single `*`, not character classes — `refs/tags/v[0-9]*` is invalid.
+  git -C "${KEYPAGE_DIR}" fetch --quiet --force origin 'refs/tags/v*:refs/tags/v*' >/dev/null 2>&1 || true
   image_tag="$(keypage_select_image_tag "${KEYPAGE_DIR}" "${wanted}")"
   KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${image_tag}}"
   note "downloading the tested image"

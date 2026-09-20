@@ -105,6 +105,7 @@ function makeStubBin(
     candidateIsRunning?: boolean;
     stopFails?: boolean;
     versionLabel?: string;
+    revisionLabel?: string;
   },
 ): void {
   if (opts.stubGit !== false) {
@@ -142,11 +143,11 @@ if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
   elif printf '%s' "$*" | grep -q 'org.opencontainers.image.revision'; then
     # A bare-SHA image tag carries its own commit as the revision label; a
     # release-tagged image was built from the commit the updater selected
-    # (the fixed aaaa… answer, which is what the git stub's rev-parse says).
+    # (revisionLabel, or the fixed aaaa… answer the git stub's rev-parse gives).
     ref=$(printf '%s\\n' "$last" | sed 's/^.*://')
     case "$ref" in
       [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) printf '%s\\n' "$ref";;
-      *) printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';;
+      *) printf '%s\\n' '${opts.revisionLabel ?? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}';;
     esac
   elif printf '%s' "$*" | grep -q 'org.opencontainers.image.version'; then
     ${opts.versionLabel === undefined
@@ -396,7 +397,7 @@ describe("scripts/update.sh contract", () => {
     assert.match(src, /docker pull --quiet/);
     assert.match(src, /compose up -d --no-build --pull never keypage/);
     assert.match(src, /KEYPAGE_BUILD_LOCAL/);
-    assert.match(src, /rev-parse FETCH_HEAD/);
+    assert.match(src, /rev-parse "FETCH_HEAD\^\{commit\}"/);
     assert.match(src, /--source="\$\{wanted\}"/);
     assert.doesNotMatch(src, /--source="\$\{reset_to\}"/);
     assert.doesNotMatch(src, /reset --hard/);
@@ -627,7 +628,7 @@ describe("release-image selection", () => {
   });
 
   it("update.sh and install.sh sync release tags best-effort; rollback never fetches", () => {
-    const fetchPattern = /fetch --quiet --force origin 'refs\/tags\/v\[0-9\]\*:refs\/tags\/v\[0-9\]\*'\s*>\/dev\/null 2>&1 \|\| true/;
+    const fetchPattern = /fetch --quiet --force origin 'refs\/tags\/v\*:refs\/tags\/v\*'\s*>\/dev\/null 2>&1 \|\| true/;
     for (const src of [readUpdateScript(), readInstallScript()]) {
       // The bare-SHA image tag is shared with main-branch builds, so the
       // updater must bring release tags along; a single-branch fetch does not
@@ -689,7 +690,7 @@ exit 0
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
-    assert.match(calls, /git -C \S+ fetch --quiet --force origin refs\/tags\/v\[0-9\]\*:refs\/tags\/v\[0-9\]\*/);
+    assert.match(calls, /git -C \S+ fetch --quiet --force origin refs\/tags\/v\*:refs\/tags\/v\*/);
     const tagFetchAt = calls.indexOf("fetch --quiet --force origin refs/tags/");
     const pullAt = calls.indexOf("pull --quiet");
     assert.ok(tagFetchAt >= 0 && tagFetchAt < pullAt, "release tags must be synced before the image is pulled");
@@ -1076,6 +1077,50 @@ exit 1
     fs.rmSync(binDir, { recursive: true, force: true });
   });
 
+  it("updates to an annotated release tag: HEAD peels to the commit and the release image is pulled", () => {
+    // Regression (2026-09-20 live incident): `git fetch origin v1.0.2` leaves
+    // the annotated tag OBJECT in FETCH_HEAD; rev-parse returned that object
+    // and `git update-ref refs/heads/v1.0.2 <object>` died with "trying to
+    // write non-commit object". The updater must peel FETCH_HEAD^{commit}.
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    git(remoteWork, ["tag", "-a", "v1.2.4", "-m", "annotated release", "HEAD"]);
+    git(remoteWork, ["push", bare, "v1.2.4"]);
+    const wanted = spawnSync("git", ["-C", bare, "rev-parse", "v1.2.4^{commit}"], { encoding: "utf8" });
+    assert.equal(wanted.status, 0, wanted.stderr);
+    const commit = wanted.stdout.trim();
+    const tagObject = spawnSync("git", ["-C", bare, "rev-parse", "v1.2.4"], { encoding: "utf8" }).stdout.trim();
+    assert.notEqual(commit, tagObject, "fixture must use an annotated (non-commit) tag");
+
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false, revisionLabel: commit });
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "v1.2.4",
+      },
+    });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const headType = spawnSync("git", ["-C", install, "cat-file", "-t", "HEAD"], { encoding: "utf8" });
+    assert.equal(headType.stdout.trim(), "commit", "HEAD must be the tagged commit, not the tag object");
+    const head = spawnSync("git", ["-C", install, "rev-parse", "HEAD"], { encoding: "utf8" });
+    assert.equal(head.stdout.trim(), commit);
+    const pointsAt = spawnSync("git", ["-C", install, "tag", "--points-at", "HEAD"], { encoding: "utf8" });
+    assert.equal(pointsAt.stdout.trim(), "v1.2.4", "release tag must resolve locally for image selection");
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /pull --quiet ghcr\.io\/saadiqhorton\/keypage:v1\.2\.4/);
+
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
   it("removes tracked source files deleted on KEYPAGE_REF and leaves ./data", () => {
     const { remoteWork, bare, install } = seedRemoteAndShallowClone();
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
@@ -1448,6 +1493,14 @@ describe("scripts/install.sh behavior", () => {
     assert.equal((src.match(/curl/g) ?? []).length, 1);
     assert.doesNotMatch(src, /reset --hard/);
     assert.doesNotMatch(src, /git clean/);
+    // An annotated tag leaves a tag *object* in FETCH_HEAD; resolving it
+    // without ^{commit} makes `git update-ref refs/heads/<ref>` die with
+    // "trying to write non-commit object" (live incident 2026-09-20). Both
+    // scripts must peel to the commit.
+    assert.match(src, /rev-parse "FETCH_HEAD\^\{commit\}"/);
+    assert.match(readUpdateScript(), /rev-parse "FETCH_HEAD\^\{commit\}"/);
+    assert.doesNotMatch(src, /rev-parse FETCH_HEAD(?!\^\{commit\})/);
+    assert.doesNotMatch(readUpdateScript(), /rev-parse FETCH_HEAD(?!\^\{commit\})/);
   });
 
   it("probes the public origin before loopback and does not stop what it started healthy", () => {
