@@ -13,7 +13,8 @@
 #   KEYPAGE_DIR               install directory (default: this repo when
 #                             executed from a checkout; ~/keypage when piped)
 #   KEYPAGE_REPO              git remote URL (used to verify origin)
-#   KEYPAGE_REF               branch or tag to update to (default: main)
+#   KEYPAGE_REF               branch or tag to update to (default: the newest
+#                             release tag, e.g. v1.0.3; main when none exist)
 #   KEYPAGE_IMAGE             exact container image override
 #   KEYPAGE_IMAGE_REPOSITORY  image repository override
 #   KEYPAGE_BUILD_LOCAL=1     explicitly build locally instead of pulling
@@ -54,10 +55,26 @@ case "${_self}" in
 esac
 
 KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
-KEYPAGE_REF="${KEYPAGE_REF:-main}"
 KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
+
+# Default ref: the newest release tag on the remote, never a moving branch —
+# users update without naming a version, and the attested release image gives
+# the checkout a stable identity (main builds share one mutable bare-SHA tag).
+if [[ -z "${KEYPAGE_REF:-}" ]]; then
+  latest_tag="$(git ls-remote --tags --refs "${KEYPAGE_REPO}" 'refs/tags/v*' 2>/dev/null \
+    | sed 's#.*refs/tags/##' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V | tail -n1 || true)"
+  if [[ -n "${latest_tag}" ]]; then
+    KEYPAGE_REF="${latest_tag}"
+  else
+    # No releases yet (fresh projects): keep updating main, which cannot
+    # carry an attested identity until the first release is cut.
+    KEYPAGE_REF="main"
+  fi
+fi
 
 if [[ -z "${KEYPAGE_DIR:-}" ]]; then
   if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
@@ -289,7 +306,7 @@ cd "${KEYPAGE_DIR}"
 # an updater that cannot tell whether the service came back must not start.
 HEALTH_PROBE_LIB="${KEYPAGE_DIR}/scripts/lib/health-probe.sh"
 if [[ ! -f "${HEALTH_PROBE_LIB}" ]]; then
-  fail "updater is incomplete: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. This checkout predates the shared probe, and KEYPAGE_SKIP_GIT=1 told the updater not to refresh it. Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced. Refresh the checkout and retry (install.sh fetches ${KEYPAGE_REF}; re-running without KEYPAGE_SKIP_GIT has this script refresh tracked source files only)."
+  fail "updater is incomplete: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. Either this checkout predates the shared probe, or the refreshed tree deleted it because ${KEYPAGE_REF}'s tree predates this updater's requirements (releases cut before the updater grew lib dependencies cannot be updated TO directly — update to a newer release instead). Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced."
 fi
 # shellcheck source=lib/health-probe.sh
 . "${HEALTH_PROBE_LIB}"
@@ -298,7 +315,7 @@ fi
 # three agree on which published artifact runs for a given source revision.
 RELEASE_IMAGE_LIB="${KEYPAGE_DIR}/scripts/lib/release-image.sh"
 if [[ ! -f "${RELEASE_IMAGE_LIB}" ]]; then
-  fail "updater is incomplete: ${RELEASE_IMAGE_LIB} is missing, so the release image cannot be selected. This checkout predates release-image selection, and KEYPAGE_SKIP_GIT=1 told the updater not to refresh it. Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced. Refresh the checkout and retry (re-running without KEYPAGE_SKIP_GIT has this script refresh tracked source files only)."
+  fail "updater is incomplete: ${RELEASE_IMAGE_LIB} is missing, so the release image cannot be selected. Either this checkout predates release-image selection, or the refreshed tree deleted it because ${KEYPAGE_REF}'s tree predates this updater's requirements (releases cut before the updater grew lib dependencies cannot be updated TO directly — update to a newer release instead). Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced."
 fi
 # shellcheck source=lib/release-image.sh
 . "${RELEASE_IMAGE_LIB}"
