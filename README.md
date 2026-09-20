@@ -160,7 +160,7 @@ Once the checkout has the script:
 cd ~/keypage && bash scripts/update.sh
 ```
 
-The updater fetches `KEYPAGE_REF` (default `main`) and resets tracked deployment files to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. `./data` is never in those pathspecs. If origin is not the KeyPage repo, fetch fails, the tested image is unavailable, its source label does not match, or vault files are tracked in git, it exits before stopping the existing container. Vault files are not deleted.
+The updater fetches `KEYPAGE_REF` (default: the newest release tag on the remote, e.g. `v1.0.3`; `main` only when no release exists yet, or when explicitly set) and resets tracked deployment files to that tip — including depth-1 one-line installs, which cannot `pull --ff-only`. `./data` is never in those pathspecs. If origin is not the KeyPage repo, fetch fails, the tested image is unavailable, its source label does not match, or vault files are tracked in git, it exits before stopping the existing container. Vault files are not deleted.
 
 For a failed upgrade, use the bounded, snapshot-based [rollback runbook](docs/rollback.md). It restores pre-upgrade data before starting an older revision because database migrations are forward-only.
 

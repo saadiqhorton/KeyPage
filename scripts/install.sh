@@ -33,17 +33,6 @@ KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypa
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
 
-# Default ref: the newest release tag on the remote, never a moving branch —
-# fresh installs land on an attested release image with a stable identity
-# (see the matching block in update.sh). No releases yet → install main.
-if [[ -z "${KEYPAGE_REF:-}" ]]; then
-  latest_tag="$(git ls-remote --tags --refs "${KEYPAGE_REPO}" 'refs/tags/v*' 2>/dev/null \
-    | sed 's#.*refs/tags/##' \
-    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-    | sort -V | tail -n1 || true)"
-  KEYPAGE_REF="${latest_tag:-main}"
-fi
-
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
   BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
   BLUE=$(tput setaf 4); GREEN=$(tput setaf 2); YELLOW=$(tput setaf 3); RED=$(tput setaf 1)
@@ -59,6 +48,22 @@ note() { printf '  %s%s%s\n' "$DIM" "$1" "$RESET"; }
 warn() { printf '  %s⚠ %s%s\n' "$YELLOW" "$1" "$RESET"; }
 fail() { printf '  %s✗ %s%s\n' "$RED" "$1" "$RESET"; exit 1; }
 ok()   { printf '  %s✓ %s%s\n' "$GREEN" "$1" "$RESET"; }
+
+# Default ref: the newest release tag on the remote, never a moving branch —
+# fresh installs land on an attested release image with a stable identity
+# (see the matching block in update.sh). No releases yet → install main.
+if [[ -z "${KEYPAGE_REF:-}" ]]; then
+  latest_tag="$(git ls-remote --tags --refs "${KEYPAGE_REPO}" 'refs/tags/v*' 2>/dev/null \
+    | sed 's#.*refs/tags/##' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V | tail -n1 || true)"
+  if [[ -n "${latest_tag}" ]]; then
+    KEYPAGE_REF="${latest_tag}"
+  else
+    warn "no release tags found on ${KEYPAGE_REPO} — defaulting to main"
+    KEYPAGE_REF="main"
+  fi
+fi
 
 stage() {
   _STAGE_INDEX=$((_STAGE_INDEX + 1))

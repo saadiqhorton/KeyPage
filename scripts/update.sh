@@ -59,22 +59,14 @@ KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypa
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
 
-# Default ref: the newest release tag on the remote, never a moving branch —
-# users update without naming a version, and the attested release image gives
-# the checkout a stable identity (main builds share one mutable bare-SHA tag).
-if [[ -z "${KEYPAGE_REF:-}" ]]; then
-  latest_tag="$(git ls-remote --tags --refs "${KEYPAGE_REPO}" 'refs/tags/v*' 2>/dev/null \
-    | sed 's#.*refs/tags/##' \
-    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-    | sort -V | tail -n1 || true)"
-  if [[ -n "${latest_tag}" ]]; then
-    KEYPAGE_REF="${latest_tag}"
-  else
-    # No releases yet (fresh projects): keep updating main, which cannot
-    # carry an attested identity until the first release is cut.
-    KEYPAGE_REF="main"
-  fi
-fi
+TOTAL_STAGES=4
+_STAGE_INDEX=0
+
+say()  { printf '  %s\n' "$1"; }
+note() { printf '  %s%s%s\n' "$DIM" "$1" "$RESET"; }
+warn() { printf '  %s⚠ %s%s\n' "$YELLOW" "$1" "$RESET"; }
+fail() { printf '  %s✗ %s%s\n' "$RED" "$1" "$RESET"; exit 1; }
+ok()   { printf '  %s✓ %s%s\n' "$GREEN" "$1" "$RESET"; }
 
 if [[ -z "${KEYPAGE_DIR:-}" ]]; then
   if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/docker-compose.yml" ]]; then
@@ -91,14 +83,24 @@ else
   BOLD=""; DIM=""; RESET=""; BLUE=""; GREEN=""; YELLOW=""; RED=""
 fi
 
-TOTAL_STAGES=4
-_STAGE_INDEX=0
-
-say()  { printf '  %s\n' "$1"; }
-note() { printf '  %s%s%s\n' "$DIM" "$1" "$RESET"; }
-warn() { printf '  %s⚠ %s%s\n' "$YELLOW" "$1" "$RESET"; }
-fail() { printf '  %s✗ %s%s\n' "$RED" "$1" "$RESET"; exit 1; }
-ok()   { printf '  %s✓ %s%s\n' "$GREEN" "$1" "$RESET"; }
+# Default ref: the newest release tag on the remote, never a moving branch —
+# users update without naming a version, and the attested release image gives
+# the checkout a stable identity (main builds share one mutable bare-SHA tag).
+if [[ -z "${KEYPAGE_REF:-}" ]]; then
+  latest_tag="$(git ls-remote --tags --refs "${KEYPAGE_REPO}" 'refs/tags/v*' 2>/dev/null \
+    | sed 's#.*refs/tags/##' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V | tail -n1 || true)"
+  if [[ -n "${latest_tag}" ]]; then
+    KEYPAGE_REF="${latest_tag}"
+  else
+    # No releases reachable (fresh projects, or ls-remote failed): keep
+    # updating main, which cannot carry an attested identity until the first
+    # release is cut. The image label checks still guard the cutover.
+    warn "no release tags found on ${KEYPAGE_REPO} — defaulting to main"
+    KEYPAGE_REF="main"
+  fi
+fi
 
 stage() {
   _STAGE_INDEX=$((_STAGE_INDEX + 1))
