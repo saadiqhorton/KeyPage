@@ -635,6 +635,12 @@ describe("release-image selection", () => {
       // reliably do that. Best-effort: without a tag the bare-SHA fallback
       // still resolves the same commit.
       assert.match(src, fetchPattern, "release-tag sync must exist and never be fatal");
+      // An unset KEYPAGE_REF must resolve to the newest release tag on the
+      // remote (users never name a version), not a moving branch.
+      assert.match(src, /ls-remote --tags --refs "\$\{KEYPAGE_REPO\}" 'refs\/tags\/v\*'/, "default ref must come from the remote's release tags");
+      assert.match(src, /grep -E '\^v\[0-9/, "default ref must filter to strict SemVer releases");
+      assert.match(src, /sort -V \| tail -n1/, "default ref must pick the newest release");
+      assert.doesNotMatch(src, /KEYPAGE_REF="\$\{KEYPAGE_REF:-main\}"/, "the old main fallback is replaced by release resolution");
     }
     // Recovery must not gain a network dependency: rollback uses whatever
     // tags the checkout already carries.
@@ -1114,6 +1120,90 @@ exit 1
     assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
     const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
     assert.match(calls, /pull --quiet ghcr\.io\/saadiqhorton\/keypage:v1\.2\.4/);
+
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("defaults KEYPAGE_REF to the newest release tag on the remote when unset", () => {
+    // Product rule (2026-09-20): users never name a version. The updater
+    // resolves the newest SemVer release itself; non-release v-tags are
+    // ignored by the strict SemVer filter.
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    git(remoteWork, ["tag", "-a", "v1.0.1", "-m", "release 1", "HEAD"]);
+    git(remoteWork, ["tag", "-a", "v1.0.2", "-m", "release 2", "HEAD"]);
+    git(remoteWork, ["tag", "vNext", "HEAD"]);
+    git(remoteWork, ["push", bare, "v1.0.1", "v1.0.2", "vNext"]);
+    const wanted = spawnSync("git", ["-C", bare, "rev-parse", "v1.0.2^{commit}"], { encoding: "utf8" });
+    assert.equal(wanted.status, 0, wanted.stderr);
+    const commit = wanted.stdout.trim();
+
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false, revisionLabel: commit });
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "", // unset → the updater must resolve the default itself
+      },
+    });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const head = spawnSync("git", ["-C", install, "rev-parse", "HEAD"], { encoding: "utf8" });
+    assert.equal(head.stdout.trim(), commit);
+    const pointsAt = spawnSync("git", ["-C", install, "tag", "--points-at", "HEAD"], { encoding: "utf8" });
+    assert.ok(
+      pointsAt.stdout.split("\n").includes("v1.0.2"),
+      `the newest release tag must resolve locally (got: ${pointsAt.stdout.trim()}); non-release v-tags may come along — the selector filters them`,
+    );
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /pull --quiet ghcr\.io\/saadiqhorton\/keypage:v1\.0\.2/);
+
+    fs.rmSync(remoteWork, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(install, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("fails closed when KEYPAGE_REF targets a release whose tree predates the updater's libs", () => {
+    // Live constraint (2026-09-20, found by independent review): release trees
+    // cut before the updater grew lib dependencies lose the libs on refresh.
+    // The updater must refuse BEFORE any container operation, with an honest
+    // message, and leave the vault and running service untouched.
+    const { remoteWork, bare, install } = seedRemoteAndShallowClone();
+    fs.rmSync(path.join(remoteWork, "scripts/lib/release-image.sh"));
+    git(remoteWork, ["add", "-A"]);
+    git(remoteWork, ["commit", "-m", "tree predates release-image lib"]);
+    git(remoteWork, ["tag", "-a", "v0.9.0", "-m", "old release", "HEAD"]);
+    git(remoteWork, ["push", bare, "v0.9.0"]);
+
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-bin-"));
+    makeStubBin(binDir, { healthOk: true, stubGit: false });
+
+    const result = runUpdate({
+      keypageDir: install,
+      binDir,
+      extraEnv: {
+        KEYPAGE_SKIP_GIT: "",
+        KEYPAGE_REPO: bare,
+        KEYPAGE_REF: "v0.9.0",
+      },
+    });
+
+    assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(
+      `${result.stdout}\n${result.stderr}`,
+      /predates this updater's requirements/,
+      "the failure message must explain the predates-lib constraint",
+    );
+    assert.equal(fs.readFileSync(path.join(install, "data/keypage.db"), "utf8"), "vault-bytes");
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.doesNotMatch(calls, /compose up/, "no container operation may run on a fail-closed update");
 
     fs.rmSync(remoteWork, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });

@@ -8,7 +8,8 @@
 # Overrides:
 #   KEYPAGE_DIR     install directory (default: ~/keypage)
 #   KEYPAGE_REPO    git remote URL
-#   KEYPAGE_REF     branch or tag to clone/checkout (default: main)
+#   KEYPAGE_REF     branch or tag to clone/checkout (default: the newest
+#                   release tag, e.g. v1.0.3; main when none exist)
 #   KEYPAGE_IMAGE   exact container image override
 #   KEYPAGE_BUILD_LOCAL=1  explicitly build locally instead of pulling
 #   KEYPAGE_HEALTH_ATTEMPTS / KEYPAGE_HEALTH_SLEEP_SECS
@@ -28,10 +29,20 @@ set -euo pipefail
 
 KEYPAGE_DIR="${KEYPAGE_DIR:-$HOME/keypage}"
 KEYPAGE_REPO="${KEYPAGE_REPO:-https://github.com/saadiqhorton/KeyPage.git}"
-KEYPAGE_REF="${KEYPAGE_REF:-main}"
 KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
+
+# Default ref: the newest release tag on the remote, never a moving branch —
+# fresh installs land on an attested release image with a stable identity
+# (see the matching block in update.sh). No releases yet → install main.
+if [[ -z "${KEYPAGE_REF:-}" ]]; then
+  latest_tag="$(git ls-remote --tags --refs "${KEYPAGE_REPO}" 'refs/tags/v*' 2>/dev/null \
+    | sed 's#.*refs/tags/##' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V | tail -n1 || true)"
+  KEYPAGE_REF="${latest_tag:-main}"
+fi
 
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
   BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
