@@ -162,14 +162,16 @@ if [[ -d "${KEYPAGE_DIR}/.git" ]]; then
   # every restore/reset path excludes the bind-mounted vault data.
   refresh_failure() {
     local reason="$1"
-    fail "${reason}. Recovery commands: cd ${KEYPAGE_DIR}; git status --short; git fetch --depth 1 origin ${KEYPAGE_REF}; git restore --source=FETCH_HEAD --staged --worktree -- . ':(exclude)data' ':(exclude)data/**' ':(exclude)*.db' ':(exclude)setup-token' ':(exclude).env'; git update-ref refs/heads/${KEYPAGE_REF} FETCH_HEAD; git symbolic-ref HEAD refs/heads/${KEYPAGE_REF}."
+    fail "${reason}. Recovery commands: cd ${KEYPAGE_DIR}; git status --short; git fetch --depth 1 origin ${KEYPAGE_REF}; git restore --source=FETCH_HEAD^{commit} --staged --worktree -- . ':(exclude)data' ':(exclude)data/**' ':(exclude)*.db' ':(exclude)setup-token' ':(exclude).env'; git update-ref refs/heads/${KEYPAGE_REF} FETCH_HEAD^{commit}; git symbolic-ref HEAD refs/heads/${KEYPAGE_REF}."
   }
 
   REFRESHED=0
   if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
     refresh_failure "fetch of ${KEYPAGE_REF} failed — the checkout was not handed to the updater"
   fi
-  wanted="$(git -C "${KEYPAGE_DIR}" rev-parse FETCH_HEAD 2>/dev/null || true)"
+  # Peel to the commit: a fetched annotated tag leaves a tag *object* in
+  # FETCH_HEAD, which update-ref refuses to write to a branch. See update.sh.
+  wanted="$(git -C "${KEYPAGE_DIR}" rev-parse "FETCH_HEAD^{commit}" 2>/dev/null || true)"
   [[ -n "${wanted}" ]] || refresh_failure "FETCH_HEAD is missing after fetching ${KEYPAGE_REF}"
 
   tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*" "data/**" "*.db" "setup-token")"
@@ -303,7 +305,7 @@ else
   # the bare-SHA tag is shared with main-branch builds, so prefer the attested
   # release image when a release tag points at exactly this commit. Tags are
   # synced best-effort; without one, the bare-SHA fallback still resolves.
-  git -C "${KEYPAGE_DIR}" fetch --quiet --force origin 'refs/tags/v[0-9]*:refs/tags/v[0-9]*' >/dev/null 2>&1 || true
+  git -C "${KEYPAGE_DIR}" fetch --quiet --force origin 'refs/tags/v*:refs/tags/v*' >/dev/null 2>&1 || true
   image_tag="$(keypage_select_image_tag "${KEYPAGE_DIR}" "${checkout_sha}")"
   KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${image_tag}}"
   note "downloading the tested image"
