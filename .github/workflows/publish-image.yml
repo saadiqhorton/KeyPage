@@ -20,6 +20,7 @@ permissions:
 env:
   IMAGE_NAME: ghcr.io/saadiqhorton/keypage
   RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+  RELEASE_VERSION: main-${{ github.event.workflow_run.head_sha }}
 
 jobs:
   publish:
@@ -49,12 +50,13 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ env.RELEASE_SHA }}
+            type=raw,value=${{ env.RELEASE_VERSION }}
             type=raw,value=v1
             type=raw,value=latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
-            org.opencontainers.image.version=v1
+            org.opencontainers.image.version=${{ env.RELEASE_VERSION }}
       - name: Build and publish immutable image
         id: image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -64,6 +66,8 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            KEYPAGE_VERSION=${{ env.RELEASE_VERSION }}
           cache-from: type=gha,scope=keypage
           cache-to: type=gha,mode=max,scope=keypage
           provenance: mode=max

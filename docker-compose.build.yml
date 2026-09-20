@@ -1,4 +1,7 @@
 services:
   keypage:
     image: keypage:local
-    build: .
+    build:
+      context: .
+      args:
+        KEYPAGE_VERSION: ${KEYPAGE_VERSION:-dev}

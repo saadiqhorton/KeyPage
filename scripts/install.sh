@@ -11,6 +11,18 @@
 #   KEYPAGE_REF     branch or tag to clone/checkout (default: main)
 #   KEYPAGE_IMAGE   exact container image override
 #   KEYPAGE_BUILD_LOCAL=1  explicitly build locally instead of pulling
+#   KEYPAGE_HEALTH_ATTEMPTS / KEYPAGE_HEALTH_SLEEP_SECS
+#   KEYPAGE_HEALTH_CONNECT_TIMEOUT / KEYPAGE_HEALTH_MAX_TIME
+#                   health probe bounds, shared with scripts/update.sh
+#                   (default: 60 polls / 2s apart / 3s connect / 5s total)
+#
+# Health probing lives in scripts/lib/health-probe.sh, shared with
+# scripts/update.sh and scripts/rollback.sh. It tries KEYPAGE_PUBLIC_ORIGIN
+# (from .env) before loopback: a host-side request to a *published* container
+# port arrives masqueraded from the bridge gateway, so the API's loopback
+# exemption does not fire and answers 421. This installer had its own
+# loopback-only copy of that probe, which stopped a healthy public-origin
+# install and called it a failed update.
 
 set -euo pipefail
 
@@ -20,8 +32,6 @@ KEYPAGE_REF="${KEYPAGE_REF:-main}"
 KEYPAGE_IMAGE_REPOSITORY="${KEYPAGE_IMAGE_REPOSITORY:-ghcr.io/saadiqhorton/keypage}"
 # Keep in sync with DEFAULT_LISTEN_PORT in packages/shared/src/app.ts
 DEFAULT_LISTEN_PORT=9090
-APP_URL="http://127.0.0.1:${DEFAULT_LISTEN_PORT}"
-HEALTH_URL="${APP_URL}/api/health"
 
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
   BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
@@ -74,21 +84,10 @@ write_image_override() {
   mv -f "${tmp}" "${KEYPAGE_DIR}/docker-compose.override.yml"
 }
 
-resolve_health_url() {
-  local container_port="${DEFAULT_LISTEN_PORT}" published derived env_port
-  if [[ -f .env ]]; then
-    env_port="$(grep -m1 '^PORT=' .env | cut -d= -f2- | tr -d ' \t\r' || true)"
-    [[ "${env_port}" =~ ^[0-9]+$ ]] && container_port="${env_port}"
-  fi
-  published="$(compose port keypage "${container_port}" 2>/dev/null || true)"
-  if [[ -z "${published}" && "${container_port}" != "${DEFAULT_LISTEN_PORT}" ]]; then
-    published="$(compose port keypage "${DEFAULT_LISTEN_PORT}" 2>/dev/null || true)"
-  fi
-  derived="${published##*:}"
-  [[ "${derived}" =~ ^[0-9]+$ ]] || derived="${container_port}"
-  APP_URL="http://127.0.0.1:${derived}"
-  HEALTH_URL="${APP_URL}/api/health"
-}
+# Health probing — resolving the URL list and polling it — is
+# scripts/lib/health-probe.sh, sourced in stage 2 once the checkout exists.
+# Do not reintroduce a copy here: a private resolver is how this installer
+# ended up probing loopback only and stopping a healthy public-origin install.
 
 # Normalize a git remote URL to host/owner/repo (lowercase, no .git).
 # Treats HTTPS, ssh://, and SCP-style (git@host:owner/repo) as equivalent.
@@ -158,21 +157,65 @@ if [[ -d "${KEYPAGE_DIR}/.git" ]]; then
   fi
 
   note "fetching ${KEYPAGE_REF}"
-  if git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
-    if git -C "${KEYPAGE_DIR}" diff --quiet && git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
-      # Depth-1 installs cannot `pull --ff-only`: old HEAD and the new tip
-      # are disconnected shallow boundaries. Move a clean tree to FETCH_HEAD.
-      if git -C "${KEYPAGE_DIR}" checkout -q -B "${KEYPAGE_REF}" FETCH_HEAD; then
-        ok "updated ${KEYPAGE_DIR}"
-      else
-        warn "checkout of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
-      fi
-    else
-      warn "local changes present — using current tree so Compose can still start"
-    fi
-  else
-    warn "fetch of ${KEYPAGE_REF} failed — using current tree so Compose can still start"
+  # A failed refresh must stop here, before the updater or Docker can see a
+  # stale checkout. These are the exact tracked-source-only recovery commands;
+  # every restore/reset path excludes the bind-mounted vault data.
+  refresh_failure() {
+    local reason="$1"
+    fail "${reason}. Recovery commands: cd ${KEYPAGE_DIR}; git status --short; git fetch --depth 1 origin ${KEYPAGE_REF}; git restore --source=FETCH_HEAD --staged --worktree -- . ':(exclude)data' ':(exclude)data/**' ':(exclude)*.db' ':(exclude)setup-token' ':(exclude).env'; git update-ref refs/heads/${KEYPAGE_REF} FETCH_HEAD; git symbolic-ref HEAD refs/heads/${KEYPAGE_REF}."
+  }
+
+  REFRESHED=0
+  if ! git -C "${KEYPAGE_DIR}" fetch --depth 1 origin "${KEYPAGE_REF}"; then
+    refresh_failure "fetch of ${KEYPAGE_REF} failed — the checkout was not handed to the updater"
   fi
+  wanted="$(git -C "${KEYPAGE_DIR}" rev-parse FETCH_HEAD 2>/dev/null || true)"
+  [[ -n "${wanted}" ]] || refresh_failure "FETCH_HEAD is missing after fetching ${KEYPAGE_REF}"
+
+  tracked_data="$(git -C "${KEYPAGE_DIR}" ls-files -- "data" "data/*" "data/**" "*.db" "setup-token")"
+  incoming_data="$(git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" -- data "*.db" setup-token)"
+  if [[ -n "${tracked_data}" || -n "${incoming_data}" ]]; then
+    refresh_failure "${KEYPAGE_DIR}/data is tracked in git; refusing to reset source files"
+  fi
+
+  if ! git -C "${KEYPAGE_DIR}" diff --quiet || ! git -C "${KEYPAGE_DIR}" diff --cached --quiet; then
+    note "resetting tracked source files to ${KEYPAGE_REF}; leaving ./data and .env alone"
+  fi
+  if ! git -C "${KEYPAGE_DIR}" restore \
+      --source="${wanted}" \
+      --staged --worktree \
+      -- \
+      . \
+      ':(exclude)data' \
+      ':(exclude)data/**' \
+      ':(exclude)*.db' \
+      ':(exclude)setup-token' \
+      ':(exclude).env'; then
+    refresh_failure "restore of ${KEYPAGE_REF} failed"
+  fi
+
+  tracked_paths="$(mktemp)"
+  incoming_paths="$(mktemp)"
+  git -C "${KEYPAGE_DIR}" ls-files | sort > "${tracked_paths}"
+  git -C "${KEYPAGE_DIR}" ls-tree -r --name-only "${wanted}" | sort > "${incoming_paths}"
+  gone_files="$(comm -23 "${tracked_paths}" "${incoming_paths}")"
+  rm -f "${tracked_paths}" "${incoming_paths}"
+  while IFS= read -r gone; do
+    [[ -z "${gone}" ]] && continue
+    case "${gone}" in
+      data|data/*|*.db|*/keypage.db|setup-token|*/setup-token|.env) continue ;;
+    esac
+    git -C "${KEYPAGE_DIR}" rm -f --ignore-unmatch -- "${gone}" >/dev/null || refresh_failure "removal of stale tracked file ${gone} failed"
+  done <<< "${gone_files}"
+
+  if ! git -C "${KEYPAGE_DIR}" update-ref "refs/heads/${KEYPAGE_REF}" "${wanted}" || \
+      ! git -C "${KEYPAGE_DIR}" symbolic-ref HEAD "refs/heads/${KEYPAGE_REF}"; then
+    refresh_failure "could not point ${KEYPAGE_REF} at the fetched tip"
+  fi
+  now="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
+  [[ "${now}" == "${wanted}" ]] || refresh_failure "working tree did not reach ${KEYPAGE_REF}"
+  REFRESHED=1
+  ok "updated ${KEYPAGE_DIR} to ${wanted:0:12}"
 elif [[ -e "${KEYPAGE_DIR}" ]]; then
   fail "${KEYPAGE_DIR} exists but is not a git repo — move it aside or set KEYPAGE_DIR"
 else
@@ -185,6 +228,17 @@ cd "${KEYPAGE_DIR}"
 if [[ ! -f docker-compose.yml ]]; then
   fail "${KEYPAGE_DIR} is missing docker-compose.yml — not a KeyPage checkout"
 fi
+
+# The probe is sourced from the checkout, exactly as update.sh does, so the
+# scripts cannot disagree about what "healthy" means. Fail before touching .env or
+# ./data if it is missing: a checkout older than the shared probe cannot be
+# verified by this installer, and guessing would mean probing loopback only.
+HEALTH_PROBE_LIB="${KEYPAGE_DIR}/scripts/lib/health-probe.sh"
+if [[ ! -f "${HEALTH_PROBE_LIB}" ]]; then
+  fail "installer cannot verify this checkout: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. This tree does not carry the shared probe (scripts/lib/health-probe.sh) — refresh ${KEYPAGE_REF} and re-run. Nothing was installed, ./data was not changed, and no container was stopped."
+fi
+# shellcheck source=lib/health-probe.sh
+. "${HEALTH_PROBE_LIB}"
 
 # ── 3. Env + data dir ─────────────────────────────────────────────────────
 stage "Prepare .env and data volume"
@@ -216,11 +270,24 @@ ok "./data ready (SQLite bind mount)"
 # ── 4. Pull & start ───────────────────────────────────────────────────────
 stage "Download and start container"
 
+STARTED_BY_INSTALLER=1
 if [[ "${KEYPAGE_BUILD_LOCAL:-}" == "1" ]]; then
   note "KEYPAGE_BUILD_LOCAL=1 — building from this checkout"
   compose -f docker-compose.yml -f docker-compose.build.yml up -d --build keypage
 elif [[ "${EXISTING_INSTALL}" == "1" ]]; then
-  KEYPAGE_SKIP_GIT=1 KEYPAGE_DIR="${KEYPAGE_DIR}" bash scripts/update.sh
+  # update.sh owns git here: it refreshes tracked source files with vault paths
+  # excluded, and fails closed if it cannot. Only a checkout this run verified
+  # at the fetched tip may be handed over with KEYPAGE_SKIP_GIT=1.
+  if [[ "${REFRESHED}" == "1" ]]; then
+    KEYPAGE_SKIP_GIT=1 KEYPAGE_DIR="${KEYPAGE_DIR}" bash scripts/update.sh
+  else
+    note "checkout not refreshed by this run — letting the updater refresh it (./data is never in its pathspecs)"
+    KEYPAGE_DIR="${KEYPAGE_DIR}" bash scripts/update.sh
+  fi
+  # The updater only reports success after its own probe answered, and it is
+  # what started (or deliberately left) the container. Re-probing here with the
+  # authority to stop it could take a healthy vault offline on a flake.
+  STARTED_BY_INSTALLER=0
 else
   checkout_sha="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
   KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${checkout_sha}}"
@@ -241,23 +308,19 @@ else
 fi
 ok "container started"
 
-resolve_health_url
-note "waiting for health at ${HEALTH_URL}"
-healthy=0
-for _ in $(seq 1 60); do
-  health_body="$(curl -fsS "${HEALTH_URL}" 2>/dev/null || true)"
-  if printf '%s' "${health_body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
-    healthy=1
-    break
+keypage_resolve_health_urls "${KEYPAGE_DIR}"
+if [[ "${STARTED_BY_INSTALLER}" == "1" ]]; then
+  note "waiting for health at $(keypage_health_urls_summary)"
+  if ! keypage_wait_for_health; then
+    # This run started the container, so this run stops it. Nothing is left
+    # half-up, and ./data is untouched either way.
+    compose stop -t 20 keypage >/dev/null 2>&1 || true
+    fail "no healthy response from $(keypage_health_urls_summary); KeyPage was stopped and is not being reported as ready. Check: cd ${KEYPAGE_DIR} && docker compose logs keypage"
   fi
-  sleep 2
-done
-
-if [[ "${healthy}" -ne 1 ]]; then
-  compose stop -t 20 keypage >/dev/null 2>&1 || true
-  fail "health check timed out; KeyPage was stopped and is not being reported as ready. Check: cd ${KEYPAGE_DIR} && docker compose logs keypage"
+  ok "healthy"
+else
+  note "health already verified by the updater at $(keypage_health_urls_summary)"
 fi
-ok "healthy"
 
 if [[ -r data/setup-token ]]; then
   say "Setup token file: ${KEYPAGE_DIR}/data/setup-token (mode 0600)"
@@ -269,10 +332,14 @@ fi
 # ── 5. Open app ───────────────────────────────────────────────────────────
 stage "Open KeyPage"
 
-open_url "${APP_URL}"
+# When an origin is configured, that is the address the operator reaches and
+# the only Host the API accepts; loopback is the fallback (a browser pointed at
+# it is answered 421 under an origin gate).
+DISPLAY_URL="${PUBLIC_ORIGIN:-${APP_URL}}"
+open_url "${DISPLAY_URL}"
 
 printf '\n%s%s  ✓ KeyPage is ready%s\n\n' "$BOLD" "$GREEN" "$RESET"
-say "App:      ${APP_URL}"
+say "App:      ${DISPLAY_URL}"
 say "Install:  ${KEYPAGE_DIR}"
 say "Data:     ${KEYPAGE_DIR}/data"
 printf '\n'

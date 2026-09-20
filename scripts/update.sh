@@ -284,7 +284,7 @@ cd "${KEYPAGE_DIR}"
 # an updater that cannot tell whether the service came back must not start.
 HEALTH_PROBE_LIB="${KEYPAGE_DIR}/scripts/lib/health-probe.sh"
 if [[ ! -f "${HEALTH_PROBE_LIB}" ]]; then
-  fail "updater is incomplete: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. This checkout predates the shared probe — a stale or dirty tree (install.sh keeps the current tree when its fetch or checkout fails). Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced. Refresh the checkout, then re-run: the installer re-fetches ${KEYPAGE_REF} and checks it out without touching the ignored data/."
+  fail "updater is incomplete: ${HEALTH_PROBE_LIB} is missing, so the health check cannot run. This checkout predates the shared probe, and KEYPAGE_SKIP_GIT=1 told the updater not to refresh it. Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced. Refresh the checkout and retry (install.sh fetches ${KEYPAGE_REF}; re-running without KEYPAGE_SKIP_GIT has this script refresh tracked source files only)."
 fi
 # shellcheck source=lib/health-probe.sh
 . "${HEALTH_PROBE_LIB}"

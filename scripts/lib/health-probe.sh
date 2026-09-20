@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Shared health probing for scripts/update.sh and scripts/rollback.sh.
+# Shared health probing for scripts/update.sh, scripts/rollback.sh, and scripts/install.sh.
 #
-# These two scripts must agree on what "the running KeyPage is healthy" means.
+# These scripts must agree on what "the running KeyPage is healthy" means.
 # They did not, and the drift caused two defects: the updater polled the public
 # origin while the rollback script polled only loopback, so only one of them
 # could ever see a healthy container. Keeping the probe in one file is the fix
