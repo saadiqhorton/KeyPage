@@ -288,6 +288,15 @@ if [[ ! -f "${HEALTH_PROBE_LIB}" ]]; then
 fi
 # shellcheck source=lib/health-probe.sh
 . "${HEALTH_PROBE_LIB}"
+
+# Release-image selection is shared with install.sh and rollback.sh so all
+# three agree on which published artifact runs for a given source revision.
+RELEASE_IMAGE_LIB="${KEYPAGE_DIR}/scripts/lib/release-image.sh"
+if [[ ! -f "${RELEASE_IMAGE_LIB}" ]]; then
+  fail "updater is incomplete: ${RELEASE_IMAGE_LIB} is missing, so the release image cannot be selected. This checkout predates release-image selection, and KEYPAGE_SKIP_GIT=1 told the updater not to refresh it. Vault data was not deleted (${KEYPAGE_DIR}/data) and the running version was not replaced. Refresh the checkout and retry (re-running without KEYPAGE_SKIP_GIT has this script refresh tracked source files only)."
+fi
+# shellcheck source=lib/release-image.sh
+. "${RELEASE_IMAGE_LIB}"
 # Resolved here as well as before the health stage: restore_previous() can run
 # from a trap or from a failed `compose up` long before that stage, and it must
 # never poll an empty URL list (which would look like a dead service).
@@ -401,7 +410,12 @@ else
   if [[ ! "${wanted:-}" =~ ^[0-9a-f]{40}$ ]]; then
     fail "cannot select an exact published image because the checkout commit is unavailable"
   fi
-  image_tag="${wanted}"
+  # A single-branch fetch does not reliably bring release tags along, and the
+  # bare-SHA image tag is shared with main-branch builds (last push wins), so
+  # sync tags best-effort and prefer the attested release image when one
+  # points at exactly this commit (see scripts/lib/release-image.sh).
+  git -C "${KEYPAGE_DIR}" fetch --quiet --force origin 'refs/tags/v[0-9]*:refs/tags/v[0-9]*' >/dev/null 2>&1 || true
+  image_tag="$(keypage_select_image_tag "${KEYPAGE_DIR}" "${wanted}")"
   KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${image_tag}}"
   note "downloading the tested image"
   if ! docker pull --quiet "${KEYPAGE_IMAGE}" >/dev/null; then
@@ -415,6 +429,16 @@ else
   fi
   if [[ "${candidate_revision}" != "${wanted}" ]]; then
     fail "downloaded image revision does not match ${wanted}; existing KeyPage was not stopped"
+  fi
+  # The release image is the identity the release attested: its baked version
+  # must agree with the tag we selected, or the tag was republished by a
+  # different pipeline and we refuse to install it (the bare-SHA fallback
+  # carries a main-<sha> version label and is exempt from this check).
+  if [[ "${image_tag}" != "${wanted}" ]]; then
+    candidate_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "${KEYPAGE_IMAGE}" 2>/dev/null || true)"
+    if [[ "${candidate_version}" != "${image_tag}" ]]; then
+      fail "release image ${KEYPAGE_IMAGE} reports version '${candidate_version:-<none>}', not '${image_tag}'; existing KeyPage was not stopped"
+    fi
   fi
 
   old_container_id="$(compose ps -q keypage 2>/dev/null || true)"

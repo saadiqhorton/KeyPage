@@ -51,6 +51,14 @@ HEALTH_PROBE_LIB="$ROOT/scripts/lib/health-probe.sh"
 # shellcheck source=lib/health-probe.sh
 . "$HEALTH_PROBE_LIB"
 
+# Release-image selection shared with update.sh and install.sh. The lookup is
+# local-only on purpose: recovery must not gain a network dependency, so it
+# uses whatever release tags this checkout already carries.
+RELEASE_IMAGE_LIB="$ROOT/scripts/lib/release-image.sh"
+[[ -f "$RELEASE_IMAGE_LIB" ]] || fail "missing $RELEASE_IMAGE_LIB; cannot select the rollback image"
+# shellcheck source=lib/release-image.sh
+. "$RELEASE_IMAGE_LIB"
+
 write_image_override() {
   local image_ref="$1" tmp
   tmp=$(mktemp "$ROOT/.keypage-image.XXXXXX")
@@ -60,13 +68,20 @@ write_image_override() {
 }
 
 prepare_image() {
-  local revision="$1" tagged digest actual_revision
-  tagged="${IMAGE_REPOSITORY}:${revision}"
+  local revision="$1" tagged digest actual_revision actual_version
+  tagged="${IMAGE_REPOSITORY}:$(keypage_select_image_tag "$ROOT" "$revision")"
   docker pull --quiet "$tagged" >/dev/null || fail "could not download image for $revision; live data was not changed"
   digest=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tagged" | grep -m1 '@sha256:' || true)
   actual_revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$tagged" 2>/dev/null || true)
   [[ "$digest" =~ @sha256:[0-9a-f]{64}$ ]] || fail "image for $revision has no immutable digest"
   [[ "$actual_revision" == "$revision" ]] || fail "image for $revision does not match its source revision"
+  if keypage_selected_release_tag "$tagged" "$revision"; then
+    # Rolled-back identity must be the release identity: refuse a republished
+    # tag whose baked version disagrees (see scripts/lib/release-image.sh).
+    actual_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$tagged" 2>/dev/null || true)
+    tagged_tag="${tagged##*:}"
+    [[ "$actual_version" == "$tagged_tag" ]] || fail "release image for $revision reports version '${actual_version:-<none>}', not '${tagged_tag}'"
+  fi
   printf '%s' "$digest"
 }
 

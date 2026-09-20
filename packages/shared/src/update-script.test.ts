@@ -22,6 +22,7 @@ const COMPOSE_YML = path.join(repoRoot, "docker-compose.yml");
 const README = path.join(repoRoot, "README.md");
 const IMAGE_WORKFLOW = path.join(repoRoot, ".github/workflows/publish-image.yml");
 const HEALTH_PROBE_LIB = path.join(repoRoot, "scripts/lib/health-probe.sh");
+const RELEASE_IMAGE_LIB = path.join(repoRoot, "scripts/lib/release-image.sh");
 
 const TUNNEL_PRODUCT = /cloudflared|CLOUDFLARE_TUNNEL|TUNNEL_TOKEN|TUNNEL_HOSTNAME/i;
 const DATA_WIPE =
@@ -59,13 +60,16 @@ function writeExecutable(filePath: string, body: string): void {
   fs.writeFileSync(filePath, body, { mode: 0o755 });
 }
 
-// update.sh sources its health probe from the install tree, because a real
-// install is a clone of this repo. An install fixture without scripts/ is not
-// a shape that can exist, so every fixture here carries the library.
-function copyHealthProbeLib(destRoot: string): void {
-  const dest = path.join(destRoot, "scripts/lib/health-probe.sh");
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(HEALTH_PROBE_LIB, dest);
+// update.sh and install.sh source their shared libraries from the install
+// tree, because a real install is a clone of this repo. An install fixture
+// without scripts/ is not a shape that can exist, so every fixture here
+// carries both libraries.
+function copySharedLibs(destRoot: string): void {
+  for (const lib of [HEALTH_PROBE_LIB, RELEASE_IMAGE_LIB]) {
+    const dest = path.join(destRoot, "scripts/lib", path.basename(lib));
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(lib, dest);
+  }
 }
 
 function makeInstallTree(): { root: string; dataDir: string; envPath: string } {
@@ -77,7 +81,7 @@ function makeInstallTree(): { root: string; dataDir: string; envPath: string } {
   const envPath = path.join(root, ".env");
   fs.writeFileSync(envPath, `PORT=${DEFAULT_LISTEN_PORT}\nKEYPAGE_WEB_DIR=/app/apps/web/dist\n`);
   fs.copyFileSync(COMPOSE_YML, path.join(root, "docker-compose.yml"));
-  copyHealthProbeLib(root);
+  copySharedLibs(root);
   return { root, dataDir, envPath };
 }
 
@@ -100,6 +104,7 @@ function makeStubBin(
     healthFailuresBeforeSuccess?: number;
     candidateIsRunning?: boolean;
     stopFails?: boolean;
+    versionLabel?: string;
   },
 ): void {
   if (opts.stubGit !== false) {
@@ -135,7 +140,21 @@ if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
     repo=$(printf '%s' "$last" | sed 's/:[^:]*$//')
     printf '%s\n' "$repo@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   elif printf '%s' "$*" | grep -q 'org.opencontainers.image.revision'; then
-    printf '%s\n' "$last" | sed 's/^.*://'
+    # A bare-SHA image tag carries its own commit as the revision label; a
+    # release-tagged image was built from the commit the updater selected
+    # (the fixed aaaa… answer, which is what the git stub's rev-parse says).
+    ref=$(printf '%s\\n' "$last" | sed 's/^.*://')
+    case "$ref" in
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) printf '%s\\n' "$ref";;
+      *) printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';;
+    esac
+  elif printf '%s' "$*" | grep -q 'org.opencontainers.image.version'; then
+    ${opts.versionLabel === undefined
+      ? `case "$last" in
+    *:v[0-9]*) printf '%s\\n' "$last" | sed 's/^.*://';;
+    *) ref=$(printf '%s\\n' "$last" | sed 's/^.*://'); printf '%s\\n' "main-$ref";;
+  esac`
+      : `printf '%s\\n' '${opts.versionLabel}'`}
   elif printf '%s' "$*" | grep -q '{{.Id}}'; then
     printf '%s\n' 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
   fi
@@ -236,7 +255,7 @@ function seedRemoteAndShallowClone(opts?: { trackData?: boolean }): {
   fs.writeFileSync(path.join(remoteWork, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
   fs.mkdirSync(path.join(remoteWork, "data"));
   fs.writeFileSync(path.join(remoteWork, "data/keypage.db"), "vault-bytes");
-  copyHealthProbeLib(remoteWork);
+  copySharedLibs(remoteWork);
   if (opts?.trackData) {
     git(remoteWork, ["add", "docker-compose.yml", ".env", "data/keypage.db", "scripts"]);
   } else {
@@ -305,7 +324,7 @@ function makeInstallScriptTree(opts?: { envExtra?: string }): { root: string; da
     `PORT=${DEFAULT_LISTEN_PORT}\nKEYPAGE_WEB_DIR=/app/apps/web/dist\n${opts?.envExtra ?? ""}`,
   );
   fs.copyFileSync(COMPOSE_YML, path.join(root, "docker-compose.yml"));
-  copyHealthProbeLib(root);
+  copySharedLibs(root);
   fs.copyFileSync(UPDATE_SH, path.join(root, "scripts/update.sh"));
   return { root, dataDir };
 }
@@ -589,6 +608,128 @@ describe("scripts/rollback.sh safety contract", () => {
       // away from.
       assert.doesNotMatch(src, /^wait_for_health\(\)/m, `${name} must not define its own probe`);
     }
+  });
+});
+
+describe("release-image selection", () => {
+  const ROLLBACK_SRC = () => fs.readFileSync(ROLLBACK_SH, "utf8");
+
+  it("all three operators resolve images through the shared selector", () => {
+    for (const [name, src] of [
+      ["scripts/update.sh", readUpdateScript()],
+      ["scripts/install.sh", readInstallScript()],
+      ["scripts/rollback.sh", ROLLBACK_SRC()],
+    ] as const) {
+      assert.match(src, /scripts\/lib\/release-image\.sh/, `${name} must load the shared release-image selector`);
+      assert.match(src, /keypage_select_image_tag/, `${name} must resolve the image through the shared selector`);
+      assert.match(src, /org\.opencontainers\.image\.version/, `${name} must verify the baked release version`);
+    }
+  });
+
+  it("update.sh and install.sh sync release tags best-effort; rollback never fetches", () => {
+    const fetchPattern = /fetch --quiet --force origin 'refs\/tags\/v\[0-9\]\*:refs\/tags\/v\[0-9\]\*'\s*>\/dev\/null 2>&1 \|\| true/;
+    for (const src of [readUpdateScript(), readInstallScript()]) {
+      // The bare-SHA image tag is shared with main-branch builds, so the
+      // updater must bring release tags along; a single-branch fetch does not
+      // reliably do that. Best-effort: without a tag the bare-SHA fallback
+      // still resolves the same commit.
+      assert.match(src, fetchPattern, "release-tag sync must exist and never be fatal");
+    }
+    // Recovery must not gain a network dependency: rollback uses whatever
+    // tags the checkout already carries.
+    assert.doesNotMatch(ROLLBACK_SRC(), /git .*fetch .*refs\/tags/);
+  });
+
+  it("selector prefers the SemVer release tag and falls back to the commit", () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-release-image-"));
+    git(repo, ["init", "-b", "main"]);
+    fs.writeFileSync(path.join(repo, "f"), "one");
+    git(repo, ["add", "f"]);
+    git(repo, ["commit", "-m", "one"]);
+    const sha1 = spawnSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    git(repo, ["tag", "v1.2.3", sha1]);
+    fs.writeFileSync(path.join(repo, "f"), "two");
+    git(repo, ["add", "f"]);
+    git(repo, ["commit", "-m", "two"]);
+    const sha2 = spawnSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    git(repo, ["tag", "keypage-rollback-not-semver", sha2]);
+
+    const select = (sha: string) =>
+      spawnSync(
+        "bash",
+        ["-c", `. '${RELEASE_IMAGE_LIB}'; keypage_select_image_tag "$1" "$2"`, "select", repo, sha],
+        { encoding: "utf8" },
+      );
+    assert.equal(select(sha1).status, 0);
+    assert.equal(select(sha1).stdout.trim(), "v1.2.3", "must prefer the release tag pointing at the commit");
+    assert.equal(select(sha2).stdout.trim(), sha2, "non-SemVer tags must not win; fall back to the commit");
+    assert.equal(select("not-a-sha").stdout.trim(), "not-a-sha", "non-commit input passes through");
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  it("update.sh pulls the release image when a release tag points at the checkout", () => {
+    const { root } = makeInstallTree();
+    const binDir = makeTrackedTempDir("keypage-update-bin-");
+    makeStubBin(binDir, { healthOk: true });
+    writeExecutable(
+      path.join(binDir, "git"),
+      `#!/bin/sh
+echo "git $*" >> "${binDir}/calls.log"
+if printf '%s' "$*" | grep -q 'rev-parse HEAD'; then
+  printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+fi
+if printf '%s' "$*" | grep -q 'tag --points-at'; then
+  printf '%s\\n' 'v1.0.2'
+fi
+exit 0
+`,
+    );
+
+    const result = runUpdate({ keypageDir: root, binDir });
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.match(calls, /git -C \S+ fetch --quiet --force origin refs\/tags\/v\[0-9\]\*:refs\/tags\/v\[0-9\]\*/);
+    const tagFetchAt = calls.indexOf("fetch --quiet --force origin refs/tags/");
+    const pullAt = calls.indexOf("pull --quiet");
+    assert.ok(tagFetchAt >= 0 && tagFetchAt < pullAt, "release tags must be synced before the image is pulled");
+    // The release image carries the attested v1.0.2 identity; the bare-SHA
+    // image of the same commit may have been overwritten by a main-branch
+    // build (this exact collision shipped v1.0.2 as main-<sha> on 2026-09-20).
+    assert.match(calls, /pull --quiet ghcr\.io\/saadiqhorton\/keypage:v1\.0\.2/);
+    assert.doesNotMatch(calls, /pull --quiet ghcr\.io\/saadiqhorton\/keypage:aaaaaa/);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  });
+
+  it("update.sh refuses a republished release tag whose baked version disagrees", () => {
+    const { root, dataDir } = makeInstallTree();
+    const binDir = makeTrackedTempDir("keypage-update-bin-");
+    makeStubBin(binDir, { healthOk: true, versionLabel: "main-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+    writeExecutable(
+      path.join(binDir, "git"),
+      `#!/bin/sh
+echo "git $*" >> "${binDir}/calls.log"
+if printf '%s' "$*" | grep -q 'rev-parse HEAD'; then
+  printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+fi
+if printf '%s' "$*" | grep -q 'tag --points-at'; then
+  printf '%s\\n' 'v1.0.2'
+fi
+exit 0
+`,
+    );
+
+    const result = runUpdate({ keypageDir: root, binDir });
+
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /reports version/);
+    assert.match(`${result.stdout}\n${result.stderr}`, /existing KeyPage was not stopped/);
+    const calls = fs.readFileSync(path.join(binDir, "calls.log"), "utf8");
+    assert.doesNotMatch(calls, /compose stop|compose up/);
+    assert.equal(fs.readFileSync(path.join(dataDir, "keypage.db"), "utf8"), "vault-bytes");
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
   });
 });
 
@@ -1115,7 +1256,7 @@ exit 1
     fs.writeFileSync(path.join(dataDir, "keypage.db"), "vault-bytes");
     fs.writeFileSync(path.join(install, ".env"), `PORT=${DEFAULT_LISTEN_PORT}\n`);
     fs.copyFileSync(COMPOSE_YML, path.join(install, "docker-compose.yml"));
-    copyHealthProbeLib(install);
+    copySharedLibs(install);
 
     const fakeRepo = fs.mkdtempSync(path.join(os.tmpdir(), "keypage-update-fake-"));
     fs.copyFileSync(COMPOSE_YML, path.join(fakeRepo, "docker-compose.yml"));
