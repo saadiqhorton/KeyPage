@@ -188,7 +188,7 @@ jobs:
           provenance: mode=max
           sbom: true
       - name: Attest the release image
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ae14e916627a18bb661 # v3
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.image.outputs.digest }}
