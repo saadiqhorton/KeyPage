@@ -240,6 +240,15 @@ fi
 # shellcheck source=lib/health-probe.sh
 . "${HEALTH_PROBE_LIB}"
 
+# Release-image selection is shared with update.sh and rollback.sh so all
+# three agree on which published artifact runs for a given source revision.
+RELEASE_IMAGE_LIB="${KEYPAGE_DIR}/scripts/lib/release-image.sh"
+if [[ ! -f "${RELEASE_IMAGE_LIB}" ]]; then
+  fail "installer cannot verify this checkout: ${RELEASE_IMAGE_LIB} is missing, so the release image cannot be selected. This tree does not carry release-image selection (scripts/lib/release-image.sh) — refresh ${KEYPAGE_REF} and re-run. Nothing was installed, ./data was not changed, and no container was stopped."
+fi
+# shellcheck source=lib/release-image.sh
+. "${RELEASE_IMAGE_LIB}"
+
 # ── 3. Env + data dir ─────────────────────────────────────────────────────
 stage "Prepare .env and data volume"
 
@@ -290,7 +299,13 @@ elif [[ "${EXISTING_INSTALL}" == "1" ]]; then
   STARTED_BY_INSTALLER=0
 else
   checkout_sha="$(git -C "${KEYPAGE_DIR}" rev-parse HEAD)"
-  KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${checkout_sha}}"
+  # Same release-image rule as the updater (see scripts/lib/release-image.sh):
+  # the bare-SHA tag is shared with main-branch builds, so prefer the attested
+  # release image when a release tag points at exactly this commit. Tags are
+  # synced best-effort; without one, the bare-SHA fallback still resolves.
+  git -C "${KEYPAGE_DIR}" fetch --quiet --force origin 'refs/tags/v[0-9]*:refs/tags/v[0-9]*' >/dev/null 2>&1 || true
+  image_tag="$(keypage_select_image_tag "${KEYPAGE_DIR}" "${checkout_sha}")"
+  KEYPAGE_IMAGE="${KEYPAGE_IMAGE:-${KEYPAGE_IMAGE_REPOSITORY}:${image_tag}}"
   note "downloading the tested image"
   if ! docker pull --quiet "${KEYPAGE_IMAGE}" >/dev/null; then
     fail "could not download ${KEYPAGE_IMAGE}. Nothing was installed and ./data was not changed."
@@ -302,6 +317,12 @@ else
   fi
   if [[ "${image_revision}" != "${checkout_sha}" ]]; then
     fail "downloaded image revision does not match ${checkout_sha}; nothing was started"
+  fi
+  if [[ "${image_tag}" != "${checkout_sha}" ]]; then
+    image_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "${KEYPAGE_IMAGE}" 2>/dev/null || true)"
+    if [[ "${image_version}" != "${image_tag}" ]]; then
+      fail "release image ${KEYPAGE_IMAGE} reports version '${image_version:-<none>}', not '${image_tag}'; nothing was started"
+    fi
   fi
   write_image_override "${image_digest}"
   compose up -d --no-build --pull never keypage
